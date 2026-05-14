@@ -1,0 +1,16 @@
+{
+  "functions": {
+    "src/app/api/transcribe/route.ts": {
+      "maxDuration": 60
+    },
+    "src/app/api/analyze/route.ts": {
+      "maxDuration": 120
+    },
+    "src/app/api/variants/route.ts": {
+      "maxDuration": 60
+    },
+    "src/app/api/cross-analyze/route.ts": {
+      "maxDuration": 120
+    }
+  }
+}
