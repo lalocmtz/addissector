@@ -1,24 +1,38 @@
 // =============================================================================
-// AdDNA — Cliente de Kie.ai (Nano Banana Pro + Seedance 2.0 Fast).
-// API asíncrona: createTask → poll recordInfo. Docs: https://docs.kie.ai
+// AdDNA — Cliente de Kie.ai.
+// Imagen: Nano Banana Pro. Video: Sora 2 Pro (máxima calidad) / Sora 2 /
+// Seedance 1.5 Pro 1080p. API asíncrona: createTask → poll recordInfo.
 // =============================================================================
 
 const KIE_API = 'https://api.kie.ai';
 
+export type VideoQuality = 'sora_pro' | 'sora' | 'seedance';
+
 export const KIE_MODELS = {
   image: 'nano-banana-pro',
-  video: 'bytedance/seedance-1.5-pro',
-} as const;
+  video: {
+    sora_pro: 'sora-2-pro-image-to-video',
+    sora: 'sora-2-image-to-video',
+    seedance: 'bytedance/seedance-1.5-pro',
+  } as Record<VideoQuality, string>,
+};
 
-// Estimaciones de costo en USD para mostrar ANTES de generar (el saldo real
-// viene de la API de créditos). Ajustables sin tocar el resto del código.
-// Precios verificados en kie.ai/pricing (jul 2026):
-//  - nano-banana-pro 1K: 18 créditos ≈ $0.09
-//  - seedance-1.5-pro con audio 720p: 7 créditos/seg = $0.035/seg
+// Estimaciones en USD (el saldo real viene de la API; la fuente de verdad de
+// cada cobro es kie.ai/logs). Verificado jul 2026: nano-banana-pro 1K = 18
+// créditos (~$0.09); seedance-1.5-pro audio 1080p = 15 créditos/seg.
 export const COST_ESTIMATES = {
   imageUsd: 0.09,
-  videoPerSecondUsd: 0.035,
+  video: {
+    sora_pro: { per10s: 1.4, per15s: 2.1, label: 'Sora 2 Pro · máxima calidad' },
+    sora: { per10s: 0.25, per15s: 0.38, label: 'Sora 2 · alta calidad' },
+    seedance: { per10s: 0.75, per15s: 1.13, label: 'Seedance 1.5 Pro 1080p' },
+  },
 };
+
+export function estimateVideoUsd(quality: VideoQuality, seconds: number): number {
+  const e = COST_ESTIMATES.video[quality];
+  return seconds <= 10 ? e.per10s : e.per15s;
+}
 
 export function isKieConfigured(): boolean {
   return Boolean(process.env.KIE_API_KEY);
@@ -80,27 +94,48 @@ export async function createImageTask(opts: {
   return data.taskId;
 }
 
-/** Video con Seedance 1.5 Pro animando una imagen (con voz opcional). */
+/** Video a partir de la imagen aprobada, según el nivel de calidad elegido. */
 export async function createVideoTask(opts: {
+  quality: VideoQuality;
   prompt: string;
   firstFrameUrl: string;
-  durationSeconds: number; // 4-12
+  durationSeconds: number;
   generateAudio: boolean;
-}): Promise<string> {
+}): Promise<{ taskId: string; model: string }> {
+  const model = KIE_MODELS.video[opts.quality];
+
+  if (opts.quality === 'sora_pro' || opts.quality === 'sora') {
+    // Sora 2: duraciones fijas de 10 o 15 segundos; audio/diálogo nativo.
+    const nFrames = opts.durationSeconds <= 10 ? '10' : '15';
+    const data = await kiePost<{ taskId: string }>('/api/v1/jobs/createTask', {
+      model,
+      input: {
+        prompt: opts.prompt,
+        image_urls: [opts.firstFrameUrl],
+        aspect_ratio: 'portrait',
+        n_frames: nFrames,
+        size: 'standard',
+        remove_watermark: true,
+      },
+    });
+    return { taskId: data.taskId, model };
+  }
+
+  // Seedance 1.5 Pro (1080p con audio)
   const duration = Math.max(4, Math.min(12, Math.round(opts.durationSeconds)));
   const data = await kiePost<{ taskId: string }>('/api/v1/jobs/createTask', {
-    model: KIE_MODELS.video,
+    model,
     input: {
       prompt: opts.prompt,
       input_urls: [opts.firstFrameUrl],
       generate_audio: opts.generateAudio,
-      resolution: '720p', // 1080p cuesta el doble; 720p es el estándar del curso
+      resolution: '1080p',
       aspect_ratio: '9:16',
       duration: String(duration),
       fixed_lens: false,
     },
   });
-  return data.taskId;
+  return { taskId: data.taskId, model };
 }
 
 // ---------------------------------------------------------------------------
@@ -128,7 +163,6 @@ export async function getTaskStatus(taskId: string): Promise<KieTaskStatus> {
     `/api/v1/jobs/recordInfo?taskId=${encodeURIComponent(taskId)}`
   );
 
-  // resultJson viene como string JSON con { resultUrls: [...] }
   let resultUrls: string[] = [];
   if (data.resultJson) {
     try {
@@ -151,8 +185,6 @@ export async function getTaskStatus(taskId: string): Promise<KieTaskStatus> {
     state = 'success';
   } else if (rawState === 'fail' || rawState === 'failed' || data.successFlag === 2 || data.successFlag === 3) {
     state = 'failed';
-  } else if (rawState === 'generating' || rawState === 'queuing') {
-    state = 'processing';
   } else {
     state = 'processing';
   }
@@ -168,7 +200,7 @@ export async function getTaskStatus(taskId: string): Promise<KieTaskStatus> {
 // Créditos
 // ---------------------------------------------------------------------------
 
-/** Saldo de créditos de la cuenta de Kie (1 crédito ≈ USD 0.005 aprox). */
+/** Saldo de créditos de la cuenta de Kie. */
 export async function getKieCredits(): Promise<number | null> {
   try {
     const data = await kieGet<number | { credits?: number; credit?: number }>(
