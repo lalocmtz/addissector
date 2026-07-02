@@ -4,6 +4,9 @@
       "maxDuration": 60
     },
     "src/app/api/analyze/route.ts": {
+      "maxDuration": 300
+    },
+    "src/app/api/analyze-image/route.ts": {
       "maxDuration": 120
     },
     "src/app/api/variants/route.ts": {

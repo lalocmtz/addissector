@@ -2,9 +2,10 @@
 
 import { useState, useMemo } from 'react';
 import { motion } from 'framer-motion';
-import { Scan, FileText, Film, Rocket, GitMerge, Eye } from 'lucide-react';
+import { Scan, FileText, Film, Rocket, GitMerge, Eye, Brain } from 'lucide-react';
 import StructuralAnalysis from './StructuralAnalysis';
 import DashboardAnalysis from './DashboardAnalysis';
+import PsychologicalAnalysis from './PsychologicalAnalysis';
 import ScriptBlock from './ScriptBlock';
 import SeedancePrompts from './SeedancePrompts';
 import ReplicationPlan from './ReplicationPlan';
@@ -20,10 +21,11 @@ interface AnalysisResultsProps {
   isGeneratingCross?: boolean;
 }
 
-type TabKey = 'dashboard' | 'analysis' | 'scripts' | 'seedance' | 'plan' | 'cross';
+type TabKey = 'dashboard' | 'psychology' | 'analysis' | 'scripts' | 'seedance' | 'plan' | 'cross';
 
 const tabs: { key: TabKey; label: string; icon: React.ReactNode }[] = [
   { key: 'dashboard', label: 'Dashboard', icon: <Eye className="w-4 h-4" /> },
+  { key: 'psychology', label: 'Psicologia', icon: <Brain className="w-4 h-4" /> },
   { key: 'analysis', label: 'Analisis', icon: <Scan className="w-4 h-4" /> },
   { key: 'scripts', label: 'Guiones', icon: <FileText className="w-4 h-4" /> },
   { key: 'seedance', label: 'Seedance', icon: <Film className="w-4 h-4" /> },
@@ -108,6 +110,10 @@ export default function AnalysisResults({
       >
         {activeTab === 'dashboard' && activeResult.dashboard && (
           <DashboardAnalysis dashboard={activeResult.dashboard} />
+        )}
+
+        {activeTab === 'psychology' && activeResult.psychological_analysis && (
+          <PsychologicalAnalysis data={activeResult.psychological_analysis} />
         )}
 
         {activeTab === 'analysis' && activeResult.structural_analysis && (

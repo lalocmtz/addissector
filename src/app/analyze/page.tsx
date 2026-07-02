@@ -1,11 +1,40 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { ArrowLeft, Scan, Loader2 } from 'lucide-react';
 import AnalysisResults from '@/components/AnalysisResults';
+import SimpleResults, { type ReplicaVariant } from '@/components/SimpleResults';
+import { ensureVideoInterpretation } from '@/lib/interpretation';
+import { getStoredActiveBrandId } from '@/lib/use-me';
 import type { AnalysisResult, CrossAnalysisResult } from '@/lib/analysis-schema';
+
+function normalizeResult(a: AnalysisResult): AnalysisResult {
+  // Rellena la interpretación simple en análisis viejos guardados en la biblioteca.
+  return ensureVideoInterpretation(a as unknown as Record<string, unknown>) as unknown as AnalysisResult;
+}
+
+/** Convierte las variantes de guion en la salida dual (prompt IA / brief equipo). */
+function toReplicaVariants(analysis: AnalysisResult): ReplicaVariant[] {
+  const keep = (analysis.keep ?? []).join('; ');
+  return (analysis.script_variants ?? []).slice(0, 6).map((v) => ({
+    id: v.variant_number,
+    title: `Variante ${v.variant_number}`,
+    subtitle: v.scenario,
+    prompt:
+      v.prompt ||
+      [
+        `Genera un video anuncio estilo UGC vertical (9:16).`,
+        v.scenario ? `Escenario/persona: ${v.scenario}.` : '',
+        `Guion (voz en off, respétalo tal cual):\n"${v.script}"`,
+        keep ? `Elementos que NO deben cambiar: ${keep}.` : '',
+      ]
+        .filter(Boolean)
+        .join('\n\n'),
+    teamBrief: v.team_brief || v.script,
+  }));
+}
 
 export default function AnalyzePage() {
   const router = useRouter();
@@ -14,18 +43,44 @@ export default function AnalyzePage() {
   const [loading, setLoading] = useState(true);
   const [isGeneratingVariants, setIsGeneratingVariants] = useState(false);
   const [isGeneratingCross, setIsGeneratingCross] = useState(false);
+  const [activeKey, setActiveKey] = useState<string>('');
 
   useEffect(() => {
+    // Reopen a saved creative from the library: /analyze?id=<uuid>
+    const id = new URLSearchParams(window.location.search).get('id');
+    if (id) {
+      fetch(`/api/creatives/${id}`)
+        .then((r) => (r.ok ? r.json() : Promise.reject()))
+        .then((data) => {
+          // Image creatives have their own results view.
+          if (data.type === 'image') {
+            router.replace(`/analyze-image?id=${id}`);
+            return;
+          }
+          const analysis = normalizeResult(data.analysis as AnalysisResult);
+          const name = data.name || 'Creativo';
+          setResults(new Map([[name, analysis]]));
+          setActiveKey(name);
+        })
+        .catch(() => router.push('/biblioteca'))
+        .finally(() => setLoading(false));
+      return;
+    }
+
     const stored = sessionStorage.getItem('addissector-results');
     if (stored) {
       try {
         const parsed = JSON.parse(stored) as Record<string, AnalysisResult>;
-        setResults(new Map(Object.entries(parsed)));
+        const entries = Object.entries(parsed).map(
+          ([k, v]) => [k, normalizeResult(v)] as [string, AnalysisResult]
+        );
+        setResults(new Map(entries));
+        setActiveKey(entries[0]?.[0] ?? '');
       } catch {
-        router.push('/');
+        router.push('/studio');
       }
     } else {
-      router.push('/');
+      router.push('/studio');
     }
     setLoading(false);
   }, [router]);
@@ -36,10 +91,33 @@ export default function AnalyzePage() {
 
     setIsGeneratingVariants(true);
     try {
+      // Contexto de la marca activa para enriquecer las variantes.
+      let brandContext: Record<string, unknown> | null = null;
+      try {
+        const brandId = getStoredActiveBrandId();
+        if (brandId) {
+          const meRes = await fetch('/api/me');
+          if (meRes.ok) {
+            const me = await meRes.json();
+            const brand = (me.brands ?? []).find((b: { id: string }) => b.id === brandId);
+            if (brand) {
+              brandContext = {
+                name: brand.name,
+                tone: brand.tone,
+                palette: brand.palette,
+                product: brand.product,
+              };
+            }
+          }
+        }
+      } catch {
+        /* sin contexto de marca */
+      }
+
       const response = await fetch('/api/variants', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ analysisJson: analysis }),
+        body: JSON.stringify({ analysisJson: analysis, brandContext }),
       });
 
       if (!response.ok) throw new Error('Failed to generate variants');
@@ -76,7 +154,7 @@ export default function AnalyzePage() {
             }
             updated.seedance_segments = existingSegments;
           }
-          next.set(videoKey, updated);
+          next.set(videoKey, normalizeResult(updated));
         }
         return next;
       });
@@ -110,6 +188,9 @@ export default function AnalyzePage() {
     }
   };
 
+  const keys = useMemo(() => Array.from(results.keys()), [results]);
+  const active = results.get(activeKey) ?? results.get(keys[0] ?? '');
+
   if (loading) {
     return (
       <div className="flex-1 flex items-center justify-center">
@@ -118,7 +199,7 @@ export default function AnalyzePage() {
     );
   }
 
-  if (results.size === 0) return null;
+  if (results.size === 0 || !active) return null;
 
   return (
     <main className="flex-1">
@@ -127,7 +208,7 @@ export default function AnalyzePage() {
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-4">
             <button
-              onClick={() => router.push('/')}
+              onClick={() => router.push('/studio')}
               className="flex items-center gap-2 text-sm text-[#94a3b8] hover:text-[#f1f5f9] transition-colors"
             >
               <ArrowLeft className="w-4 h-4" />
@@ -139,7 +220,7 @@ export default function AnalyzePage() {
                 <Scan className="w-4 h-4 text-white" />
               </div>
               <span className="text-sm font-semibold font-[family-name:var(--font-mono)]">
-                AdDissector
+                AdDNA
               </span>
             </div>
           </div>
@@ -151,20 +232,54 @@ export default function AnalyzePage() {
 
       {/* Results */}
       <section className="px-6 py-8">
-        <div className="max-w-7xl mx-auto">
+        <div className="max-w-5xl mx-auto">
+          {/* Selector de video (si hay varios) */}
+          {keys.length > 1 && (
+            <div className="overflow-x-auto mb-6">
+              <div className="flex gap-1 bg-[#111118] border border-[#1e1e2e] rounded-xl p-1 min-w-min">
+                {keys.map((key) => (
+                  <button
+                    key={key}
+                    onClick={() => setActiveKey(key)}
+                    className={`px-4 py-2 rounded-lg text-xs font-medium transition-all whitespace-nowrap ${
+                      (activeKey || keys[0]) === key
+                        ? 'bg-[#3b82f6] text-white shadow-lg shadow-blue-500/20'
+                        : 'text-[#94a3b8] hover:text-[#f1f5f9] hover:bg-[#1e1e2e]'
+                    }`}
+                  >
+                    {key}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           <motion.div
+            key={activeKey}
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5 }}
           >
-            <AnalysisResults
-              results={results}
-              crossAnalysis={crossAnalysis}
-              onGenerateVariants={handleGenerateVariants}
-              onGenerateCrossAnalysis={results.size >= 2 ? handleGenerateCrossAnalysis : undefined}
-              isGeneratingVariants={isGeneratingVariants}
-              isGeneratingCross={isGeneratingCross}
-            />
+            <SimpleResults
+              verdict={active.verdict ?? ''}
+              overallScore={active.overall_score ?? 0}
+              scoreLabel={active.score_label ?? ''}
+              signals={active.signals ?? null}
+              winningRecipe={active.winning_recipe ?? []}
+              keep={active.keep ?? []}
+              test={active.test ?? []}
+              variants={toReplicaVariants(active)}
+            >
+              {/* Capa 3 — análisis completo con los componentes existentes */}
+              <AnalysisResults
+                results={results}
+                crossAnalysis={crossAnalysis}
+                onGenerateVariants={handleGenerateVariants}
+                onGenerateCrossAnalysis={results.size >= 2 ? handleGenerateCrossAnalysis : undefined}
+                isGeneratingVariants={isGeneratingVariants}
+                isGeneratingCross={isGeneratingCross}
+              />
+            </SimpleResults>
           </motion.div>
         </div>
       </section>

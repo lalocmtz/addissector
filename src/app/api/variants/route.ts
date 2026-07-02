@@ -2,10 +2,30 @@ import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
 import { VARIANT_GENERATOR_PROMPT } from '@/lib/prompts';
 
-export const maxDuration = 60;
+export const maxDuration = 300;
+
+interface BrandContext {
+  name?: string;
+  tone?: string | null;
+  palette?: string | null;
+  product?: string | null;
+}
 
 interface VariantsRequestBody {
   analysisJson: Record<string, unknown>;
+  brandContext?: BrandContext | null;
+}
+
+function brandContextBlock(brand: BrandContext | null | undefined): string {
+  if (!brand) return '';
+  const lines = [
+    brand.name ? `- Marca: ${brand.name}` : '',
+    brand.product ? `- Producto/oferta: ${brand.product}` : '',
+    brand.tone ? `- Tono de la marca: ${brand.tone}` : '',
+    brand.palette ? `- Paleta/estética: ${brand.palette}` : '',
+  ].filter(Boolean);
+  if (lines.length === 0) return '';
+  return `\n\nCONTEXTO DE LA MARCA (las variantes deben respetarlo):\n${lines.join('\n')}`;
 }
 
 function parseJsonFromText(text: string): unknown {
@@ -41,12 +61,12 @@ export async function POST(request: NextRequest) {
 
 ${JSON.stringify(body.analysisJson, null, 2)}
 
-Las variantes deben ser significativamente diferentes del original y entre si.`;
+Las variantes deben ser significativamente diferentes del original y entre si.${brandContextBlock(body.brandContext)}`;
 
     const client = new Anthropic({ apiKey });
 
     const response = await client.messages.create({
-      model: 'claude-sonnet-4-20250514',
+      model: 'claude-sonnet-4-6',
       max_tokens: 8000,
       system: VARIANT_GENERATOR_PROMPT,
       messages: [{ role: 'user', content: userMessage }],

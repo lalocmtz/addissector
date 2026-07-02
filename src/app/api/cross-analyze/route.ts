@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
 import { CROSS_ANALYSIS_PROMPT } from '@/lib/prompts';
 
-export const maxDuration = 120;
+export const maxDuration = 300;
 
 interface CrossAnalyzeRequestBody {
   analyses: Record<string, unknown>[];
@@ -46,7 +46,7 @@ Identifica patrones, crea la formula maestra, un guion maestro con 3 variantes, 
     const client = new Anthropic({ apiKey });
 
     const response = await client.messages.create({
-      model: 'claude-sonnet-4-20250514',
+      model: 'claude-sonnet-4-6',
       max_tokens: 12000,
       system: CROSS_ANALYSIS_PROMPT,
       messages: [{ role: 'user', content: userMessage }],

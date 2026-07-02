@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
 import { DISSECTOR_SYSTEM_PROMPT } from '@/lib/prompts';
+import { gateAnalysis, recordAnalysisUsage } from '@/lib/usage';
+import { ensureVideoInterpretation } from '@/lib/interpretation';
 
-export const maxDuration = 120;
+export const maxDuration = 300;
 
-const MAX_FRAMES = 30;
+const MAX_FRAMES = 12;
 
 interface FrameData {
   timestamp: string;
@@ -96,6 +98,11 @@ function normalizeAnalysis(raw: Record<string, unknown>): Record<string, unknown
     dashboardAnalysis: 'dashboard',
     dashboard_analysis: 'dashboard',
     analisis_visual: 'dashboard',
+    psychology: 'psychological_analysis',
+    psychologicalAnalysis: 'psychological_analysis',
+    psicologia: 'psychological_analysis',
+    analisis_psicologico: 'psychological_analysis',
+    deep_psychology: 'psychological_analysis',
   };
 
   for (const [alt, canonical] of Object.entries(fieldMap)) {
@@ -130,6 +137,23 @@ function normalizeAnalysis(raw: Record<string, unknown>): Record<string, unknown
       },
     };
   }
+  if (!result.psychological_analysis) {
+    result.psychological_analysis = {
+      scroll_stop: { mechanism: '', primary_trigger: '', strength_score: 0, reasoning: '' },
+      why_it_converts: '',
+      buyer_psychology: { core_desire: '', core_pain: '', identity_shift: '', objections_handled: [] },
+      persuasion_triggers: [],
+      cognitive_biases: [],
+      emotional_journey: [],
+      awareness_level: '',
+      market_sophistication: '',
+      target_avatar: { who: '', mindset: '', resonance_reason: '' },
+      math_breakdown: {
+        hook_duration_seconds: 0, ideal_hook_window: '', pacing_score: 0,
+        retention_risk_points: [], cta_timing: '', thumbstop_estimate: '',
+      },
+    };
+  }
   if (!result.original_script) result.original_script = '';
   if (!result.script_variants) result.script_variants = [];
   if (!result.seedance_segments) result.seedance_segments = [];
@@ -151,6 +175,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'ANTHROPIC_API_KEY is not configured' }, { status: 500 });
     }
 
+    // Gating por plan: sesión + límite mensual de análisis.
+    const gate = await gateAnalysis();
+    if (!gate.ok) return gate.response;
+
     const body: AnalyzeRequestBody = await request.json();
 
     if (!body.frames || !Array.isArray(body.frames) || body.frames.length === 0) {
@@ -163,23 +191,26 @@ export async function POST(request: NextRequest) {
     const frames = body.frames.slice(0, MAX_FRAMES);
     const { transcript, videoMeta } = body;
 
-    const segmentsText = transcript.segments
-      .map((seg) => `[${seg.start.toFixed(1)}s - ${seg.end.toFixed(1)}s] ${seg.text}`)
+    const segments = Array.isArray(transcript?.segments) ? transcript.segments : [];
+    const meta = videoMeta ?? { duration: 0, width: 0, height: 0, aspectRatio: '' };
+
+    const segmentsText = segments
+      .map((seg) => `[${(seg.start ?? 0).toFixed(1)}s - ${(seg.end ?? 0).toFixed(1)}s] ${seg.text ?? ''}`)
       .join('\n');
 
     const textPreamble = `## VIDEO METADATA
-Duration: ${videoMeta.duration.toFixed(1)}s
-Format: ${videoMeta.width}x${videoMeta.height}
-Aspect: ${videoMeta.aspectRatio}
+Duration: ${(meta.duration ?? 0).toFixed(1)}s
+Format: ${meta.width ?? 0}x${meta.height ?? 0}
+Aspect: ${meta.aspectRatio ?? ''}
 
 ## TRANSCRIPT
-${transcript.transcript}
+${transcript.transcript ?? ''}
 
 Segments:
 ${segmentsText}
 
 ## INSTRUCTIONS
-Analyze the following video frames along with the transcript above. Return your analysis as a JSON object matching the exact schema specified in your system prompt. Include ALL 5 blocks: structural_analysis, dashboard, original_script + script_variants, seedance_segments, replication_plan.`;
+Analyze the following video frames along with the transcript above. Return your analysis as a JSON object matching the exact schema specified in your system prompt. Include ALL 6 blocks: structural_analysis, dashboard, psychological_analysis (el más profundo y accionable), original_script + script_variants, seedance_segments, replication_plan.`;
 
     const contentArray: Anthropic.ContentBlockParam[] = [
       { type: 'text', text: textPreamble },
@@ -203,7 +234,7 @@ Analyze the following video frames along with the transcript above. Return your 
     const client = new Anthropic({ apiKey });
 
     const response = await client.messages.create({
-      model: 'claude-sonnet-4-20250514',
+      model: 'claude-sonnet-4-6',
       max_tokens: 16000,
       system: DISSECTOR_SYSTEM_PROMPT,
       messages: [{ role: 'user', content: contentArray }],
@@ -220,7 +251,10 @@ Analyze the following video frames along with the transcript above. Return your 
     const rawAnalysis = parseJsonFromText(textBlock.text) as Record<string, unknown>;
     console.log('[AdDissector] Response keys:', Object.keys(rawAnalysis));
 
-    const analysis = normalizeAnalysis(rawAnalysis);
+    const analysis = ensureVideoInterpretation(normalizeAnalysis(rawAnalysis));
+
+    // Cuenta el análisis solo cuando fue exitoso.
+    await recordAnalysisUsage(gate.userId);
 
     return NextResponse.json(analysis);
   } catch (error) {

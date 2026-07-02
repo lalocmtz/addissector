@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "AdDissector — Video Intelligence Platform",
-  description: "Disecciona videos publicitarios ganadores. Extrae guión, estructura visual, patrones y genera prompts Seedance-ready.",
+  title: "AdDNA — La inteligencia detrás de tus anuncios ganadores",
+  description: "Sube el creativo que ya te funciona, entiende por qué convierte y genera variantes listas para producir. La plataforma de inteligencia creativa para dueños de ecommerce.",
   icons: {
     icon: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔬</text></svg>",
   },

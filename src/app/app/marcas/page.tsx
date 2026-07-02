@@ -1,0 +1,303 @@
+'use client';
+
+// =============================================================================
+// AdDNA — /app/marcas: CRUD de marcas/workspaces (nombre + contexto de marca).
+// =============================================================================
+
+import { useState } from 'react';
+import { motion } from 'framer-motion';
+import {
+  Loader2, Plus, Pencil, Trash2, Check, X, ArrowRight, Store,
+} from 'lucide-react';
+import Link from 'next/link';
+import AppHeader from '@/components/AppHeader';
+import { useMe, type BrandRow } from '@/lib/use-me';
+
+interface BrandFormState {
+  name: string;
+  tone: string;
+  palette: string;
+  product: string;
+}
+
+const emptyForm: BrandFormState = { name: '', tone: '', palette: '', product: '' };
+
+export default function MarcasPage() {
+  const { me, loading, refresh, activeBrand, activeBrandId, setActiveBrandId } = useMe();
+  const [creating, setCreating] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [form, setForm] = useState<BrandFormState>(emptyForm);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [upgradeNeeded, setUpgradeNeeded] = useState(false);
+
+  const startCreate = () => {
+    setCreating(true);
+    setEditingId(null);
+    setForm(emptyForm);
+    setError(null);
+  };
+
+  const startEdit = (b: BrandRow) => {
+    setEditingId(b.id);
+    setCreating(false);
+    setForm({
+      name: b.name,
+      tone: b.tone ?? '',
+      palette: b.palette ?? '',
+      product: b.product ?? '',
+    });
+    setError(null);
+  };
+
+  const cancel = () => {
+    setCreating(false);
+    setEditingId(null);
+    setForm(emptyForm);
+    setError(null);
+    setUpgradeNeeded(false);
+  };
+
+  const save = async () => {
+    if (!form.name.trim()) {
+      setError('La marca necesita un nombre.');
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    setUpgradeNeeded(false);
+    try {
+      const res = creating
+        ? await fetch('/api/brands', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(form),
+          })
+        : await fetch(`/api/brands/${editingId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(form),
+          });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        if (res.status === 402) setUpgradeNeeded(true);
+        throw new Error(data.error || 'No se pudo guardar la marca');
+      }
+      if (creating && data.brand?.id) setActiveBrandId(data.brand.id);
+      await refresh();
+      cancel();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'No se pudo guardar la marca');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const remove = async (b: BrandRow) => {
+    if (!confirm(`¿Borrar la marca "${b.name}"? Sus creativos quedarán sin marca.`)) return;
+    try {
+      const res = await fetch(`/api/brands/${b.id}`, { method: 'DELETE' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'No se pudo borrar');
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'No se pudo borrar la marca');
+    }
+  };
+
+  const formFields = (
+    <div className="space-y-3">
+      <input
+        type="text"
+        value={form.name}
+        onChange={(e) => setForm({ ...form, name: e.target.value })}
+        placeholder="Nombre de la marca *"
+        className="w-full px-3 py-2.5 rounded-xl bg-[#0a0a0f] border border-[#1e1e2e] text-sm text-[#f1f5f9] placeholder:text-[#475569] focus:border-[#3b82f6]/60 focus:outline-none"
+      />
+      <input
+        type="text"
+        value={form.product}
+        onChange={(e) => setForm({ ...form, product: e.target.value })}
+        placeholder="Producto / oferta (ej. sérum facial de vitamina C, $399 MXN)"
+        className="w-full px-3 py-2.5 rounded-xl bg-[#0a0a0f] border border-[#1e1e2e] text-sm text-[#f1f5f9] placeholder:text-[#475569] focus:border-[#3b82f6]/60 focus:outline-none"
+      />
+      <input
+        type="text"
+        value={form.tone}
+        onChange={(e) => setForm({ ...form, tone: e.target.value })}
+        placeholder="Tono (ej. cercano y directo, tuteo, sin tecnicismos)"
+        className="w-full px-3 py-2.5 rounded-xl bg-[#0a0a0f] border border-[#1e1e2e] text-sm text-[#f1f5f9] placeholder:text-[#475569] focus:border-[#3b82f6]/60 focus:outline-none"
+      />
+      <input
+        type="text"
+        value={form.palette}
+        onChange={(e) => setForm({ ...form, palette: e.target.value })}
+        placeholder="Paleta / estética (ej. rosa pastel + crema, luz natural, UGC casero)"
+        className="w-full px-3 py-2.5 rounded-xl bg-[#0a0a0f] border border-[#1e1e2e] text-sm text-[#f1f5f9] placeholder:text-[#475569] focus:border-[#3b82f6]/60 focus:outline-none"
+      />
+      {error && <p className="text-xs text-[#f43f5e]">{error}</p>}
+      {upgradeNeeded && (
+        <Link
+          href="/#precios"
+          className="inline-flex items-center gap-2 text-sm text-[#3b82f6] hover:underline"
+        >
+          Ver planes con más marcas
+          <ArrowRight className="w-4 h-4" />
+        </Link>
+      )}
+      <div className="flex gap-2 pt-1">
+        <button
+          onClick={save}
+          disabled={saving}
+          className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold gradient-blue text-white disabled:opacity-60"
+        >
+          {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+          Guardar
+        </button>
+        <button
+          onClick={cancel}
+          className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm text-[#94a3b8] border border-[#1e1e2e] hover:text-[#f1f5f9]"
+        >
+          <X className="w-4 h-4" />
+          Cancelar
+        </button>
+      </div>
+    </div>
+  );
+
+  return (
+    <main className="flex-1">
+      <AppHeader me={me} activeBrand={activeBrand} onBrandChange={setActiveBrandId} />
+
+      <section className="px-6 py-8">
+        <div className="max-w-3xl mx-auto">
+          <div className="flex items-end justify-between mb-6">
+            <div>
+              <h1 className="text-2xl font-bold tracking-tight">Tus marcas</h1>
+              <p className="text-sm text-[#64748b] mt-1">
+                Cada marca es un espacio: su biblioteca, su contexto y sus variantes.
+                {me?.plan?.max_brands
+                  ? ` Tu plan incluye ${me.plan.max_brands} marca${me.plan.max_brands === 1 ? '' : 's'}.`
+                  : ''}
+              </p>
+            </div>
+            {!creating && (
+              <button
+                onClick={startCreate}
+                className="flex items-center gap-2 text-sm px-4 py-2 rounded-lg gradient-blue text-white font-medium shrink-0"
+              >
+                <Plus className="w-4 h-4" />
+                Nueva marca
+              </button>
+            )}
+          </div>
+
+          {loading ? (
+            <div className="flex items-center justify-center py-24">
+              <Loader2 className="w-8 h-8 text-[#3b82f6] animate-spin" />
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {creating && (
+                <motion.div
+                  initial={{ opacity: 0, y: -8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="rounded-2xl border border-[#3b82f6]/40 bg-[#111118] p-5"
+                >
+                  <h3 className="text-sm font-semibold mb-3">Nueva marca</h3>
+                  {formFields}
+                </motion.div>
+              )}
+
+              {(me?.brands ?? []).map((b) => (
+                <div
+                  key={b.id}
+                  className={`rounded-2xl border bg-[#111118] p-5 ${
+                    activeBrandId === b.id ? 'border-[#3b82f6]/40' : 'border-[#1e1e2e]'
+                  }`}
+                >
+                  {editingId === b.id ? (
+                    <>
+                      <h3 className="text-sm font-semibold mb-3">Editar marca</h3>
+                      {formFields}
+                    </>
+                  ) : (
+                    <div className="flex items-start gap-4">
+                      <div className="w-10 h-10 rounded-xl gradient-blue flex items-center justify-center text-sm font-bold text-white shrink-0">
+                        {b.name[0]?.toUpperCase()}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <h3 className="font-semibold truncate">{b.name}</h3>
+                          {activeBrandId === b.id && (
+                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#3b82f6]/15 text-[#60a5fa] font-medium shrink-0">
+                              Activa
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-[#94a3b8] mt-1 truncate">
+                          {b.product || 'Sin producto definido'}
+                          {b.tone ? ` · ${b.tone}` : ''}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        {activeBrandId !== b.id && (
+                          <button
+                            onClick={() => setActiveBrandId(b.id)}
+                            className="text-xs px-3 py-1.5 rounded-lg border border-[#1e1e2e] text-[#94a3b8] hover:text-[#f1f5f9] hover:border-[#3b82f6]/50 transition-colors"
+                          >
+                            Usar
+                          </button>
+                        )}
+                        <button
+                          onClick={() => startEdit(b)}
+                          className="p-2 rounded-lg text-[#94a3b8] hover:text-[#f1f5f9] hover:bg-[#1e1e2e]"
+                          title="Editar"
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => remove(b)}
+                          className="p-2 rounded-lg text-[#94a3b8] hover:text-[#f43f5e] hover:bg-[#1e1e2e]"
+                          title="Borrar"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+
+              {(me?.brands ?? []).length === 0 && !creating && (
+                <div className="rounded-xl border border-dashed border-[#1e1e2e] bg-[#0d0d14] p-12 text-center">
+                  <Store className="w-10 h-10 text-[#334155] mx-auto mb-4" />
+                  <p className="text-[#f1f5f9] font-medium">Aún no tienes marcas</p>
+                  <button
+                    onClick={startCreate}
+                    className="mt-4 inline-flex items-center gap-2 text-sm px-4 py-2 rounded-lg gradient-blue text-white font-medium"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Crear mi primera marca
+                  </button>
+                </div>
+              )}
+
+              {error && !creating && !editingId && (
+                <p className="text-xs text-[#f43f5e]">{error}</p>
+              )}
+            </div>
+          )}
+
+          <div className="mt-8 rounded-xl border border-[#1e1e2e] bg-[#0d0d14] p-4">
+            <p className="text-xs text-[#94a3b8] leading-relaxed">
+              💡 El <span className="text-[#f1f5f9]">producto, tono y paleta</span> de la marca se
+              usan para que las variantes que genera AdDNA suenen y se vean como tu marca — no
+              genéricas.
+            </p>
+          </div>
+        </div>
+      </section>
+    </main>
+  );
+}
