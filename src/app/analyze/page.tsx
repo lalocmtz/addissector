@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { ArrowLeft, Scan, Loader2 } from 'lucide-react';
 import AnalysisResults from '@/components/AnalysisResults';
+import CloneStudio from '@/components/CloneStudio';
 import SimpleResults, { type ReplicaVariant } from '@/components/SimpleResults';
 import { ensureVideoInterpretation } from '@/lib/interpretation';
 import { getStoredActiveBrandId } from '@/lib/use-me';
@@ -44,6 +45,7 @@ export default function AnalyzePage() {
   const [isGeneratingVariants, setIsGeneratingVariants] = useState(false);
   const [isGeneratingCross, setIsGeneratingCross] = useState(false);
   const [activeKey, setActiveKey] = useState<string>('');
+  const [creativeId, setCreativeId] = useState<string | null>(null);
 
   useEffect(() => {
     // Reopen a saved creative from the library: /analyze?id=<uuid>
@@ -61,6 +63,7 @@ export default function AnalyzePage() {
           const name = data.name || 'Creativo';
           setResults(new Map([[name, analysis]]));
           setActiveKey(name);
+          setCreativeId(id);
         })
         .catch(() => router.push('/biblioteca'))
         .finally(() => setLoading(false));
@@ -280,6 +283,22 @@ export default function AnalyzePage() {
                 isGeneratingCross={isGeneratingCross}
               />
             </SimpleResults>
+
+            {/* Estudio de clonación: de la variante al video UGC generado */}
+            <div className="mt-6">
+              <CloneStudio
+                analysis={active as unknown as Record<string, unknown>}
+                creativeType="video"
+                creativeId={creativeId}
+                variantOptions={[
+                  { value: null, label: 'Fiel al original (con persona nueva)' },
+                  ...(active.script_variants ?? []).map((v) => ({
+                    value: v.variant_number,
+                    label: `Variante ${v.variant_number} — ${v.scenario}`,
+                  })),
+                ]}
+              />
+            </div>
           </motion.div>
         </div>
       </section>

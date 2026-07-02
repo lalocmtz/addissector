@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { ArrowLeft, Scan, Loader2 } from 'lucide-react';
+import CloneStudio from '@/components/CloneStudio';
 import ImageAnalysisResults from '@/components/ImageAnalysisResults';
 import SimpleResults, { type ReplicaVariant } from '@/components/SimpleResults';
 import { ensureImageInterpretation } from '@/lib/interpretation';
@@ -37,6 +38,7 @@ export default function AnalyzeImagePage() {
   const [results, setResults] = useState<Map<string, Entry>>(new Map());
   const [loading, setLoading] = useState(true);
   const [activeKey, setActiveKey] = useState('');
+  const [creativeId, setCreativeId] = useState<string | null>(null);
 
   useEffect(() => {
     // Reopen a saved image creative from the library: /analyze-image?id=<uuid>
@@ -51,6 +53,7 @@ export default function AnalyzeImagePage() {
             new Map([[name, normalizeEntry({ analysis, previewUrl: data.preview_url ?? null })]])
           );
           setActiveKey(name);
+          setCreativeId(id);
         })
         .catch(() => router.push('/biblioteca'))
         .finally(() => setLoading(false));
@@ -166,6 +169,22 @@ export default function AnalyzeImagePage() {
               {/* Capa 3 — análisis completo con los componentes existentes */}
               <ImageAnalysisResults results={results} />
             </SimpleResults>
+
+            {/* Estudio de clonación: de la variante al video UGC generado */}
+            <div className="mt-6">
+              <CloneStudio
+                analysis={active.analysis as unknown as Record<string, unknown>}
+                creativeType="image"
+                creativeId={creativeId}
+                variantOptions={[
+                  { value: null, label: 'Fiel al original (con persona nueva)' },
+                  ...(active.analysis.replication?.variants ?? []).map((v) => ({
+                    value: v.variant_number,
+                    label: `Variante ${v.variant_number} — ${v.angle}`,
+                  })),
+                ]}
+              />
+            </div>
           </motion.div>
         </div>
       </section>

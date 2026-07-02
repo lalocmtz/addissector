@@ -4,14 +4,157 @@
 // AdDNA — /app/marcas: CRUD de marcas/workspaces (nombre + contexto de marca).
 // =============================================================================
 
-import { useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import {
-  Loader2, Plus, Pencil, Trash2, Check, X, ArrowRight, Store,
+  Loader2, Plus, Pencil, Trash2, Check, X, ArrowRight, Store, Camera, ImagePlus,
 } from 'lucide-react';
 import Link from 'next/link';
 import AppHeader from '@/components/AppHeader';
 import { useMe, type BrandRow } from '@/lib/use-me';
+
+interface BrandAsset {
+  id: string;
+  kind: string;
+  url: string;
+  created_at: string;
+}
+
+/** Reduce la foto a 1024px máx y la convierte a JPEG dataURL. */
+function fileToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const scale = Math.min(1, 1024 / Math.max(img.naturalWidth, img.naturalHeight));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(img.naturalWidth * scale);
+      canvas.height = Math.round(img.naturalHeight * scale);
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return reject(new Error('Canvas no disponible'));
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      resolve(canvas.toDataURL('image/jpeg', 0.88));
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error('No se pudo leer la imagen'));
+    };
+    img.src = url;
+  });
+}
+
+/** Fotos de producto de la marca activa (referencias para la clonación con IA). */
+function BrandAssetsSection({ brand }: { brand: BrandRow }) {
+  const [assets, setAssets] = useState<BrandAsset[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const load = useCallback(() => {
+    fetch(`/api/brands/${brand.id}/assets`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => d?.assets && setAssets(d.assets))
+      .catch(() => {});
+  }, [brand.id]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const upload = async (file: File) => {
+    setUploading(true);
+    setError(null);
+    try {
+      const dataUrl = await fileToDataUrl(file);
+      const res = await fetch(`/api/brands/${brand.id}/assets`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dataUrl, kind: 'product' }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'No se pudo subir');
+      setAssets((prev) => [data.asset, ...prev]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'No se pudo subir la foto');
+    } finally {
+      setUploading(false);
+      if (inputRef.current) inputRef.current.value = '';
+    }
+  };
+
+  const remove = async (asset: BrandAsset) => {
+    setAssets((prev) => prev.filter((a) => a.id !== asset.id));
+    try {
+      await fetch(`/api/brands/${brand.id}/assets?asset=${asset.id}`, { method: 'DELETE' });
+    } catch {
+      load();
+    }
+  };
+
+  return (
+    <div className="mt-8 rounded-2xl border border-[#1e1e2e] bg-[#111118] p-5">
+      <div className="flex items-center gap-2 mb-1">
+        <Camera className="w-4 h-4 text-[#f59e0b]" />
+        <h2 className="text-sm font-semibold">Fotos de producto · {brand.name}</h2>
+      </div>
+      <p className="text-xs text-[#94a3b8] mb-4 leading-relaxed">
+        Sube 1-3 fotos claras de tu producto (fondo simple, empaque legible). El estudio de
+        clonación las usa para que en las imágenes y videos generados salga TU producto exacto,
+        no uno inventado.
+      </p>
+
+      <div className="flex flex-wrap gap-3">
+        {assets.map((a) => (
+          <div key={a.id} className="relative group">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={a.url}
+              alt="Producto"
+              className="w-24 h-24 object-cover rounded-xl border border-[#1e1e2e]"
+            />
+            <button
+              onClick={() => remove(a)}
+              className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-[#0a0a0f] border border-[#1e1e2e] text-[#94a3b8] hover:text-[#f43f5e] opacity-0 group-hover:opacity-100 transition flex items-center justify-center"
+              aria-label="Eliminar foto"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        ))}
+
+        {assets.length < 3 && (
+          <button
+            onClick={() => inputRef.current?.click()}
+            disabled={uploading}
+            className="w-24 h-24 rounded-xl border border-dashed border-[#2e2e42] text-[#64748b] hover:border-[#f59e0b]/50 hover:text-[#f59e0b] transition flex flex-col items-center justify-center gap-1 disabled:opacity-50"
+          >
+            {uploading ? (
+              <Loader2 className="w-5 h-5 animate-spin" />
+            ) : (
+              <ImagePlus className="w-5 h-5" />
+            )}
+            <span className="text-[10px]">Subir foto</span>
+          </button>
+        )}
+      </div>
+
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/png,image/jpeg,image/webp"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) upload(f);
+        }}
+      />
+      {error && <p className="text-xs text-[#f43f5e] mt-2">{error}</p>}
+    </div>
+  );
+}
 
 interface BrandFormState {
   name: string;
@@ -288,6 +431,8 @@ export default function MarcasPage() {
               )}
             </div>
           )}
+
+          {activeBrand && <BrandAssetsSection brand={activeBrand} />}
 
           <div className="mt-8 rounded-xl border border-[#1e1e2e] bg-[#0d0d14] p-4">
             <p className="text-xs text-[#94a3b8] leading-relaxed">
