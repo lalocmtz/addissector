@@ -210,7 +210,13 @@ Segments:
 ${segmentsText}
 
 ## INSTRUCTIONS
-Analyze the following video frames along with the transcript above. Return your analysis as a JSON object matching the exact schema specified in your system prompt. Include ALL 6 blocks: structural_analysis, dashboard, psychological_analysis (el más profundo y accionable), original_script + script_variants, seedance_segments, replication_plan.`;
+Analyze the following video frames along with the transcript above. Return your analysis as a JSON object matching the exact schema specified in your system prompt. Include ALL 6 blocks: structural_analysis, dashboard, psychological_analysis (el más profundo y accionable), original_script + script_variants, seedance_segments, replication_plan.
+
+## LÍMITE DE TAMAÑO (crítico — la respuesta debe generarse en menos de 4 minutos)
+- seedance_segments: máximo 3 segmentos (agrupa el video en 3 bloques si es más largo) y UNA sola variante por segmento (variants con 1 elemento).
+- Transcripciones dentro de los prompts Seedance: compactas (agrupa líneas cercanas).
+- dashboard.visual_frames: máximo 5 frames.
+- No sacrifiques psychological_analysis, la interpretación simple (verdict/recipe/signals) ni script_variants: esos son prioridad.`;
 
     const contentArray: Anthropic.ContentBlockParam[] = [
       { type: 'text', text: textPreamble },
@@ -235,7 +241,7 @@ Analyze the following video frames along with the transcript above. Return your 
 
     const response = await client.messages.create({
       model: 'claude-sonnet-4-6',
-      max_tokens: 16000,
+      max_tokens: 11000,
       system: DISSECTOR_SYSTEM_PROMPT,
       messages: [{ role: 'user', content: contentArray }],
     });
