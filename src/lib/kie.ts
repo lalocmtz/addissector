@@ -7,14 +7,17 @@ const KIE_API = 'https://api.kie.ai';
 
 export const KIE_MODELS = {
   image: 'nano-banana-pro',
-  video: 'bytedance/seedance-2-fast',
+  video: 'bytedance/seedance-1.5-pro',
 } as const;
 
 // Estimaciones de costo en USD para mostrar ANTES de generar (el saldo real
 // viene de la API de créditos). Ajustables sin tocar el resto del código.
+// Precios verificados en kie.ai/pricing (jul 2026):
+//  - nano-banana-pro 1K: 18 créditos ≈ $0.09
+//  - seedance-1.5-pro con audio 720p: 7 créditos/seg = $0.035/seg
 export const COST_ESTIMATES = {
-  imageUsd: 0.1,          // Nano Banana Pro 1K
-  videoPerSecondUsd: 0.06, // Seedance 2.0 Fast 720p aprox
+  imageUsd: 0.09,
+  videoPerSecondUsd: 0.035,
 };
 
 export function isKieConfigured(): boolean {
@@ -77,23 +80,24 @@ export async function createImageTask(opts: {
   return data.taskId;
 }
 
-/** Video con Seedance 2.0 Fast animando una imagen (primer frame). */
+/** Video con Seedance 1.5 Pro animando una imagen (con voz opcional). */
 export async function createVideoTask(opts: {
   prompt: string;
   firstFrameUrl: string;
-  durationSeconds: number; // 4-15
+  durationSeconds: number; // 4-12
   generateAudio: boolean;
 }): Promise<string> {
-  const duration = Math.max(4, Math.min(15, Math.round(opts.durationSeconds)));
+  const duration = Math.max(4, Math.min(12, Math.round(opts.durationSeconds)));
   const data = await kiePost<{ taskId: string }>('/api/v1/jobs/createTask', {
     model: KIE_MODELS.video,
     input: {
       prompt: opts.prompt,
-      first_frame_url: opts.firstFrameUrl,
+      input_urls: [opts.firstFrameUrl],
       generate_audio: opts.generateAudio,
       resolution: '720p', // 1080p cuesta el doble; 720p es el estándar del curso
       aspect_ratio: '9:16',
-      duration,
+      duration: String(duration),
+      fixed_lens: false,
     },
   });
   return data.taskId;
