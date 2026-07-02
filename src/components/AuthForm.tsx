@@ -116,7 +116,12 @@ export default function AuthForm({ mode }: AuthFormProps) {
       });
       if (err) throw err;
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'No se pudo iniciar con Google.');
+      const message = err instanceof Error ? err.message : '';
+      setError(
+        /not enabled|unsupported provider|validation_failed/i.test(message)
+          ? 'El acceso con Google aún no está habilitado. Por ahora entra con tu correo y contraseña.'
+          : 'No se pudo iniciar con Google. Intenta con tu correo y contraseña.'
+      );
       setGoogleLoading(false);
     }
   };

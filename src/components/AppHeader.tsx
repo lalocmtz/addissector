@@ -159,13 +159,15 @@ export default function AppHeader({ me, activeBrand, onBrandChange }: AppHeaderP
           >
             <Settings className="w-4 h-4" />
           </Link>
-          <Link
-            href="/logout"
-            className="p-2 rounded-lg text-[#94a3b8] hover:text-[#f43f5e] hover:bg-[#1e1e2e] transition-colors"
-            title="Cerrar sesión"
-          >
-            <LogOut className="w-4 h-4" />
-          </Link>
+          <form action="/logout" method="POST">
+            <button
+              type="submit"
+              className="p-2 rounded-lg text-[#94a3b8] hover:text-[#f43f5e] hover:bg-[#1e1e2e] transition-colors"
+              title="Cerrar sesión"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
+          </form>
           <Link
             href="/biblioteca"
             className="md:hidden p-2 rounded-lg text-[#94a3b8] hover:text-[#f1f5f9]"

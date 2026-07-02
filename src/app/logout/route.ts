@@ -4,9 +4,11 @@ import { createServerClient, isAuthConfigured } from '@/lib/supabase-server';
 export const runtime = 'nodejs';
 
 // ---------------------------------------------------------------------------
-// POST /logout (y GET para enlaces simples) — cierra la sesión.
+// POST /logout — cierra la sesión.
+// IMPORTANTE: solo POST. Un GET aquí es peligroso: Next.js prefetchea los
+// <Link>, y un GET que cierra sesión desconecta al usuario al cargar la página.
 // ---------------------------------------------------------------------------
-async function handleLogout(request: NextRequest) {
+export async function POST(request: NextRequest) {
   if (isAuthConfigured()) {
     try {
       const supabase = await createServerClient();
@@ -15,13 +17,10 @@ async function handleLogout(request: NextRequest) {
       /* la sesión ya no existía */
     }
   }
-  return NextResponse.redirect(new URL('/', request.url));
+  return NextResponse.redirect(new URL('/', request.url), { status: 303 });
 }
 
-export async function POST(request: NextRequest) {
-  return handleLogout(request);
-}
-
+// GET inofensivo: alguien que visite /logout directo solo vuelve al inicio.
 export async function GET(request: NextRequest) {
-  return handleLogout(request);
+  return NextResponse.redirect(new URL('/', request.url));
 }

@@ -201,11 +201,11 @@ export default function CuentaPage() {
                   </div>
                   <div>
                     <span className="text-[10px] uppercase tracking-wide text-[#64748b]">Sesión</span>
-                    <p className="text-sm mt-0.5">
-                      <Link href="/logout" className="text-[#f43f5e] hover:underline">
+                    <form action="/logout" method="POST" className="text-sm mt-0.5">
+                      <button type="submit" className="text-[#f43f5e] hover:underline">
                         Cerrar sesión
-                      </Link>
-                    </p>
+                      </button>
+                    </form>
                   </div>
                 </div>
               </div>
