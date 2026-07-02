@@ -48,6 +48,50 @@ function extractMediaType(dataUrl: string): string {
   return match ? match[1] : 'image/jpeg';
 }
 
+/**
+ * Repara un JSON truncado (respuesta cortada por max_tokens): cierra strings,
+ * elimina la última propiedad incompleta y balancea llaves/corchetes.
+ */
+function repairTruncatedJson(raw: string): unknown {
+  const start = raw.indexOf('{');
+  if (start === -1) throw new Error('Sin JSON en la respuesta');
+  let s = raw.slice(start);
+
+  // Recorre calculando la pila de aperturas y si terminamos dentro de un string.
+  const scan = (str: string) => {
+    const stack: string[] = [];
+    let inString = false;
+    let escaped = false;
+    for (const ch of str) {
+      if (escaped) { escaped = false; continue; }
+      if (ch === '\\') { escaped = true; continue; }
+      if (ch === '"') { inString = !inString; continue; }
+      if (inString) continue;
+      if (ch === '{' || ch === '[') stack.push(ch);
+      else if (ch === '}' || ch === ']') stack.pop();
+    }
+    return { stack, inString };
+  };
+
+  for (let attempt = 0; attempt < 40; attempt++) {
+    const { stack, inString } = scan(s);
+    let candidate = s;
+    if (inString) candidate += '"';
+    for (let i = stack.length - 1; i >= 0; i--) {
+      candidate += stack[i] === '{' ? '}' : ']';
+    }
+    try {
+      return JSON.parse(candidate);
+    } catch {
+      // Recorta hasta el último separador para descartar el fragmento incompleto.
+      const cut = Math.max(s.lastIndexOf(','), s.lastIndexOf('{'), s.lastIndexOf('['));
+      if (cut <= 0) break;
+      s = s.slice(0, cut);
+    }
+  }
+  throw new Error('Could not parse JSON from response');
+}
+
 function parseJsonFromText(text: string): unknown {
   try {
     return JSON.parse(text);
@@ -65,7 +109,8 @@ function parseJsonFromText(text: string): unknown {
         return JSON.parse(text.slice(firstBrace, lastBrace + 1));
       } catch { /* fall through */ }
     }
-    throw new Error('Could not parse JSON from response');
+    // Último recurso: reparar truncamiento (respuesta cortada por max_tokens).
+    return repairTruncatedJson(text);
   }
 }
 
@@ -212,10 +257,11 @@ ${segmentsText}
 ## INSTRUCTIONS
 Analyze the following video frames along with the transcript above. Return your analysis as a JSON object matching the exact schema specified in your system prompt. Include ALL 6 blocks: structural_analysis, dashboard, psychological_analysis (el más profundo y accionable), original_script + script_variants, seedance_segments, replication_plan.
 
-## LÍMITE DE TAMAÑO (crítico — la respuesta debe generarse en menos de 4 minutos)
-- seedance_segments: máximo 3 segmentos (agrupa el video en 3 bloques si es más largo) y UNA sola variante por segmento (variants con 1 elemento).
-- Transcripciones dentro de los prompts Seedance: compactas (agrupa líneas cercanas).
+## LÍMITE DE TAMAÑO (crítico — la respuesta completa debe caber en ~13000 tokens)
+- structural_analysis.transcription: máximo 12 filas (agrupa frases cercanas en una fila).
+- seedance_segments: máximo 3 segmentos (agrupa el video en 3 bloques si es más largo) y UNA sola variante por segmento. Dentro de cada prompt Seedance usa un resumen del diálogo (3-4 filas), NO la tabla completa.
 - dashboard.visual_frames: máximo 5 frames.
+- Sé conciso en todos los strings largos. CIERRA SIEMPRE el JSON completo.
 - No sacrifiques psychological_analysis, la interpretación simple (verdict/recipe/signals) ni script_variants: esos son prioridad.`;
 
     const contentArray: Anthropic.ContentBlockParam[] = [
@@ -241,7 +287,7 @@ Analyze the following video frames along with the transcript above. Return your 
 
     const response = await client.messages.create({
       model: 'claude-sonnet-4-6',
-      max_tokens: 11000,
+      max_tokens: 14000,
       system: DISSECTOR_SYSTEM_PROMPT,
       messages: [{ role: 'user', content: contentArray }],
     });
