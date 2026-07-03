@@ -129,6 +129,7 @@ export async function buildGenerationPlan(opts: {
   variantNumber: number | null; // null = recreación fiel con persona nueva
   brand: { name?: string; tone?: string | null; palette?: string | null; product?: string | null } | null;
   hasProductReference: boolean;
+  brandDocsContext?: string;
 }): Promise<GenerationPlan> {
   const apiKey = process.env.MY_ANTHROPIC_KEY || process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error('ANTHROPIC_API_KEY no está configurada');
@@ -140,7 +141,7 @@ ${JSON.stringify(condenseAnalysis(opts.analysis), null, 1)}
 
 CONTEXTO DE LA MARCA:
 ${JSON.stringify(opts.brand ?? {}, null, 1)}
-
+${opts.brandDocsContext ? `\nCONTEXTO ADICIONAL (documentos de la marca):\n${opts.brandDocsContext}\n` : ''}
 REFERENCIAS DISPONIBLES: ${
     opts.hasProductReference
       ? 'SÍ hay fotos del producto real — ancla el producto a la referencia (regla 3).'
@@ -183,59 +184,63 @@ Selecciona el arquetipo V4 óptimo y genera el plan JSON.`;
 // Nano Banana imagen → Seedance animación corta, clips cortos apilados)
 // ---------------------------------------------------------------------------
 
-const SCRATCH_SYSTEM_PROMPT = `Eres el motor "Crear de 0" de AdDNA: conviertes una descripción breve de producto en un paquete de ESCENAS B-ROLL cortas (5 segundos, SIN diálogo) listas para generar con IA (Nano Banana Pro → Seedance). Método probado: clips cortos y realistas apilados esconden la IA mejor que un clip largo.
+const SCRATCH_SYSTEM_PROMPT = `Eres el motor de B-ROLL STORYTELLING de AdDNA: conviertes una HISTORIA descrita por el usuario en una secuencia de escenas b-roll de 5 segundos (SIN diálogo) que la CUENTAN en orden, listas para generar con IA (Nano Banana Pro → Seedance) y ensamblar en CapCut sobre el guion/voz del usuario.
 
-REGLAS (del framework V4):
-1. Cada escena = UNA acción simple y continua de 5 segundos. Nada complejo.
-2. Estilo iPhone real: luz imperfecta, ambientes vividos (recámara, baño, cocina, gym, coche), leve film grain. PROHIBIDO estudio/editorial/golden hour.
-3. PRODUCTO EXACTO: cada image_prompt incluye literalmente "the EXACT same product as shown in the reference images — same container, same label, same colors and text. Do not redesign the packaging."
-4. MANOS SEGURAS: movimientos lentos y simples — sostener, acercar a cámara, aplicar con dedos relajados. Nunca dedos contando, ni manipulación compleja, ni manos pegadas al lente.
-5. MOTION: "natural movement", hand jitter suave, sin zooms ni paneos grandes. La acción de 5s debe ser UN gesto (acercar el bote, aplicar en mejilla, tomar una gomita, girar el producto sobre la mesa).
-6. Mezcla de tipos de escena (elige las mejores para el producto): (a) hero del producto sobre superficie real, (b) persona sosteniéndolo/acercándolo a cámara estilo selfie, (c) aplicándolo/usándolo, (d) tomándolo/consumiéndolo, (e) close-up POV en mano, (f) contexto lifestyle (bolsa del gym, buró, tocador).
-7. Si el usuario describe a la persona (edad, look, "más natural" o "más influencer"), respétalo. Default: persona creíble de calle, no modelo.
-8. Prompts en INGLÉS, títulos en español.
+PRINCIPIO NARRATIVO (lo más importante): las escenas NO son tomas sueltas — son los beats de una historia con arco: situación/dolor → detonante → encuentro con el producto → uso → resolución/nueva identidad. La MISMA protagonista (o protagonista + producto) debe describirse de forma CONSISTENTE en todas las escenas (misma edad, look, ropa coherente con el momento de la historia) para poder usar la misma imagen de referencia entre escenas.
 
-Responde ÚNICAMENTE con este JSON:
+REGLAS V4:
+1. Cada escena = UN beat narrativo con UNA acción simple y continua de 5 segundos. La suma de escenas cuenta la historia completa en el orden dado.
+2. Estilo iPhone real: luz imperfecta, ambientes vividos y coherentes con la historia (baño con toalla puesta, gym con espejos sucios, recámara desordenada), leve film grain. PROHIBIDO estudio/editorial/golden hour.
+3. PRODUCTO EXACTO: cuando el producto aparezca, el image_prompt incluye literalmente "the EXACT same product as shown in the reference images — same container, same label, same colors and text. Do not redesign the packaging." No todas las escenas necesitan producto: los beats de dolor/emoción suelen NO tenerlo.
+4. EMOCIÓN VISIBLE Y REAL: si la historia lo pide (llorar frente al espejo, frustración, alivio), descríbela con contención realista — ojos vidriosos, exhalar, mirada baja — nunca teatral.
+5. MANOS SEGURAS: gestos lentos y simples. Nunca dedos contando, manipulación compleja ni manos pegadas al lente.
+6. MOTION: "natural movement", hand jitter suave, sin zooms ni paneos grandes. Un solo gesto por clip.
+7. Si el usuario describe a la persona, respétala. Default: persona creíble de calle, no modelo.
+8. Prompts en INGLÉS, títulos y racional en español.
+
+Responde ÚNICAMENTE con este JSON (una escena por beat, en orden narrativo):
 {
   "scenes": [
     {
-      "variant_label": "<título corto en español, ej. 'Escena 1 — Hero en el tocador'>",
-      "image_prompt": "<prompt Nano Banana: frame pausado de la escena, 9:16, sin bloque iPhone (se añade solo), máx ~90 palabras>",
+      "variant_label": "<'Escena N — <beat>' en español, ej. 'Escena 1 — El dolor frente al espejo'>",
+      "image_prompt": "<prompt Nano Banana: frame pausado del beat, 9:16, sin bloque iPhone (se añade solo), máx ~90 palabras, protagonista consistente entre escenas>",
       "motion_prompt": "<prompt Seedance: la acción única de 5s con movimiento natural, sin bloque de movimiento (se añade solo)>",
       "spoken_script": "",
       "duration_seconds": 5,
       "generate_audio": false,
-      "rationale": "<1 frase: para qué sirve esta escena en el anuncio>"
+      "rationale": "<1 frase: qué cuenta este beat dentro de la historia>"
     }
   ]
 }`;
 
-/** Genera 4-6 escenas b-roll a partir de la descripción del usuario. */
+/** Genera escenas b-roll que cuentan una historia. sceneCount = duración/5. */
 export async function buildScratchScenes(opts: {
   description: string;
   brand: { name?: string; tone?: string | null; palette?: string | null; product?: string | null } | null;
   hasProductReference: boolean;
   sceneCount?: number;
+  brandDocsContext?: string;
 }): Promise<GenerationPlan[]> {
   const apiKey = process.env.MY_ANTHROPIC_KEY || process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error('ANTHROPIC_API_KEY no está configurada');
   const client = new Anthropic({ apiKey });
-  const count = Math.max(3, Math.min(6, opts.sceneCount ?? 5));
+  const count = Math.max(3, Math.min(9, opts.sceneCount ?? 5));
 
   const response = await client.messages.create({
     model: 'claude-sonnet-4-6',
-    max_tokens: 2500,
+    max_tokens: 3500,
     system: SCRATCH_SYSTEM_PROMPT,
     messages: [
       {
         role: 'user',
-        content: `DESCRIPCIÓN DEL USUARIO (producto y cómo quiere el anuncio):
+        content: `HISTORIA QUE QUIERE CONTAR EL USUARIO (producto + narrativa):
 ${opts.description}
 
 MARCA: ${JSON.stringify(opts.brand ?? {})}
+${opts.brandDocsContext ? `\nCONTEXTO DE MARCA (de sus documentos — úsalo para dolores, avatar y tono):\n${opts.brandDocsContext}\n` : ''}
 REFERENCIAS DE PRODUCTO: ${opts.hasProductReference ? 'SÍ hay fotos reales — ancla el producto (regla 3).' : 'NO hay fotos — describe el producto solo por la descripción, sin inventar textos de etiqueta.'}
 
-Genera exactamente ${count} escenas.`,
+Duración total del video: ${count * 5} segundos → genera exactamente ${count} escenas (beats) en orden narrativo.`,
       },
     ],
   });
@@ -243,7 +248,7 @@ Genera exactamente ${count} escenas.`,
   const textBlock = response.content.find((b) => b.type === 'text');
   if (!textBlock || textBlock.type !== 'text') throw new Error('El planificador no respondió');
   const parsed = parseJsonFromText(textBlock.text) as { scenes: GenerationPlan[] };
-  const scenes = (parsed.scenes ?? []).slice(0, 6).map((s) => ({
+  const scenes = (parsed.scenes ?? []).slice(0, 9).map((s) => ({
     ...s,
     spoken_script: s.spoken_script ?? '',
     duration_seconds: 5,

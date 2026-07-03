@@ -15,6 +15,7 @@ interface Body {
   description: string;
   brandId?: string | null;
   sceneCount?: number;
+  durationSeconds?: number; // total: escenas = duración / 5
 }
 
 export async function POST(request: NextRequest) {
@@ -33,20 +34,28 @@ export async function POST(request: NextRequest) {
     const sb = getSupabase();
     let brand = null;
     let hasProductReference = false;
+    let brandDocsContext = '';
     if (body.brandId) {
-      const [{ data: b }, { count }] = await Promise.all([
+      const [{ data: b }, { count }, { data: docs }] = await Promise.all([
         sb.from('brands').select('name,tone,palette,product').eq('id', body.brandId).eq('user_id', user.id).maybeSingle(),
         sb.from('brand_assets').select('id', { count: 'exact', head: true }).eq('brand_id', body.brandId).eq('user_id', user.id),
+        sb.from('brand_docs').select('extracted_text').eq('brand_id', body.brandId).eq('user_id', user.id).limit(3),
       ]);
       brand = b ?? null;
       hasProductReference = (count ?? 0) > 0;
+      brandDocsContext = (docs ?? []).map((d) => d.extracted_text).filter(Boolean).join('\n---\n').slice(0, 6000);
     }
+
+    const sceneCount = body.durationSeconds
+      ? Math.round(body.durationSeconds / 5)
+      : body.sceneCount;
 
     const scenes = await buildScratchScenes({
       description: body.description.trim(),
       brand,
       hasProductReference,
-      sceneCount: body.sceneCount,
+      sceneCount,
+      brandDocsContext,
     });
 
     return NextResponse.json({ scenes, hasProductReference });

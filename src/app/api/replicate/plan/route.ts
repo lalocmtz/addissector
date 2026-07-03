@@ -36,13 +36,16 @@ export async function POST(request: NextRequest) {
     // Contexto de marca + si hay fotos de producto de referencia
     let brand: { name?: string; tone?: string | null; palette?: string | null; product?: string | null } | null = null;
     let hasProductReference = false;
+    let brandDocsContext = '';
     if (body.brandId) {
-      const [{ data: b }, { count }] = await Promise.all([
+      const [{ data: b }, { count }, { data: docs }] = await Promise.all([
         sb.from('brands').select('name,tone,palette,product').eq('id', body.brandId).eq('user_id', user.id).maybeSingle(),
         sb.from('brand_assets').select('id', { count: 'exact', head: true }).eq('brand_id', body.brandId).eq('user_id', user.id),
+        sb.from('brand_docs').select('extracted_text').eq('brand_id', body.brandId).eq('user_id', user.id).limit(3),
       ]);
       brand = b ?? null;
       hasProductReference = (count ?? 0) > 0;
+      brandDocsContext = (docs ?? []).map((d) => d.extracted_text).filter(Boolean).join('\n---\n').slice(0, 6000);
     }
 
     const plan = await buildGenerationPlan({
@@ -51,6 +54,7 @@ export async function POST(request: NextRequest) {
       variantNumber: body.variantNumber ?? null,
       brand,
       hasProductReference,
+      brandDocsContext,
     });
 
     return NextResponse.json({ plan });

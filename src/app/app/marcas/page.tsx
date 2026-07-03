@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import {
-  Loader2, Plus, Pencil, Trash2, Check, X, ArrowRight, Store, Camera, ImagePlus,
+  Loader2, Plus, Pencil, Trash2, Check, X, ArrowRight, Store, Camera, ImagePlus, FileText,
 } from 'lucide-react';
 import Link from 'next/link';
 import AppHeader from '@/components/AppHeader';
@@ -44,6 +44,116 @@ function fileToDataUrl(file: File): Promise<string> {
     };
     img.src = url;
   });
+}
+
+/** Documentos de la marca (PDF/TXT): se destilan con IA y alimentan todos los planners. */
+function BrandDocsSection({ brand }: { brand: BrandRow }) {
+  const [docs, setDocs] = useState<Array<{ id: string; filename: string; created_at: string }>>([]);
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const load = useCallback(() => {
+    fetch(`/api/brands/${brand.id}/docs`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => d?.docs && setDocs(d.docs))
+      .catch(() => {});
+  }, [brand.id]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const upload = async (file: File) => {
+    if (file.size > 8 * 1024 * 1024) {
+      setError('El archivo supera 8 MB');
+      return;
+    }
+    setUploading(true);
+    setError(null);
+    try {
+      const buf = await file.arrayBuffer();
+      let binary = '';
+      const bytes = new Uint8Array(buf);
+      for (let i = 0; i < bytes.length; i += 8192) {
+        binary += String.fromCharCode(...bytes.subarray(i, i + 8192));
+      }
+      const res = await fetch(`/api/brands/${brand.id}/docs`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          filename: file.name,
+          dataBase64: btoa(binary),
+          mime: file.type || 'text/plain',
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'No se pudo procesar');
+      setDocs((p) => [data.doc, ...p]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'No se pudo procesar el documento');
+    } finally {
+      setUploading(false);
+      if (inputRef.current) inputRef.current.value = '';
+    }
+  };
+
+  const remove = async (docId: string) => {
+    setDocs((p) => p.filter((d) => d.id !== docId));
+    await fetch(`/api/brands/${brand.id}/docs?doc=${docId}`, { method: 'DELETE' });
+  };
+
+  return (
+    <div className="mt-6 rounded-2xl border border-[#1e1e2e] bg-[#111118] p-5">
+      <div className="flex items-center gap-2 mb-1">
+        <FileText className="w-4 h-4 text-[#8b5cf6]" />
+        <h2 className="text-sm font-semibold">Documentos de contexto · {brand.name}</h2>
+      </div>
+      <p className="text-xs text-[#94a3b8] mb-4 leading-relaxed">
+        Sube PDFs o textos con el contexto de tu marca (brief, avatar, dolores, ofertas, tono).
+        La IA los destila y ese contexto alimenta TODO lo creativo: clonaciones, b-roll y planes.
+      </p>
+
+      <div className="space-y-2">
+        {docs.map((d) => (
+          <div
+            key={d.id}
+            className="flex items-center gap-3 rounded-lg bg-[#0a0a0f] border border-[#1e1e2e] px-3 py-2"
+          >
+            <FileText className="w-4 h-4 text-[#64748b] shrink-0" />
+            <span className="flex-1 text-xs text-[#e2e8f0] truncate">{d.filename}</span>
+            <span className="text-[10px] text-[#475569]">
+              {new Date(d.created_at).toLocaleDateString('es-MX')}
+            </span>
+            <button
+              onClick={() => remove(d.id)}
+              className="text-[#475569] hover:text-[#f43f5e]"
+              aria-label="Eliminar"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        ))}
+      </div>
+
+      <button
+        onClick={() => inputRef.current?.click()}
+        disabled={uploading}
+        className="mt-3 flex items-center gap-2 text-xs px-3 py-2 rounded-lg border border-dashed border-[#2e2e42] text-[#94a3b8] hover:text-[#8b5cf6] hover:border-[#8b5cf6]/50 disabled:opacity-50"
+      >
+        {uploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+        {uploading ? 'Destilando con IA…' : 'Subir documento (PDF, TXT, MD)'}
+      </button>
+      <input
+        ref={inputRef}
+        type="file"
+        accept=".pdf,.txt,.md,application/pdf,text/plain,text/markdown"
+        className="hidden"
+        onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])}
+      />
+      {error && <p className="text-xs text-[#f43f5e] mt-2">{error}</p>}
+    </div>
+  );
 }
 
 /** Fotos de producto de la marca activa (referencias para la clonación con IA). */
@@ -433,6 +543,7 @@ export default function MarcasPage() {
           )}
 
           {activeBrand && <BrandAssetsSection brand={activeBrand} />}
+          {activeBrand && <BrandDocsSection brand={activeBrand} />}
 
           <div className="mt-8 rounded-xl border border-[#1e1e2e] bg-[#0d0d14] p-4">
             <p className="text-xs text-[#94a3b8] leading-relaxed">

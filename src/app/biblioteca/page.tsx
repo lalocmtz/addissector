@@ -176,8 +176,57 @@ export default function BibliotecaPage() {
           {error && configured && (
             <p className="text-xs text-red-400/80 mt-6">{error}</p>
           )}
+
+          {/* Generaciones IA de esta marca */}
+          <GenerationsGallery brandId={activeBrandId} />
         </div>
       </section>
     </main>
+  );
+}
+
+/** Galería de imágenes y videos generados con IA (estudio de clonación / b-roll). */
+function GenerationsGallery({ brandId }: { brandId: string | null }) {
+  const [gens, setGens] = useState<
+    Array<{ id: string; kind: string; result_url: string | null; variant_label: string | null; status: string; created_at: string }>
+  >([]);
+
+  useEffect(() => {
+    const qs = brandId ? `?brand=${brandId}` : '';
+    fetch(`/api/replicate/generations${qs}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => d?.generations && setGens(d.generations.filter((g: { status: string; result_url: string | null }) => g.status === 'success' && g.result_url)))
+      .catch(() => {});
+  }, [brandId]);
+
+  if (gens.length === 0) return null;
+
+  return (
+    <div className="mt-12">
+      <h2 className="text-lg font-bold font-[family-name:var(--font-mono)] tracking-tight mb-1">
+        Generaciones con IA
+      </h2>
+      <p className="text-sm text-[#64748b] mb-5">
+        Imágenes y clips creados en el estudio de clonación y B-roll.
+      </p>
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+        {gens.map((g) => (
+          <div key={g.id} className="rounded-xl border border-[#1e1e2e] bg-[#12121a] overflow-hidden">
+            {g.kind === 'video' ? (
+              <video src={g.result_url!} controls className="w-full aspect-[9/16] object-cover bg-black" />
+            ) : (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={g.result_url!} alt={g.variant_label ?? 'Generación'} className="w-full aspect-[9/16] object-cover" />
+            )}
+            <div className="p-2.5">
+              <p className="text-xs text-[#cbd5e1] truncate">{g.variant_label || (g.kind === 'video' ? 'Video' : 'Imagen')}</p>
+              <p className="text-[10px] text-[#475569] mt-0.5">
+                {new Date(g.created_at).toLocaleDateString('es-MX')}
+              </p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }

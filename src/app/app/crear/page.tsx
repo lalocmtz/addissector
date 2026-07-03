@@ -38,6 +38,7 @@ const CLIP_COST = 0.09; // 5s · 720p sin voz
 export default function CrearPage() {
   const { me, activeBrand, activeBrandId, setActiveBrandId } = useMe();
   const [description, setDescription] = useState('');
+  const [duration, setDuration] = useState(25); // total; cada escena = 5s
   const [planning, setPlanning] = useState(false);
   const [scenes, setScenes] = useState<SceneState[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -104,7 +105,7 @@ export default function CrearPage() {
       const res = await fetch('/api/replicate/scratch-plan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ description, brandId: activeBrandId, sceneCount: 5 }),
+        body: JSON.stringify({ description, brandId: activeBrandId, durationSeconds: duration }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'No se pudieron crear las escenas');
@@ -170,12 +171,12 @@ export default function CrearPage() {
           <div>
             <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
               <Clapperboard className="w-6 h-6 text-[#f59e0b]" />
-              Crear anuncio de 0
+              B-roll · Cuenta una historia
             </h1>
             <p className="text-sm text-[#64748b] mt-1">
-              Sin anuncio ganador: describe tu producto y el sistema arma escenas b-roll de 5
-              segundos (mostrar, aplicar, tomar, close-up). Generas la imagen de cada escena,
-              apruebas y animas. Los clips cortos apilados en CapCut esconden la IA.
+              Describe la HISTORIA de tu anuncio (dolor → descubrimiento → uso → resolución) y el
+              sistema la divide en escenas b-roll de 5 segundos con arco narrativo. Generas la
+              imagen de cada beat, apruebas y animas. Luego las ensamblas en CapCut sobre tu guion.
             </p>
           </div>
 
@@ -218,15 +219,31 @@ export default function CrearPage() {
           {/* Paso 1: descripción */}
           <div className="rounded-2xl border border-[#1e1e2e] bg-[#111118] p-5 space-y-3">
             <p className="text-xs font-semibold text-[#f1f5f9]">
-              Paso 1 · Describe tu producto y cómo quieres el anuncio
+              Paso 1 · Cuenta la historia y elige la duración
             </p>
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              rows={3}
-              placeholder="Ej: Crema aclarante Skinglow en bote rosa. Quiero b-roll estilo UGC: una chica normal de 25-30 en su baño y recámara, mostrando el bote, aplicándola en la cara y axilas, vibe casera de TikTok."
+              rows={4}
+              placeholder="Ej: Historia de una rutina de baño con la crema Skinglow (bote rosa). Una chica normal de 25-30: sale de bañarse con toalla puesta, se ve las manchas de las axilas en el espejo y se frustra… descubre el bote en su tocador, se la aplica con calma, y cierra viéndose segura con los brazos arriba frente al espejo."
               className="w-full px-3 py-2.5 rounded-xl bg-[#0a0a0f] border border-[#1e1e2e] text-sm text-[#e2e8f0] placeholder:text-[#475569] focus:border-[#f59e0b]/60 focus:outline-none resize-y"
             />
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-[10px] uppercase tracking-wide text-[#64748b]">Duración total:</span>
+              {[15, 25, 30, 45].map((d) => (
+                <button
+                  key={d}
+                  onClick={() => setDuration(d)}
+                  className={`text-xs px-3 py-1.5 rounded-lg border transition ${
+                    duration === d
+                      ? 'border-[#f59e0b] text-[#fbbf24] bg-[#f59e0b]/10'
+                      : 'border-[#1e1e2e] text-[#94a3b8] hover:border-[#2e2e42]'
+                  }`}
+                >
+                  {d}s · {d / 5} escenas
+                </button>
+              ))}
+            </div>
             <button
               onClick={buildScenes}
               disabled={planning || !description.trim()}
