@@ -5,7 +5,9 @@ import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { ArrowLeft, Scan, Loader2 } from 'lucide-react';
 import CloneStudio from '@/components/CloneStudio';
+import CopyButton from '@/components/CopyButton';
 import ImageAnalysisResults from '@/components/ImageAnalysisResults';
+import { analysisToClipboardText } from '@/lib/copy-context';
 import SimpleResults, { type ReplicaVariant } from '@/components/SimpleResults';
 import { ensureImageInterpretation } from '@/lib/interpretation';
 import type { ImageAnalysisResult } from '@/lib/analysis-schema';
@@ -156,6 +158,16 @@ export default function AnalyzeImagePage() {
               </div>
             )}
 
+            {/* Copiar todo el contexto del creativo en un clic */}
+            <div className="flex justify-end mb-3">
+              <CopyButton
+                text={analysisToClipboardText(
+                  active.analysis as unknown as Record<string, unknown>,
+                  activeKey || keys[0]
+                )}
+                label="Copiar todo el análisis"
+              />
+            </div>
             <SimpleResults
               verdict={active.analysis.verdict ?? ''}
               overallScore={active.analysis.overall_score ?? 0}

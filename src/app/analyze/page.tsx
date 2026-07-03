@@ -6,6 +6,8 @@ import { motion } from 'framer-motion';
 import { ArrowLeft, Scan, Loader2 } from 'lucide-react';
 import AnalysisResults from '@/components/AnalysisResults';
 import CloneStudio from '@/components/CloneStudio';
+import CopyButton from '@/components/CopyButton';
+import { analysisToClipboardText } from '@/lib/copy-context';
 import SimpleResults, { type ReplicaVariant } from '@/components/SimpleResults';
 import { ensureVideoInterpretation } from '@/lib/interpretation';
 import { getStoredActiveBrandId } from '@/lib/use-me';
@@ -263,6 +265,16 @@ export default function AnalyzePage() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5 }}
           >
+            {/* Copiar todo el contexto del creativo en un clic */}
+            <div className="flex justify-end mb-3">
+              <CopyButton
+                text={analysisToClipboardText(
+                  active as unknown as Record<string, unknown>,
+                  activeKey || keys[0]
+                )}
+                label="Copiar todo el análisis"
+              />
+            </div>
             <SimpleResults
               verdict={active.verdict ?? ''}
               overallScore={active.overall_score ?? 0}
