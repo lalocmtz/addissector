@@ -6,7 +6,7 @@
 
 const KIE_API = 'https://api.kie.ai';
 
-export type VideoQuality = 'sora_pro' | 'sora' | 'seedance';
+export type VideoQuality = 'sora_pro' | 'sora' | 'seedance' | 'broll';
 
 export const KIE_MODELS = {
   image: 'nano-banana-pro',
@@ -14,6 +14,7 @@ export const KIE_MODELS = {
     sora_pro: 'sora-2-pro-image-to-video',
     sora: 'sora-2-image-to-video',
     seedance: 'bytedance/seedance-1.5-pro',
+    broll: 'bytedance/seedance-1.5-pro', // 720p sin audio: b-roll económico
   } as Record<VideoQuality, string>,
 };
 
@@ -26,11 +27,13 @@ export const COST_ESTIMATES = {
     sora_pro: { per10s: 1.4, per15s: 2.1, label: 'Sora 2 Pro · máxima calidad' },
     sora: { per10s: 0.25, per15s: 0.38, label: 'Sora 2 · alta calidad' },
     seedance: { per10s: 0.75, per15s: 1.13, label: 'Seedance 1.5 Pro 1080p' },
+    broll: { per10s: 0.18, per15s: 0.27, label: 'B-roll 720p sin voz' }, // 3.5 cr/s
   },
 };
 
 export function estimateVideoUsd(quality: VideoQuality, seconds: number): number {
   const e = COST_ESTIMATES.video[quality];
+  if (quality === 'broll') return 0.0175 * seconds;
   return seconds <= 10 ? e.per10s : e.per15s;
 }
 
@@ -121,15 +124,16 @@ export async function createVideoTask(opts: {
     return { taskId: data.taskId, model };
   }
 
-  // Seedance 1.5 Pro (1080p con audio)
+  // Seedance 1.5 Pro (seedance = 1080p con audio · broll = 720p sin audio)
   const duration = Math.max(4, Math.min(12, Math.round(opts.durationSeconds)));
+  const isBroll = opts.quality === 'broll';
   const data = await kiePost<{ taskId: string }>('/api/v1/jobs/createTask', {
     model,
     input: {
       prompt: opts.prompt,
       input_urls: [opts.firstFrameUrl],
-      generate_audio: opts.generateAudio,
-      resolution: '1080p',
+      generate_audio: isBroll ? false : opts.generateAudio,
+      resolution: isBroll ? '720p' : '1080p',
       aspect_ratio: '9:16',
       duration: String(duration),
       fixed_lens: false,
