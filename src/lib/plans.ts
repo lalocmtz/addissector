@@ -2,7 +2,7 @@
 // AdDNA — Planes, límites y resolución del plan efectivo del usuario.
 // =============================================================================
 
-export type PlanId = 'trial' | 'starter' | 'growth' | 'scale';
+export type PlanId = 'trial' | 'starter' | 'growth' | 'scale' | 'founder';
 
 export interface PlanLimits {
   analysesPerMonth: number;
@@ -15,6 +15,7 @@ export const PLAN_LIMITS: Record<PlanId, PlanLimits> = {
   starter: { analysesPerMonth: 30,  maxBrands: 1,        label: 'Starter' },
   growth:  { analysesPerMonth: 150, maxBrands: 3,        label: 'Growth' },
   scale:   { analysesPerMonth: 500, maxBrands: Infinity, label: 'Scale' },
+  founder: { analysesPerMonth: Infinity, maxBrands: Infinity, label: 'Founder' },
 };
 
 export interface SubscriptionRow {
@@ -42,7 +43,7 @@ export function currentPeriodStart(): string {
 
 /** Resuelve el plan efectivo a partir de la fila de subscriptions (o null). */
 export function resolveEffectivePlan(sub: SubscriptionRow | null): EffectivePlan {
-  const planId: PlanId = (['trial', 'starter', 'growth', 'scale'] as PlanId[]).includes(
+  const planId: PlanId = (['trial', 'starter', 'growth', 'scale', 'founder'] as PlanId[]).includes(
     (sub?.plan ?? 'trial') as PlanId
   )
     ? ((sub?.plan ?? 'trial') as PlanId)
