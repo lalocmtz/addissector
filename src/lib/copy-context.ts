@@ -152,5 +152,30 @@ export function analysisToClipboardText(analysis: Rec, name?: string): string {
     if (s(rep.design_notes)) out.push(`Notas de diseño (no negociables): ${s(rep.design_notes)}`);
   }
 
+  // Brief destilado para anuncios estáticos (sin ruido de video)
+  const firstSentence = s(analysis.original_script).split(/(?<=[.!?])\s/)[0] || '';
+  const staticBits: string[] = [];
+  if (s(avatar.who)) staticBits.push(`A quién le hablas: ${s(avatar.who)}`);
+  if (s(buyer.core_pain)) staticBits.push(`Dolor a atacar: ${s(buyer.core_pain)}`);
+  if (s(buyer.core_desire)) staticBits.push(`Deseo a prometer: ${s(buyer.core_desire)}`);
+  if (s(buyer.identity_shift)) staticBits.push(`Transformación a vender: ${s(buyer.identity_shift)}`);
+  if (firstSentence) staticBits.push(`Hook probado (adaptable a headline): "${firstSentence}"`);
+  if (arr(pat.power_words).length)
+    staticBits.push(`Power words para el copy: ${arr(pat.power_words).map(s).join(', ')}`);
+  const proof = arr(ws.persuasion_elements).map(s).filter((x) =>
+    /prueba|social|antes|después|reseñ|testimon|número|específic/i.test(x)
+  );
+  if (proof.length) staticBits.push(`Prueba a mostrar visualmente: ${proof.join(', ')}`);
+  const objections = arr(buyer.objections_handled).map(s);
+  if (objections.length) staticBits.push(`Objeción nº1 a neutralizar en el estático: ${objections[0]}`);
+  const offerSig = r(sig.offer);
+  if (s(offerSig.note)) staticBits.push(`Oferta/urgencia: ${s(offerSig.note)}`);
+  if (s(psy.awareness_level))
+    staticBits.push(`Nivel de consciencia del avatar: ${s(psy.awareness_level)} — calibra qué tan directo puede ser el headline`);
+  if (staticBits.length) {
+    out.push(`\n## BRIEF PARA ANUNCIOS ESTÁTICOS (destilado, sin ruido de video)`);
+    out.push(staticBits.map((b) => `- ${b}`).join('\n'));
+  }
+
   return out.filter(Boolean).join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }
