@@ -4,7 +4,7 @@ import { IMAGE_DISSECTOR_SYSTEM_PROMPT } from '@/lib/prompts';
 import { gateAnalysis, recordAnalysisUsage } from '@/lib/usage';
 import { ensureImageInterpretation } from '@/lib/interpretation';
 
-export const maxDuration = 120;
+export const maxDuration = 300;
 
 interface ImageMeta {
   width: number;
@@ -28,6 +28,46 @@ function extractMediaType(dataUrl: string): string {
   return match ? match[1] : 'image/jpeg';
 }
 
+/**
+ * Repara un JSON truncado (respuesta cortada por max_tokens): cierra strings,
+ * elimina la última propiedad incompleta y balancea llaves/corchetes.
+ */
+function repairTruncatedJson(raw: string): unknown {
+  const start = raw.indexOf('{');
+  if (start === -1) throw new Error('Sin JSON en la respuesta');
+  let s = raw.slice(start);
+  const scan = (str: string) => {
+    const stack: string[] = [];
+    let inString = false;
+    let escaped = false;
+    for (const ch of str) {
+      if (escaped) { escaped = false; continue; }
+      if (ch === '\\') { escaped = true; continue; }
+      if (ch === '"') { inString = !inString; continue; }
+      if (inString) continue;
+      if (ch === '{' || ch === '[') stack.push(ch);
+      else if (ch === '}' || ch === ']') stack.pop();
+    }
+    return { stack, inString };
+  };
+  for (let attempt = 0; attempt < 40; attempt++) {
+    const { stack, inString } = scan(s);
+    let candidate = s;
+    if (inString) candidate += '"';
+    for (let i = stack.length - 1; i >= 0; i--) {
+      candidate += stack[i] === '{' ? '}' : ']';
+    }
+    try {
+      return JSON.parse(candidate);
+    } catch {
+      const cut = Math.max(s.lastIndexOf(','), s.lastIndexOf('{'), s.lastIndexOf('['));
+      if (cut <= 0) break;
+      s = s.slice(0, cut);
+    }
+  }
+  throw new Error('Could not parse JSON from response');
+}
+
 function parseJsonFromText(text: string): unknown {
   try {
     return JSON.parse(text);
@@ -45,7 +85,8 @@ function parseJsonFromText(text: string): unknown {
         return JSON.parse(text.slice(firstBrace, lastBrace + 1));
       } catch { /* fall through */ }
     }
-    throw new Error('Could not parse JSON from response');
+    // Último recurso: reparar truncamiento (respuesta cortada por max_tokens).
+    return repairTruncatedJson(text);
   }
 }
 
