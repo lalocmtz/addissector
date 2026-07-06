@@ -126,7 +126,7 @@ function ProblemSolution() {
           <h2 className="text-2xl sm:text-3xl font-bold mt-2 mb-4">{BRAND.name} convierte cada ganador en una fórmula.</h2>
           <p className="text-[#cbd5e1] text-sm leading-relaxed">
             Sube el creativo, {BRAND.name} lo disecciona: la psicología que lo hace vender, el desglose visual y de copy,
-            y te entrega variantes con prompts listos para volver a producir — conectables a herramientas de video AI como Seedance.
+            y te entrega variantes con prompts listos para pegar en tu generador de IA o pasar a tu editor.
           </p>
         </div>
       </div>
@@ -174,7 +174,7 @@ function Features() {
     { icon: <LineChart className="w-6 h-6" />, t: 'Scores accionables', d: 'Scroll-stop, claridad, fuerza de oferta y visibilidad de marca, del 1 al 10.' },
     { icon: <Wand2 className="w-6 h-6" />, t: 'Variantes con prompt', d: 'Nuevos ángulos del mismo ganador, con el prompt listo para producir.' },
     { icon: <Layers className="w-6 h-6" />, t: 'Fórmula maestra', d: 'Cruza varios ganadores y extrae el patrón repetible de tu marca.' },
-    { icon: <Zap className="w-6 h-6" />, t: 'Listo para Seedance', d: 'Todo el contexto estructurado para reproducir el creativo con IA de video.' },
+    { icon: <Zap className="w-6 h-6" />, t: 'Listo para tu generador de IA', d: 'Prompts estructurados para reproducir el creativo en la herramienta de IA que ya uses.' },
     { icon: <ShieldCheck className="w-6 h-6" />, t: 'Una marca por workspace', d: 'Organiza tus creativos por marca y mantén cada cuenta separada y ordenada.' },
   ];
   return (

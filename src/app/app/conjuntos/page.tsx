@@ -199,6 +199,17 @@ export default function ConjuntosPage() {
         <div className="max-w-4xl mx-auto space-y-5">
           {!selected ? (
             <>
+              {/* Bloque de instrucciones: cómo exportar métricas de Meta (colapsable) */}
+              <details className="rounded-xl border border-[#1e1e2e] bg-[#111118] p-4 open:pb-4">
+                <summary className="cursor-pointer text-sm font-semibold text-[#f1f5f9] select-none">
+                  📊 Cómo leer tus anuncios de Meta en 3 pasos
+                </summary>
+                <div className="mt-3 space-y-2 text-sm text-[#94a3b8]">
+                  <p><span className="text-[#f1f5f9] font-medium">Paso 1 — Prepara tu export.</span> En tu Administrador de Anuncios, en <em>Columnas → Personalizar columnas</em>, agrega antes de exportar: Hook Rate <span title="Qué % sigue viendo tu video tras los primeros 3 segundos.">(retención 3s / ThruPlay)</span>, reproducciones de video (25/50/75/95/100%), impresiones, clics (todos) y CTR <span title="Qué % de quienes ven tu anuncio le dan clic.">ⓘ</span>, CPA <span title="Cuánto te cuesta conseguir un resultado. Más bajo = mejor.">(costo por resultado)</span>, ROAS <span title="Cuántos pesos regresas por cada peso invertido. 3 = $3 por cada $1.">ⓘ</span> y gasto.</p>
+                  <p><span className="text-[#f1f5f9] font-medium">Paso 2 — Exporta y sube.</span> Descárgalo como CSV y súbelo aquí con &quot;Subir CSV de Meta&quot;. Funciona en español o inglés.</p>
+                  <p><span className="text-[#f1f5f9] font-medium">Paso 3 — Recibe tu lectura.</span> Las métricas se rellenan por nombre de anuncio y se marcan tus ganadores. Abajo también puedes planear la estructura de tus conjuntos.</p>
+                </div>
+              </details>
               <div className="flex items-end justify-between">
                 <div>
                   <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">

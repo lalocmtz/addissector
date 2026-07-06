@@ -59,7 +59,7 @@ export const TIERS: PricingTier[] = [
       '150 análisis al mes',
       'Análisis de video + imagen',
       'Fórmula maestra (análisis cruzado)',
-      'Export listo para Seedance',
+      'Prompts de replicación listos para tu generador de IA favorito',
       'Soporte prioritario',
     ],
     stripePriceEnvMonthly: 'STRIPE_PRICE_GROWTH_MONTHLY',

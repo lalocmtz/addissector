@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { ArrowLeft, Scan, Loader2 } from 'lucide-react';
 import CloneStudio from '@/components/CloneStudio';
+import { canGenerate } from '@/lib/feature-flags';
 import CopyButton from '@/components/CopyButton';
 import ImageAnalysisResults from '@/components/ImageAnalysisResults';
 import { analysisToClipboardText } from '@/lib/copy-context';
@@ -182,7 +183,8 @@ export default function AnalyzeImagePage() {
               <ImageAnalysisResults results={results} />
             </SimpleResults>
 
-            {/* Estudio de clonación: de la variante al video UGC generado */}
+            {/* Estudio de clonación (motor de generación real) — oculto en v1 */}
+            {canGenerate() && (
             <div className="mt-6">
               <CloneStudio
                 analysis={active.analysis as unknown as Record<string, unknown>}
@@ -197,6 +199,7 @@ export default function AnalyzeImagePage() {
                 ]}
               />
             </div>
+            )}
           </motion.div>
         </div>
       </section>

@@ -6,6 +6,7 @@ import { motion } from 'framer-motion';
 import { ArrowLeft, Scan, Loader2 } from 'lucide-react';
 import AnalysisResults from '@/components/AnalysisResults';
 import CloneStudio from '@/components/CloneStudio';
+import { canGenerate } from '@/lib/feature-flags';
 import CopyButton from '@/components/CopyButton';
 import { analysisToClipboardText } from '@/lib/copy-context';
 import SimpleResults, { type ReplicaVariant } from '@/components/SimpleResults';
@@ -296,7 +297,8 @@ export default function AnalyzePage() {
               />
             </SimpleResults>
 
-            {/* Estudio de clonación: de la variante al video UGC generado */}
+            {/* Estudio de clonación (motor de generación real) — oculto en v1 */}
+            {canGenerate() && (
             <div className="mt-6">
               <CloneStudio
                 analysis={active as unknown as Record<string, unknown>}
@@ -311,6 +313,7 @@ export default function AnalyzePage() {
                 ]}
               />
             </div>
+            )}
           </motion.div>
         </div>
       </section>

@@ -5,6 +5,7 @@
 
 import { NextResponse, type NextRequest } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
+import { isGenerationRoute } from '@/lib/feature-flags';
 
 const PROTECTED_PREFIXES = ['/studio', '/analyze', '/analyze-image', '/biblioteca', '/app'];
 
@@ -37,6 +38,14 @@ export async function middleware(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   const path = request.nextUrl.pathname;
+
+  // v1: rutas de generación ocultas -> redirige a /studio.
+  if (isGenerationRoute(path)) {
+    const studioUrl = request.nextUrl.clone();
+    studioUrl.pathname = '/studio';
+    studioUrl.search = '';
+    return NextResponse.redirect(studioUrl);
+  }
   const isProtected = PROTECTED_PREFIXES.some(
     (p) => path === p || path.startsWith(`${p}/`)
   );
