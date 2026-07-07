@@ -131,3 +131,73 @@ export function winnerId(ads: AdMetrics[]): string | null {
   scores.sort((a, b) => b.score - a.score);
   return scores[0].verdict === 'ganador' ? scores[0].id : null;
 }
+
+// ---------------------------------------------------------------------------
+// Checklist de columnas de Meta y validación del export.
+// REQUIRED = lo mínimo para determinar un ganador. El resto suma contexto.
+// ---------------------------------------------------------------------------
+
+export interface MetaColumn {
+  key: string;
+  label: string;
+  matcher: RegExp;
+  required: boolean;
+  help: string;
+}
+
+export const META_COLUMNS: MetaColumn[] = [
+  { key: 'name', label: 'Nombre del anuncio', required: true,
+    matcher: /ad name|nombre del anuncio|^anuncio$|^ad$/,
+    help: 'Imprescindible: empata cada anuncio con tu maqueta.' },
+  { key: 'roas', label: 'ROAS (retorno de la inversión)', required: true,
+    matcher: /roas/,
+    help: 'Cuántos pesos regresas por cada peso gastado. Define rentabilidad.' },
+  { key: 'cpa', label: 'Costo por resultado (CPA)', required: true,
+    matcher: /cost per (result|purchase)|costo por (resultado|compra)|^cpa$/,
+    help: 'Qué tan caro sale cada compra o resultado.' },
+  { key: 'hook', label: 'Hook Rate (retención 3s / ThruPlay)', required: true,
+    matcher: /hook rate|retencion 3|3-second|reproducciones de video de 3|thruplay/,
+    help: 'Fuerza del gancho en los primeros segundos.' },
+  { key: 'ctr', label: 'CTR (todos)', required: true,
+    matcher: /ctr/,
+    help: 'Qué % de quienes lo ven le dan clic.' },
+  { key: 'spend', label: 'Gasto (importe gastado)', required: true,
+    matcher: /amount spent|importe gastado|gasto/,
+    help: 'Contexto de inversión: sin gasto suficiente no hay lectura confiable.' },
+  { key: 'impressions', label: 'Impresiones', required: false,
+    matcher: /impressions|impresiones/,
+    help: 'Volumen de veces que se mostró.' },
+  { key: 'video_pct', label: 'Reproducciones de video 25/50/75/95/100%', required: false,
+    matcher: /video (plays|watches).*(25|50|75|95|100)|reproducciones de video (al|hasta)/,
+    help: 'Curva de retención del video.' },
+  { key: 'clicks', label: 'Clics (todos)', required: false,
+    matcher: /clicks \(all\)|clics \(todos\)|^clicks$|^clics$/,
+    help: 'Volumen de clics.' },
+  { key: 'purchases', label: 'Compras / resultados', required: false,
+    matcher: /purchases|compras|results|resultados/,
+    help: 'Número de conversiones.' },
+];
+
+export interface HeaderCheck {
+  presentKeys: string[];
+  missingRequired: string[]; // labels
+  ignoredExtras: number;      // columnas que no usamos
+}
+
+/** Revisa los encabezados del export: qué obligatorias faltan y cuántas
+ *  columnas extra se ignoran. */
+export function checkHeaders(headers: string[]): HeaderCheck {
+  const present = new Set<string>();
+  const used = new Set<number>();
+  headers.forEach((h, i) => {
+    const nh = norm(h);
+    for (const col of META_COLUMNS) {
+      if (col.matcher.test(nh)) { present.add(col.key); used.add(i); }
+    }
+  });
+  const missingRequired = META_COLUMNS
+    .filter((c) => c.required && !present.has(c.key))
+    .map((c) => c.label);
+  const ignoredExtras = headers.filter((h, i) => h && !used.has(i)).length;
+  return { presentKeys: [...present], missingRequired, ignoredExtras };
+}

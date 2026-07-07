@@ -17,7 +17,7 @@ import { useMe } from '@/lib/use-me';
 import {
   STAGES, FORMATS, AWARENESS, ANGLES, scaffoldBatch, adName, seqOfName, type Stage,
 } from '@/lib/ad-angles';
-import { scoreSet, winnerId, type Verdict } from '@/lib/ad-scoring';
+import { scoreSet, winnerId, META_COLUMNS, type Verdict } from '@/lib/ad-scoring';
 
 interface AdSet {
   id: string;
@@ -75,6 +75,8 @@ export default function ConjuntosPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [csvMsg, setCsvMsg] = useState<string | null>(null);
+  const [warn, setWarn] = useState<string | null>(null);
+  const [checked, setChecked] = useState<Set<string>>(new Set());
   const csvRef = useRef<HTMLInputElement>(null);
   const brandCsvRef = useRef<HTMLInputElement>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -89,6 +91,32 @@ export default function ConjuntosPage() {
   }, [activeBrandId]);
 
   useEffect(() => { loadList(); }, [loadList]);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('adna-meta-checklist');
+      if (raw) setChecked(new Set(JSON.parse(raw)));
+    } catch { /* ignore */ }
+  }, []);
+
+  const toggleCheck = (key: string) => {
+    setChecked((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      try { localStorage.setItem('adna-meta-checklist', JSON.stringify([...next])); } catch { /* ignore */ }
+      return next;
+    });
+  };
+
+  // Traduce la respuesta del servidor a una alerta clara de validación.
+  const applyUploadWarnings = (d: { missingRequired?: string[]; ignoredExtras?: number }) => {
+    const extras = d.ignoredExtras ? ` Se ignoraron ${d.ignoredExtras} columna(s) de más (solo usamos las necesarias).` : '';
+    if (d.missingRequired?.length) {
+      setWarn(`⚠️ Lectura incompleta: a tu export le faltan columnas obligatorias (${d.missingRequired.join(', ')}). No se puede determinar el ganador con precisión — vuelve a exportar marcándolas.${extras}`);
+    } else {
+      setWarn(extras || null);
+    }
+  };
 
   const openSet = async (s: AdSet) => {
     setSelected(s);
@@ -203,7 +231,7 @@ export default function ConjuntosPage() {
   const uploadCsv = async (file: File) => {
     if (!selected) return;
     setCsvMsg('Procesando reporte…');
-    setError(null);
+    setError(null); setWarn(null);
     try {
       const csv = await file.text();
       const res = await fetch(`/api/adsets/${selected.id}/metrics`, {
@@ -214,6 +242,7 @@ export default function ConjuntosPage() {
       const d = await res.json();
       if (!res.ok) throw new Error(d.error || 'Error');
       setCsvMsg(`✓ ${d.matched} anuncio(s) actualizados.` + (d.unmatched?.length ? ` Sin match: ${d.unmatched.join(', ')}` : ''));
+      applyUploadWarnings(d);
       await openSet(selected);
     } catch (err) {
       setCsvMsg(null);
@@ -226,7 +255,7 @@ export default function ConjuntosPage() {
   // Sube el reporte a TODA la marca (desde la lista) y refresca.
   const uploadBrandCsv = async (file: File) => {
     setCsvMsg('Procesando reporte de la marca…');
-    setError(null);
+    setError(null); setWarn(null);
     try {
       const csv = await file.text();
       const res = await fetch('/api/adsets/metrics', {
@@ -237,6 +266,7 @@ export default function ConjuntosPage() {
       const d = await res.json();
       if (!res.ok) throw new Error(d.error || 'Error');
       setCsvMsg(`✓ ${d.matched} de ${d.totalAds} anuncio(s) de la marca actualizados. Abre cada conjunto para ver ganadores.`);
+      applyUploadWarnings(d);
       loadList();
     } catch (err) {
       setCsvMsg(null);
@@ -310,6 +340,24 @@ export default function ConjuntosPage() {
                   <p><span className="text-[#f1f5f9] font-medium">Paso 1 — Prepara tu export.</span> En tu Administrador de Anuncios, en <em>Columnas → Personalizar columnas</em>, agrega antes de exportar: Hook Rate <span title="Qué % sigue viendo tu video tras los primeros 3 segundos.">(retención 3s / ThruPlay)</span>, reproducciones de video (25/50/75/95/100%), impresiones, clics (todos) y CTR <span title="Qué % de quienes ven tu anuncio le dan clic.">ⓘ</span>, CPA <span title="Cuánto te cuesta un resultado. Más bajo = mejor.">(costo por resultado)</span>, ROAS <span title="Cuántos pesos regresas por cada peso invertido.">ⓘ</span> y gasto.</p>
                   <p><span className="text-[#f1f5f9] font-medium">Paso 2 — Exporta y sube.</span> Descárgalo como CSV y súbelo aquí. Funciona en español o inglés.</p>
                   <p><span className="text-[#f1f5f9] font-medium">Paso 3 — Recibe tu lectura.</span> Las métricas se rellenan por nombre de anuncio y AdDNA detecta tus ganadores.</p>
+                  <div className="mt-3 border-t border-[#1e1e2e] pt-3">
+                    <p className="text-xs font-semibold text-[#f1f5f9] mb-2">✅ Casillas que debes marcar en Meta antes de exportar (para determinar el ganador):</p>
+                    <div className="grid sm:grid-cols-2 gap-1.5">
+                      {META_COLUMNS.map((c) => (
+                        <label key={c.key} className="flex items-start gap-2 text-xs cursor-pointer" title={c.help}>
+                          <input type="checkbox" checked={checked.has(c.key)} onChange={() => toggleCheck(c.key)} className="mt-0.5 accent-[#3b82f6]" />
+                          <span>
+                            <span className={c.required ? 'text-[#e2e8f0]' : 'text-[#94a3b8]'}>{c.label}</span>
+                            {c.required
+                              ? <span className="ml-1 text-[9px] px-1 py-0.5 rounded bg-[#f59e0b]/15 text-[#fbbf24]">obligatoria</span>
+                              : <span className="ml-1 text-[9px] px-1 py-0.5 rounded bg-[#1e1e2e] text-[#64748b]">opcional</span>}
+                            <span className="block text-[10px] text-[#64748b]">{c.help}</span>
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                    <p className="text-[10px] text-[#475569] mt-2">Si tu export trae columnas de más, no pasa nada: AdDNA solo usa las necesarias. Si faltan las obligatorias, te avisamos que la lectura no es confiable.</p>
+                  </div>
                 </div>
               </details>
 
@@ -561,6 +609,9 @@ export default function ConjuntosPage() {
             </motion.div>
           )}
 
+          {warn && (
+            <p className="text-xs text-[#fbbf24] rounded-lg border border-[#f59e0b]/40 bg-[#f59e0b]/10 px-3 py-2">{warn}</p>
+          )}
           {error && <p className="text-xs text-[#f43f5e]">{error}</p>}
         </div>
       </section>

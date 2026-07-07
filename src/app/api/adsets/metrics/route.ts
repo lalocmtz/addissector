@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabase, isSupabaseConfigured } from '@/lib/supabase';
 import { getSessionUser, isAuthConfigured } from '@/lib/supabase-server';
+import { checkHeaders } from '@/lib/ad-scoring';
 
 export const runtime = 'nodejs';
 export const maxDuration = 30;
@@ -94,7 +95,8 @@ export async function POST(request: NextRequest) {
       matched++;
     }
 
-    return NextResponse.json({ matched, totalAds: (ads ?? []).length, unmatched: unmatchedCsv.slice(0, 10) });
+    const check = checkHeaders(headers);
+    return NextResponse.json({ matched, totalAds: (ads ?? []).length, unmatched: unmatchedCsv.slice(0, 10), missingRequired: check.missingRequired, ignoredExtras: check.ignoredExtras });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Error procesando métricas';
     return NextResponse.json({ error: message }, { status: 500 });
