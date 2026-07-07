@@ -13,7 +13,29 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   if (!user) return NextResponse.json({ error: 'No autenticado' }, { status: 401 });
   const { id } = await params;
   const body = await request.json();
-  const { data, error } = await getSupabase()
+  const sb = getSupabase();
+
+  // Inserción en lote (scaffold de ecosistema): body.ads = [{...}, ...]
+  if (Array.isArray(body.ads)) {
+    const rows = body.ads.map((a: Record<string, unknown>) => ({
+      ad_set_id: id,
+      user_id: user.id,
+      name: (typeof a.name === 'string' && a.name.trim()) || 'Anuncio nuevo',
+      funnel_stage: a.funnel_stage ?? 'tofu',
+      pain: a.pain ?? null,
+      hypothesis: a.hypothesis ?? null,
+      script: a.script ?? null,
+      format: a.format ?? null,
+      audience: a.audience ?? null,
+      awareness_stage: a.awareness_stage ?? null,
+      angle: a.angle ?? null,
+    }));
+    const { data, error } = await sb.from('ads').insert(rows).select('*').order('created_at');
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ ads: data });
+  }
+
+  const { data, error } = await sb
     .from('ads')
     .insert({
       ad_set_id: id,
@@ -23,6 +45,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       pain: body.pain ?? null,
       hypothesis: body.hypothesis ?? null,
       script: body.script ?? null,
+      format: body.format ?? null,
+      audience: body.audience ?? null,
+      awareness_stage: body.awareness_stage ?? null,
+      angle: body.angle ?? null,
     })
     .select('*')
     .single();
@@ -40,7 +66,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   const body = await request.json();
   if (!body.adId) return NextResponse.json({ error: 'Falta adId' }, { status: 400 });
   const patch: Record<string, unknown> = {};
-  for (const k of ['name', 'funnel_stage', 'pain', 'hypothesis', 'script', 'is_winner']) {
+  for (const k of ['name', 'funnel_stage', 'pain', 'hypothesis', 'script', 'is_winner', 'format', 'audience', 'awareness_stage', 'angle']) {
     if (body[k] !== undefined) patch[k] = body[k];
   }
   const { data, error } = await getSupabase()
