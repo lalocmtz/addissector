@@ -95,3 +95,31 @@ export function scaffoldBatch(batch: string): ScaffoldAd[] {
     };
   });
 }
+
+/** Etapa de embudo a partir del código corto (TOF/MOF/BOF). */
+export function stageFromShort(short: string): Stage {
+  const s = short.toUpperCase();
+  return s.startsWith('MOF') ? 'mofu' : s.startsWith('BOF') ? 'bofu' : 'tofu';
+}
+
+/** Lee la nomenclatura de un nombre de anuncio de Meta para inferir batch,
+ *  etapa, ángulo y formato. Tolera nombres que NO siguen la convención. */
+export function parseAdName(name: string): {
+  batch: string; stage?: Stage; angle?: string; format?: AdFormat;
+} {
+  const parts = name.split('|').map((p) => p.trim()).filter(Boolean);
+  if (parts.length < 2) return { batch: name.trim() || 'Importados' };
+  const batch = parts[0];
+  let stage: Stage | undefined;
+  let angle: string | undefined;
+  let format: AdFormat | undefined;
+  for (const p of parts.slice(1)) {
+    const up = p.toUpperCase();
+    if (/^(TOF|MOF|BOF)/.test(up)) stage = stageFromShort(up);
+    else if (up === 'VID' || up === 'VIDEO') format = 'video';
+    else if (up === 'IMG' || up === 'IMAGEN') format = 'imagen';
+    else if (/^\d{1,3}$/.test(p)) { /* consecutivo, se ignora */ }
+    else if (!angle) angle = p;
+  }
+  return { batch, stage, angle, format };
+}

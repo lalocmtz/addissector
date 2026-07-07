@@ -17,7 +17,7 @@ import { useMe } from '@/lib/use-me';
 import {
   STAGES, FORMATS, AWARENESS, ANGLES, scaffoldBatch, adName, seqOfName, type Stage,
 } from '@/lib/ad-angles';
-import { scoreSet, winnerId, META_COLUMNS, type Verdict } from '@/lib/ad-scoring';
+import { scoreSet, winnerId, interpretSet, META_COLUMNS, type Verdict } from '@/lib/ad-scoring';
 
 interface AdSet {
   id: string;
@@ -39,6 +39,7 @@ interface Ad {
   audience: string | null;
   awareness_stage: string | null;
   angle: string | null;
+  metrics_updated_at: string | null;
 }
 
 const KEY_METRICS: Array<{ match: RegExp; label: string }> = [
@@ -77,6 +78,7 @@ export default function ConjuntosPage() {
   const [csvMsg, setCsvMsg] = useState<string | null>(null);
   const [warn, setWarn] = useState<string | null>(null);
   const [checked, setChecked] = useState<Set<string>>(new Set());
+  const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const csvRef = useRef<HTMLInputElement>(null);
   const brandCsvRef = useRef<HTMLInputElement>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -109,13 +111,14 @@ export default function ConjuntosPage() {
   };
 
   // Traduce la respuesta del servidor a una alerta clara de validación.
-  const applyUploadWarnings = (d: { missingRequired?: string[]; ignoredExtras?: number }) => {
-    const extras = d.ignoredExtras ? ` Se ignoraron ${d.ignoredExtras} columna(s) de más (solo usamos las necesarias).` : '';
-    if (d.missingRequired?.length) {
-      setWarn(`⚠️ Lectura incompleta: a tu export le faltan columnas obligatorias (${d.missingRequired.join(', ')}). No se puede determinar el ganador con precisión — vuelve a exportar marcándolas.${extras}`);
-    } else {
-      setWarn(extras || null);
-    }
+  const applyUploadWarnings = (d: { missingRequired?: string[]; ignoredExtras?: number; reason?: string | null }) => {
+    const reason = d.reason ? `No se actualizó nada: ${d.reason}` : '';
+    const missing = d.missingRequired?.length
+      ? `Faltan columnas obligatorias en tu export (${d.missingRequired.join(', ')}): no se puede determinar el ganador con precisión.`
+      : '';
+    const extras = d.ignoredExtras ? `Se ignoraron ${d.ignoredExtras} columna(s) de más (solo usamos las necesarias).` : '';
+    const msg = [reason, missing, extras].filter(Boolean).join(' ');
+    setWarn(msg ? `⚠️ ${msg}` : null);
   };
 
   const openSet = async (s: AdSet) => {
@@ -241,7 +244,8 @@ export default function ConjuntosPage() {
       });
       const d = await res.json();
       if (!res.ok) throw new Error(d.error || 'Error');
-      setCsvMsg(`✓ ${d.matched} anuncio(s) actualizados.` + (d.unmatched?.length ? ` Sin match: ${d.unmatched.join(', ')}` : ''));
+      setLastUpdated(d.lastUpdated ?? null);
+      setCsvMsg(d.matched ? `✓ ${d.matched} anuncio(s) actualizados.` + (d.unmatched?.length ? ` Sin match: ${d.unmatched.join(', ')}` : '') : null);
       applyUploadWarnings(d);
       await openSet(selected);
     } catch (err) {
@@ -265,7 +269,13 @@ export default function ConjuntosPage() {
       });
       const d = await res.json();
       if (!res.ok) throw new Error(d.error || 'Error');
-      setCsvMsg(`✓ ${d.matched} de ${d.totalAds} anuncio(s) de la marca actualizados. Abre cada conjunto para ver ganadores.`);
+      const bits: string[] = [];
+      if (d.updated) bits.push(`${d.updated} actualizado(s)`);
+      if (d.created) bits.push(`${d.created} creado(s)`);
+      if (d.setsCreated) bits.push(`${d.setsCreated} conjunto(s) nuevo(s)`);
+      if (d.skippedNoName) bits.push(`${d.skippedNoName} fila(s) sin nombre omitidas`);
+      setLastUpdated(d.lastUpdated ?? null);
+      setCsvMsg((d.updated || d.created) ? `✓ ${bits.join(' · ')} · ${d.rows} fila(s) leídas.` : null);
       applyUploadWarnings(d);
       loadList();
     } catch (err) {
@@ -322,7 +332,9 @@ export default function ConjuntosPage() {
   };
 
   const scores = selected ? scoreSet(ads.map((a) => ({ id: a.id, metrics: a.metrics }))) : null;
+  const interp = selected ? interpretSet(ads.map((a) => ({ id: a.id, funnel_stage: a.funnel_stage, metrics: a.metrics }))) : null;
   const hasAnyMetrics = ads.some((a) => a.metrics && Object.keys(a.metrics).length > 0);
+  const setLastUpd = ads.reduce<string | null>((m, a) => (a.metrics_updated_at && (!m || a.metrics_updated_at > m) ? a.metrics_updated_at : m), null);
 
   return (
     <main className="flex-1">
@@ -383,6 +395,7 @@ export default function ConjuntosPage() {
                   />
                 </div>
                 {csvMsg && <p className="text-xs text-[#4ade80] mt-3">{csvMsg}</p>}
+                {lastUpdated && <p className="text-[10px] text-[#64748b] mt-1">Última actualización: {new Date(lastUpdated).toLocaleString('es-MX')}</p>}
               </div>
 
               <div className="flex items-end justify-between">
@@ -477,8 +490,41 @@ export default function ConjuntosPage() {
                   <Wand2 className="w-3.5 h-3.5" /> Detectar ganador
                 </button>
                 <p className="text-[11px] text-[#64748b] flex-1 min-w-[180px]">Las métricas se rellenan por nombre de anuncio.</p>
+                {setLastUpd && <p className="text-[10px] text-[#64748b] w-full">Última actualización de métricas: {new Date(setLastUpd).toLocaleString('es-MX')}</p>}
                 {csvMsg && <p className="text-xs text-[#4ade80] w-full">{csvMsg}</p>}
               </div>
+
+              {/* Interpretación de embudo (lectura que Meta no da) */}
+              {hasAnyMetrics && interp && (
+                <div className="rounded-2xl border border-[#3b82f6]/25 bg-gradient-to-br from-[#0f1830] to-[#111118] p-4 space-y-3">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <p className="text-sm font-semibold text-[#f1f5f9]">📈 Cómo se está alimentando el embudo</p>
+                    <div className="flex items-center gap-3 text-[11px] text-[#94a3b8]">
+                      <span>Gasto total: <span className="text-[#f1f5f9] font-medium">${interp.totalSpend.toLocaleString('es-MX')}</span></span>
+                      {interp.blendedRoas !== undefined && <span>ROAS global: <span className="text-[#f1f5f9] font-medium">{interp.blendedRoas}</span></span>}
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    {interp.byStage.map((r) => {
+                      const pct = interp.totalSpend > 0 ? Math.round((r.spend / interp.totalSpend) * 100) : 0;
+                      return (
+                        <div key={r.stage} className="rounded-xl bg-[#0a0a0f] border border-[#1e1e2e] p-3">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[11px] font-semibold text-[#cbd5e1]">{r.label}</span>
+                            <span className="text-[10px] text-[#64748b]">{r.ads} ads</span>
+                          </div>
+                          <div className="mt-2 h-1.5 rounded-full bg-[#1e1e2e] overflow-hidden">
+                            <div className="h-full rounded-full bg-[#3b82f6]" style={{ width: `${pct}%` }} />
+                          </div>
+                          <p className="text-[10px] text-[#94a3b8] mt-1.5">{pct}% del gasto</p>
+                          <p className="text-[10px] text-[#64748b]">{r.roas !== undefined ? `ROAS ${r.roas}` : 'sin datos'}{r.avgCpa !== undefined ? ` · CPA ${r.avgCpa}` : ''}</p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <p className="text-xs text-[#e2e8f0] bg-[#0a0a0f] border border-[#1e1e2e] rounded-lg px-3 py-2">{interp.insight}</p>
+                </div>
+              )}
 
               {/* Dashboard de métricas */}
               {hasAnyMetrics && scores && (

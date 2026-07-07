@@ -66,6 +66,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     }
 
     const sb = getSupabase();
+    const nowIso = new Date().toISOString();
     const { data: ads } = await sb
       .from('ads')
       .select('id,name')
@@ -81,12 +82,17 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       if (!ad) { unmatchedCsv.push(adName); continue; }
       const metrics: Record<string, string> = {};
       headers.forEach((h, i) => { if (h && r[i] !== undefined && r[i] !== '') metrics[h] = r[i]; });
-      await sb.from('ads').update({ metrics }).eq('id', ad.id).eq('user_id', user.id);
+      await sb.from('ads').update({ metrics, metrics_updated_at: nowIso }).eq('id', ad.id).eq('user_id', user.id);
       matched++;
     }
 
     const check = checkHeaders(headers);
-    return NextResponse.json({ matched, unmatched: unmatchedCsv.slice(0, 10), missingRequired: check.missingRequired, ignoredExtras: check.ignoredExtras });
+    const reason = matched === 0
+      ? (unmatchedCsv.length
+          ? 'Los nombres del CSV no coinciden con los anuncios de este conjunto. Usa la carga a nivel marca (crea los que falten) o revisa la nomenclatura.'
+          : 'No hubo filas con nombre de anuncio en el CSV.')
+      : null;
+    return NextResponse.json({ matched, unmatched: unmatchedCsv.slice(0, 10), missingRequired: check.missingRequired, ignoredExtras: check.ignoredExtras, lastUpdated: nowIso, reason });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Error procesando métricas';
     return NextResponse.json({ error: message }, { status: 500 });

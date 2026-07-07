@@ -201,3 +201,76 @@ export function checkHeaders(headers: string[]): HeaderCheck {
   const ignoredExtras = headers.filter((h, i) => h && !used.has(i)).length;
   return { presentKeys: [...present], missingRequired, ignoredExtras };
 }
+
+// ---------------------------------------------------------------------------
+// Interpretación de embudo (la lectura que Meta NO te da): cómo se alimenta el
+// embudo, dónde está el gasto y dónde están los ganadores.
+// ---------------------------------------------------------------------------
+
+export interface StageRoll {
+  stage: string;        // 'tofu' | 'mofu' | 'bofu'
+  label: string;        // 'TOF' ...
+  ads: number;
+  withData: number;
+  spend: number;
+  roas?: number;        // ponderado por gasto
+  avgCpa?: number;
+}
+
+export interface SetInterpretation {
+  totalSpend: number;
+  blendedRoas?: number;
+  byStage: StageRoll[];
+  winnerId: string | null;
+  insight: string;
+}
+
+const STAGE_LABEL: Record<string, string> = { tofu: 'TOF', mofu: 'MOF', bofu: 'BOF' };
+
+export function interpretSet(
+  ads: { id: string; funnel_stage: string; metrics: Record<string, string> | null }[],
+): SetInterpretation {
+  const stages = ['tofu', 'mofu', 'bofu'];
+  const byStage: StageRoll[] = stages.map((st) => {
+    const inStage = ads.filter((a) => (a.funnel_stage || 'tofu') === st);
+    const ext = inStage.map((a) => extractMetrics(a.metrics));
+    const withData = ext.filter((e) => Object.keys(e).length > 0);
+    const spend = withData.reduce((s, e) => s + (e.spend ?? 0), 0);
+    const roasWeighted = withData.reduce((s, e) => s + (e.roas ?? 0) * (e.spend ?? 0), 0);
+    const cpas = withData.map((e) => e.cpa).filter((n): n is number => n != null);
+    return {
+      stage: st,
+      label: STAGE_LABEL[st],
+      ads: inStage.length,
+      withData: withData.length,
+      spend: Math.round(spend),
+      roas: spend > 0 ? Math.round((roasWeighted / spend) * 100) / 100 : undefined,
+      avgCpa: cpas.length ? Math.round((cpas.reduce((a, b) => a + b, 0) / cpas.length) * 100) / 100 : undefined,
+    };
+  });
+
+  const totalSpend = byStage.reduce((s, r) => s + r.spend, 0);
+  const allExt = ads.map((a) => extractMetrics(a.metrics)).filter((e) => Object.keys(e).length > 0);
+  const roasW = allExt.reduce((s, e) => s + (e.roas ?? 0) * (e.spend ?? 0), 0);
+  const blendedRoas = totalSpend > 0 ? Math.round((roasW / totalSpend) * 100) / 100 : undefined;
+  const wid = winnerId(ads.map((a) => ({ id: a.id, metrics: a.metrics })));
+
+  // Insight: dónde está el gasto vs. dónde están los mejores retornos.
+  let insight = 'Sube el reporte de Meta para leer cómo se alimenta el embudo.';
+  if (totalSpend > 0) {
+    const topSpend = [...byStage].sort((a, b) => b.spend - a.spend)[0];
+    const pct = Math.round((topSpend.spend / totalSpend) * 100);
+    const bestRoas = [...byStage].filter((s) => s.roas != null).sort((a, b) => (b.roas! - a.roas!))[0];
+    const parts: string[] = [`El ${pct}% del gasto está en ${topSpend.label}.`];
+    if (bestRoas) {
+      if (bestRoas.stage !== topSpend.stage) {
+        parts.push(`Pero el mejor retorno está en ${bestRoas.label} (ROAS ${bestRoas.roas}). Considera reequilibrar presupuesto.`);
+      } else {
+        parts.push(`Y ahí también está el mejor retorno (ROAS ${bestRoas.roas}): el embudo está bien alimentado.`);
+      }
+    }
+    insight = parts.join(' ');
+  }
+
+  return { totalSpend, blendedRoas, byStage, winnerId: wid, insight };
+}
