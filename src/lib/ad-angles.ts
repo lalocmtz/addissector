@@ -41,16 +41,26 @@ export const ANGLES: { code: string; label: string; hint: string; stage: Stage }
 ];
 
 /** Nombre consistente para que empate con el export de Meta.
- *  Formato: BATCH | STAGE | ANGLE | FORMATO   (ej. "B01 | TOF | DESESP | VID") */
+ *  Formato: BATCH | NN | STAGE | ANGLE | FORMATO
+ *  (ej. "B01 | 01 | TOF | DESESP | VID"). El NN es un consecutivo único por
+ *  anuncio para que no se pierdan entre muchos. Los segmentos vacíos se omiten. */
 export function adName(
   batch: string,
+  seq: number | string,
   stage: Stage,
-  angleCode: string,
-  format: AdFormat,
+  angleCode?: string,
+  format?: AdFormat | string,
 ): string {
   const st = STAGES.find((s) => s.v === stage)?.short ?? 'TOF';
-  const fmt = format === 'video' ? 'VID' : 'IMG';
-  return `${batch.trim()} | ${st} | ${angleCode} | ${fmt}`;
+  const fmt = format === 'video' ? 'VID' : format === 'imagen' ? 'IMG' : '';
+  const nn = String(seq).padStart(2, '0');
+  return [batch.trim(), nn, st, angleCode ?? '', fmt].filter(Boolean).join(' | ');
+}
+
+/** Extrae el consecutivo (NN) de un nombre ya formado; si no hay, usa fallback. */
+export function seqOfName(name: string, fallback: number): string {
+  const parts = name.split('|').map((x) => x.trim());
+  return parts[1] && /^\d{1,3}$/.test(parts[1]) ? parts[1] : String(fallback).padStart(2, '0');
 }
 
 export type ScaffoldAd = {
@@ -73,10 +83,10 @@ export function scaffoldBatch(batch: string): ScaffoldAd[] {
     { stage: 'bofu', angle: 'OFERTA', awareness: 'producto', format: 'imagen' },
     { stage: 'bofu', angle: 'URGENCIA', awareness: 'total', format: 'imagen' },
   ];
-  return plan.map((p) => {
+  return plan.map((p, i) => {
     const meta = ANGLES.find((a) => a.code === p.angle);
     return {
-      name: adName(batch, p.stage, p.angle, p.format),
+      name: adName(batch, i + 1, p.stage, p.angle, p.format),
       funnel_stage: p.stage,
       angle: p.angle,
       format: p.format,

@@ -15,7 +15,7 @@ import {
 import AppHeader from '@/components/AppHeader';
 import { useMe } from '@/lib/use-me';
 import {
-  STAGES, FORMATS, AWARENESS, ANGLES, scaffoldBatch,
+  STAGES, FORMATS, AWARENESS, ANGLES, scaffoldBatch, adName, seqOfName, type Stage,
 } from '@/lib/ad-angles';
 import { scoreSet, winnerId, type Verdict } from '@/lib/ad-scoring';
 
@@ -160,12 +160,25 @@ export default function ConjuntosPage() {
     }).catch(() => {});
   };
 
+  // Cambia un campo de la maqueta y regenera la nomenclatura automáticamente,
+  // conservando el consecutivo del anuncio. El nombre sigue editable a mano.
+  const changeMaqueta = (ad: Ad, patch: Partial<Ad>) => {
+    if (!selected) return;
+    const merged = { ...ad, ...patch };
+    const seq = seqOfName(ad.name, ads.findIndex((x) => x.id === ad.id) + 1);
+    const name = adName(
+      selected.name, seq, (merged.funnel_stage as Stage) ?? 'tofu',
+      merged.angle ?? undefined, merged.format ?? undefined,
+    );
+    patchAd(ad.id, { ...patch, name });
+  };
+
   const addAd = async () => {
     if (!selected) return;
     const res = await fetch(`/api/adsets/${selected.id}/ads`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: `${selected.name} | AD${String(ads.length + 1).padStart(2, '0')}` }),
+      body: JSON.stringify({ name: adName(selected.name, ads.length + 1, 'tofu'), funnel_stage: 'tofu' }),
     });
     if (res.ok) {
       const d = await res.json();
@@ -486,13 +499,13 @@ export default function ConjuntosPage() {
 
                       {/* Maqueta: embudo, ángulo, formato, conciencia, público */}
                       <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-                        <select value={ad.funnel_stage} onChange={(e) => patchAd(ad.id, { funnel_stage: e.target.value })}
+                        <select value={ad.funnel_stage} onChange={(e) => changeMaqueta(ad, { funnel_stage: e.target.value })}
                           className="text-[11px] px-2 py-1.5 rounded-lg bg-[#0a0a0f] border border-[#1e1e2e] text-[#cbd5e1] focus:outline-none">
                           {STAGES.map((s2) => <option key={s2.v} value={s2.v}>{s2.short}</option>)}
                         </select>
-                        <input list="angulos" value={ad.angle ?? ''} onChange={(e) => patchAd(ad.id, { angle: e.target.value })} placeholder="Ángulo"
+                        <input list="angulos" value={ad.angle ?? ''} onChange={(e) => changeMaqueta(ad, { angle: e.target.value })} placeholder="Ángulo"
                           className="text-[11px] px-2 py-1.5 rounded-lg bg-[#0a0a0f] border border-[#1e1e2e] text-[#cbd5e1] placeholder:text-[#475569] focus:outline-none" />
-                        <select value={ad.format ?? ''} onChange={(e) => patchAd(ad.id, { format: e.target.value })}
+                        <select value={ad.format ?? ''} onChange={(e) => changeMaqueta(ad, { format: e.target.value })}
                           className="text-[11px] px-2 py-1.5 rounded-lg bg-[#0a0a0f] border border-[#1e1e2e] text-[#cbd5e1] focus:outline-none">
                           <option value="">Formato</option>
                           {FORMATS.map((f) => <option key={f} value={f}>{f}</option>)}
