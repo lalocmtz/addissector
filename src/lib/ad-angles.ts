@@ -107,19 +107,24 @@ export function stageFromShort(short: string): Stage {
 export function parseAdName(name: string): {
   batch: string; stage?: Stage; angle?: string; format?: AdFormat;
 } {
-  const parts = name.split('|').map((p) => p.trim()).filter(Boolean);
-  if (parts.length < 2) return { batch: name.trim() || 'Importados' };
-  const batch = parts[0];
+  // Separa por "_" o "|" (los dos convenios comunes en Meta) y quita la
+  // extensión de archivo. El CONJUNTO = primer token (B01, B02, ...).
+  const clean = name.replace(/\.(mp4|mov|m4v|jpg|jpeg|png|webp|gif)$/i, '');
+  const segs = clean.split(/[|_]/).map((p) => p.trim()).filter(Boolean);
+  const batch = (segs[0] || clean).trim() || 'Importados';
   let stage: Stage | undefined;
   let angle: string | undefined;
   let format: AdFormat | undefined;
-  for (const p of parts.slice(1)) {
+  if (/\.(mp4|mov|m4v)$/i.test(name)) format = 'video';
+  else if (/\.(jpg|jpeg|png|webp|gif)$/i.test(name)) format = 'imagen';
+  for (const p of segs.slice(1)) {
     const up = p.toUpperCase();
-    if (/^(TOF|MOF|BOF)/.test(up)) stage = stageFromShort(up);
+    if (/^(TOFU?|MOFU?|BOFU?)\b/.test(up)) stage = stageFromShort(up);
     else if (up === 'VID' || up === 'VIDEO') format = 'video';
-    else if (up === 'IMG' || up === 'IMAGEN') format = 'imagen';
-    else if (/^\d{1,3}$/.test(p)) { /* consecutivo, se ignora */ }
-    else if (!angle) angle = p;
+    else if (up === 'IMG' || up === 'IMAGEN' || up === 'IMAGE') format = 'imagen';
+    else if (/^\d{1,3}$/.test(p)) { /* consecutivo */ }
+    else if (/^\d{1,2}[A-Z]{3,}\d*$/i.test(p)) { /* fecha tipo 04JUL */ }
+    else if (!angle && p.length > 2 && !/^V\d+$/i.test(up)) angle = p;
   }
   return { batch, stage, angle, format };
 }

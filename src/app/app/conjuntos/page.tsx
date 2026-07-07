@@ -523,6 +523,20 @@ export default function ConjuntosPage() {
                     })}
                   </div>
                   <p className="text-xs text-[#e2e8f0] bg-[#0a0a0f] border border-[#1e1e2e] rounded-lg px-3 py-2">{interp.insight}</p>
+                  {scores && (() => {
+                    const vals = [...scores.values()].filter((v) => v.hasData);
+                    const g = vals.filter((v) => v.verdict === 'ganador').length;
+                    const pr = vals.filter((v) => v.verdict === 'promedio').length;
+                    const pa = vals.filter((v) => v.verdict === 'pausar').length;
+                    return (
+                      <div className="flex flex-wrap items-center gap-4 text-xs pt-1">
+                        <span className="text-[#fbbf24] font-medium">🏆 {g} ganador(es)</span>
+                        <span className="text-[#94a3b8]">{pr} en promedio</span>
+                        <span className="text-[#fb7185]">{pa} a pausar</span>
+                        <span className="text-[#475569]">{vals.length} con datos de {ads.length}</span>
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
 
