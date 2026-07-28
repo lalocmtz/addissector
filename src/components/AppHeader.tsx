@@ -117,7 +117,7 @@ export default function AppHeader({ me, activeBrand, onBrandChange }: AppHeaderP
         <nav className="hidden md:flex items-center gap-1">
           {navItem('/studio', 'Studio')}
           {canGenerate() && navItem('/app/crear', 'B-roll')}
-          {navItem('/app/conjuntos', 'Conjuntos')}
+          {navItem('/app/conjuntos', 'Análisis de Meta')}
           {navItem('/biblioteca', 'Biblioteca')}
           {navItem('/app/marcas', 'Marcas')}
         </nav>
