@@ -1,24 +1,32 @@
 'use client';
 
 // =============================================================================
-// AdDNA — Header de la app: selector de marca (estilo Slack/Notion), uso del
-// mes, navegación y cuenta.
+// AdDNA — Header unificado de la plataforma personal.
+// Un solo menú en TODAS las secciones: Meta · Biblioteca · Cerebro · Research.
+// El selector de marca cambia el contexto de toda la plataforma.
 // =============================================================================
 
 import { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
-  Scan, ChevronDown, Check, Plus, Library, Settings, LogOut, Gauge, Sparkles,
+  Scan, ChevronDown, Check, Plus, LogOut, BarChart3, Library, Brain, Search, Film,
 } from 'lucide-react';
 import type { MeData, BrandRow } from '@/lib/use-me';
-import { canGenerate } from '@/lib/feature-flags';
 
 interface AppHeaderProps {
   me: MeData | null;
   activeBrand: BrandRow | null;
   onBrandChange: (id: string) => void;
 }
+
+const NAV = [
+  { href: '/meta', label: 'Meta', icon: BarChart3 },
+  { href: '/biblioteca', label: 'Biblioteca', icon: Library },
+  { href: '/cerebro', label: 'Cerebro', icon: Brain },
+  { href: '/research', label: 'Research', icon: Search },
+  { href: '/studio', label: 'Analizar video', icon: Film },
+] as const;
 
 export default function AppHeader({ me, activeBrand, onBrandChange }: AppHeaderProps) {
   const router = useRouter();
@@ -34,32 +42,21 @@ export default function AppHeader({ me, activeBrand, onBrandChange }: AppHeaderP
     return () => document.removeEventListener('mousedown', onClick);
   }, []);
 
-  const usage = me?.usage;
-  const usagePct = usage && usage.limit > 0 ? Math.min(100, (usage.used / usage.limit) * 100) : 0;
-  const lowRemaining = usage ? usage.remaining <= Math.max(1, Math.floor(usage.limit * 0.1)) : false;
-
-  const navItem = (href: string, label: string) => (
-    <Link
-      href={href}
-      className={`text-sm px-3 py-1.5 rounded-lg transition-colors ${
-        pathname === href
-          ? 'text-[#f1f5f9] bg-[#1e1e2e]'
-          : 'text-[#94a3b8] hover:text-[#f1f5f9]'
-      }`}
-    >
-      {label}
-    </Link>
-  );
+  const isActive = (href: string) =>
+    pathname === href ||
+    pathname.startsWith(`${href}/`) ||
+    (href === '/biblioteca' && (pathname.startsWith('/analyze'))) ||
+    (href === '/studio' && pathname.startsWith('/studio'));
 
   return (
-    <header className="border-b border-[#1e1e2e] px-6 py-3 sticky top-0 z-50 bg-[#0a0a0f]/90 backdrop-blur-xl">
-      <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
-        <div className="flex items-center gap-4 min-w-0">
-          <Link href="/studio" className="flex items-center gap-2 shrink-0">
+    <header className="border-b border-[#1e1e2e] px-4 sm:px-6 py-3 sticky top-0 z-50 bg-[#0a0a0f]/90 backdrop-blur-xl">
+      <div className="max-w-[1400px] mx-auto flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3 min-w-0">
+          <Link href="/meta" className="flex items-center gap-2 shrink-0">
             <div className="w-8 h-8 rounded-lg gradient-blue flex items-center justify-center">
               <Scan className="w-4 h-4 text-white" />
             </div>
-            <span className="hidden sm:inline text-sm font-bold tracking-tight">AdDNA</span>
+            <span className="hidden lg:inline text-sm font-bold tracking-tight">AdDNA</span>
           </Link>
 
           {/* Selector de marca */}
@@ -67,7 +64,7 @@ export default function AppHeader({ me, activeBrand, onBrandChange }: AppHeaderP
             <div className="relative" ref={menuRef}>
               <button
                 onClick={() => setOpen((v) => !v)}
-                className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-[#1e1e2e] bg-[#111118] text-sm text-[#f1f5f9] hover:border-[#3b82f6]/50 transition-colors max-w-[180px]"
+                className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-[#1e1e2e] bg-[#111118] text-sm text-[#f1f5f9] hover:border-[#3b82f6]/50 transition-colors max-w-[160px]"
               >
                 <span className="w-5 h-5 rounded-md gradient-blue flex items-center justify-center text-[10px] font-bold text-white shrink-0">
                   {(activeBrand?.name ?? 'M')[0]?.toUpperCase()}
@@ -114,71 +111,32 @@ export default function AppHeader({ me, activeBrand, onBrandChange }: AppHeaderP
           )}
         </div>
 
-        <nav className="hidden md:flex items-center gap-1">
-          {navItem('/studio', 'Studio')}
-          {canGenerate() && navItem('/app/crear', 'B-roll')}
-          {navItem('/app/conjuntos', 'Análisis de Meta')}
-          {navItem('/biblioteca', 'Biblioteca')}
-          {navItem('/app/cerebro', 'Cerebro de la marca')}
+        <nav className="flex items-center gap-0.5 sm:gap-1 overflow-x-auto">
+          {NAV.map(({ href, label, icon: Icon }) => (
+            <Link
+              key={href}
+              href={href}
+              className={`flex items-center gap-1.5 text-xs sm:text-sm px-2.5 sm:px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap ${
+                isActive(href)
+                  ? 'text-[#f1f5f9] bg-[#1e1e2e]'
+                  : 'text-[#94a3b8] hover:text-[#f1f5f9]'
+              }`}
+            >
+              <Icon className="w-3.5 h-3.5 hidden sm:block" />
+              {label}
+            </Link>
+          ))}
         </nav>
 
-        <div className="flex items-center gap-3 shrink-0">
-          {/* Uso del mes */}
-          {usage && usage.limit > 0 && Number.isFinite(usage.limit) && (
-            <Link
-              href="/app/cuenta"
-              className={`hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-[family-name:var(--font-mono)] transition-colors ${
-                lowRemaining
-                  ? 'border-[#f59e0b]/40 text-[#fbbf24] hover:border-[#f59e0b]'
-                  : 'border-[#1e1e2e] text-[#94a3b8] hover:border-[#3b82f6]/50'
-              }`}
-              title={`Análisis usados este mes: ${usage.used} de ${usage.limit}`}
-            >
-              <Gauge className="w-3.5 h-3.5" />
-              {usage.used}/{usage.limit}
-              <span className="w-14 h-1.5 rounded-full bg-[#1e1e2e] overflow-hidden">
-                <span
-                  className={`block h-full rounded-full ${lowRemaining ? 'bg-[#f59e0b]' : 'bg-[#3b82f6]'}`}
-                  style={{ width: `${usagePct}%` }}
-                />
-              </span>
-            </Link>
-          )}
-
-          {me?.plan?.id === 'trial' && (
-            <Link
-              href="/#precios"
-              className="hidden lg:flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg gradient-blue text-white font-medium"
-            >
-              <Sparkles className="w-3.5 h-3.5" />
-              Elegir plan
-            </Link>
-          )}
-
-          <Link
-            href="/app/cuenta"
-            className="p-2 rounded-lg text-[#94a3b8] hover:text-[#f1f5f9] hover:bg-[#1e1e2e] transition-colors"
-            title="Mi cuenta"
+        <form action="/logout" method="POST" className="shrink-0">
+          <button
+            type="submit"
+            className="p-2 rounded-lg text-[#94a3b8] hover:text-[#f43f5e] hover:bg-[#1e1e2e] transition-colors"
+            title="Cerrar sesión"
           >
-            <Settings className="w-4 h-4" />
-          </Link>
-          <form action="/logout" method="POST">
-            <button
-              type="submit"
-              className="p-2 rounded-lg text-[#94a3b8] hover:text-[#f43f5e] hover:bg-[#1e1e2e] transition-colors"
-              title="Cerrar sesión"
-            >
-              <LogOut className="w-4 h-4" />
-            </button>
-          </form>
-          <Link
-            href="/biblioteca"
-            className="md:hidden p-2 rounded-lg text-[#94a3b8] hover:text-[#f1f5f9]"
-            title="Biblioteca"
-          >
-            <Library className="w-4 h-4" />
-          </Link>
-        </div>
+            <LogOut className="w-4 h-4" />
+          </button>
+        </form>
       </div>
     </header>
   );

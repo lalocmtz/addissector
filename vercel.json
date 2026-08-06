@@ -14,6 +14,15 @@
     },
     "src/app/api/cross-analyze/route.ts": {
       "maxDuration": 120
+    },
+    "src/app/api/chat/route.ts": {
+      "maxDuration": 120
+    },
+    "src/app/api/research/route.ts": {
+      "maxDuration": 300
+    },
+    "src/app/api/meta/upload/route.ts": {
+      "maxDuration": 60
     }
   }
 }

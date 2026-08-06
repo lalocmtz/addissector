@@ -16,7 +16,7 @@ export async function GET(request: NextRequest) {
     const sb = getSupabase();
     let query = sb
       .from('creatives')
-      .select('id,name,type,preview_url,created_at,product,video_type,hook_score,brand_id')
+      .select('id,name,type,preview_url,created_at,product,video_type,hook_score,brand_id,ad_name,video_url')
       .order('created_at', { ascending: false });
 
     if (isAuthConfigured()) {
@@ -50,6 +50,10 @@ interface SaveBody {
   transcript?: string | null;
   analysis: Record<string, unknown>;
   metaMetrics?: Record<string, unknown> | null;
+  /** Ruta del video original ya subido al bucket creative-videos (upload directo). */
+  videoPath?: string | null;
+  /** Nombre EXACTO del anuncio en Meta para cruzar métricas y marcarlo como analizado. */
+  adName?: string | null;
 }
 
 export async function POST(request: NextRequest) {
@@ -131,6 +135,14 @@ export async function POST(request: NextRequest) {
             : null)
       : (typeof hook.effectiveness_score === 'number' ? hook.effectiveness_score : null);
 
+    // Video original (subido directo al bucket desde el cliente)
+    let videoUrl: string | null = null;
+    if (body.videoPath) {
+      videoUrl = sb.storage.from('creative-videos').getPublicUrl(body.videoPath).data.publicUrl;
+    }
+
+    const adName = body.adName?.trim() || null;
+
     const { error } = await sb.from('creatives').insert({
       id,
       user_id: userId,
@@ -146,10 +158,31 @@ export async function POST(request: NextRequest) {
       product,
       video_type: videoType,
       hook_score: hookScore,
+      video_url: videoUrl,
+      ad_name: adName,
     });
     if (error) throw error;
 
-    return NextResponse.json({ id, preview_url: previewUrl });
+    // Si el creativo corresponde a un anuncio de Meta, vincúlalo (queda "Analizado").
+    // Match tolerante: con/sin extensión, mayúsculas y espacios.
+    if (adName && brandId) {
+      const norm = (s: string) =>
+        s.toLowerCase().replace(/\.(mp4|mov|webm|m4v|png|jpg|jpeg)$/i, '').replace(/\s+/g, ' ').trim();
+      const { data: metaAds } = await sb
+        .from('meta_ads')
+        .select('id,name')
+        .eq('brand_id', brandId);
+      const target = norm(adName);
+      const matchRow = (metaAds ?? []).find((m) => norm(m.name) === target);
+      if (matchRow) {
+        await sb
+          .from('meta_ads')
+          .update({ creative_id: id, updated_at: new Date().toISOString() })
+          .eq('id', matchRow.id);
+      }
+    }
+
+    return NextResponse.json({ id, preview_url: previewUrl, video_url: videoUrl });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Error guardando el creativo';
     return NextResponse.json({ error: message }, { status: 500 });

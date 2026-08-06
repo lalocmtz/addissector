@@ -4,8 +4,6 @@ import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { ArrowLeft, Scan, Loader2 } from 'lucide-react';
-import CloneStudio from '@/components/CloneStudio';
-import { canGenerate } from '@/lib/feature-flags';
 import CopyButton from '@/components/CopyButton';
 import ImageAnalysisResults from '@/components/ImageAnalysisResults';
 import { analysisToClipboardText } from '@/lib/copy-context';
@@ -183,24 +181,7 @@ export default function AnalyzeImagePage() {
               <ImageAnalysisResults results={results} />
             </SimpleResults>
 
-            {/* Estudio de clonación (motor de generación real) — oculto en v1 */}
-            {canGenerate() && (
-            <div className="mt-6">
-              <CloneStudio
-                analysis={active.analysis as unknown as Record<string, unknown>}
-                creativeType="image"
-                creativeId={creativeId}
-                variantOptions={[
-                  { value: null, label: 'Fiel al original (con persona nueva)' },
-                  ...(active.analysis.replication?.variants ?? []).map((v) => ({
-                    value: v.variant_number,
-                    label: `Variante ${v.variant_number} — ${v.angle}`,
-                  })),
-                ]}
-              />
-            </div>
-            )}
-          </motion.div>
+                      </motion.div>
         </div>
       </section>
     </main>

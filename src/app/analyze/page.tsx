@@ -5,8 +5,6 @@ import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { ArrowLeft, Scan, Loader2 } from 'lucide-react';
 import AnalysisResults from '@/components/AnalysisResults';
-import CloneStudio from '@/components/CloneStudio';
-import { canGenerate } from '@/lib/feature-flags';
 import CopyButton from '@/components/CopyButton';
 import { analysisToClipboardText } from '@/lib/copy-context';
 import SimpleResults, { type ReplicaVariant } from '@/components/SimpleResults';
@@ -49,6 +47,12 @@ export default function AnalyzePage() {
   const [isGeneratingCross, setIsGeneratingCross] = useState(false);
   const [activeKey, setActiveKey] = useState<string>('');
   const [creativeId, setCreativeId] = useState<string | null>(null);
+  const [videoUrl, setVideoUrl] = useState<string | null>(null);
+  const [adName, setAdName] = useState<string | null>(null);
+  const [metaStats, setMetaStats] = useState<{
+    spend: number; roas: number | null; hook_rate: number | null; ret50: number | null;
+    ret75: number | null; cvr: number | null; freq: number | null; cpa: number | null;
+  } | null>(null);
 
   useEffect(() => {
     // Reopen a saved creative from the library: /analyze?id=<uuid>
@@ -67,6 +71,21 @@ export default function AnalyzePage() {
           setResults(new Map([[name, analysis]]));
           setActiveKey(name);
           setCreativeId(id);
+          setVideoUrl(data.video_url ?? null);
+          setAdName(data.ad_name ?? null);
+          // Cruza con las métricas de Meta del mismo anuncio (memoria completa)
+          const lookup = data.ad_name || data.name;
+          if (data.brand_id && lookup) {
+            const norm = (s: string) =>
+              s.toLowerCase().replace(/\.(mp4|mov|webm|m4v|png|jpg|jpeg)$/i, '').replace(/\s+/g, ' ').trim();
+            fetch(`/api/meta/ads?brand=${data.brand_id}`)
+              .then((r) => (r.ok ? r.json() : null))
+              .then((d) => {
+                const hit = (d?.ads ?? []).find((a: { ad_name: string }) => norm(a.ad_name) === norm(lookup));
+                if (hit) setMetaStats(hit);
+              })
+              .catch(() => {});
+          }
         })
         .catch(() => router.push('/biblioteca'))
         .finally(() => setLoading(false));
@@ -214,11 +233,11 @@ export default function AnalyzePage() {
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-4">
             <button
-              onClick={() => router.push('/studio')}
+              onClick={() => router.push(creativeId ? '/biblioteca' : '/studio')}
               className="flex items-center gap-2 text-sm text-[#94a3b8] hover:text-[#f1f5f9] transition-colors"
             >
               <ArrowLeft className="w-4 h-4" />
-              Nuevo analisis
+              {creativeId ? 'Biblioteca' : 'Nuevo análisis'}
             </button>
             <div className="w-px h-6 bg-[#1e1e2e]" />
             <div className="flex items-center gap-2">
@@ -266,6 +285,60 @@ export default function AnalyzePage() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5 }}
           >
+            {/* El creativo, reproducible arriba + sus números reales de Meta */}
+            {(videoUrl || metaStats) && (
+              <div className="mb-6 rounded-2xl border border-[#1e1e2e] bg-[#0d0d14] p-4 sm:p-5">
+                <div className="flex flex-col sm:flex-row gap-5">
+                  {videoUrl && (
+                    <video
+                      src={videoUrl}
+                      controls
+                      playsInline
+                      className="w-full sm:w-[240px] max-h-[420px] rounded-xl bg-black object-contain shrink-0"
+                    />
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[10px] uppercase tracking-wide text-[#64748b] mb-1">
+                      {adName ? `Anuncio en Meta: ${adName}` : 'Creativo'}
+                    </p>
+                    {metaStats ? (
+                      <>
+                        <p className="text-sm text-[#94a3b8] mb-3">
+                          Números reales de este anuncio (memoria completa):
+                        </p>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                          {([
+                            ['Gasto', `$${Math.round(metaStats.spend).toLocaleString()}`],
+                            ['ROAS', metaStats.roas != null ? metaStats.roas.toFixed(2) : '—'],
+                            ['CPA', metaStats.cpa != null ? `$${metaStats.cpa.toFixed(2)}` : '—'],
+                            ['Hook rate', metaStats.hook_rate != null ? `${metaStats.hook_rate.toFixed(1)}%` : '—'],
+                            ['Ret 50%', metaStats.ret50 != null ? `${metaStats.ret50.toFixed(0)}%` : '—'],
+                            ['Ret 75%', metaStats.ret75 != null ? `${metaStats.ret75.toFixed(0)}%` : '—'],
+                            ['CVR', metaStats.cvr != null ? `${metaStats.cvr.toFixed(2)}%` : '—'],
+                            ['Frecuencia', metaStats.freq != null ? metaStats.freq.toFixed(1) : '—'],
+                          ] as const).map(([l, v]) => (
+                            <div key={l} className="rounded-lg border border-[#1e1e2e] bg-[#0a0a0f] px-3 py-2">
+                              <p className="text-[9px] uppercase tracking-wide text-[#64748b]">{l}</p>
+                              <p className="text-sm font-bold font-[family-name:var(--font-mono)] text-[#f1f5f9]">{v}</p>
+                            </div>
+                          ))}
+                        </div>
+                        <p className="text-[10px] text-[#64748b] mt-3">
+                          Cruza el guion con estos números: hook alto + retención 75% alta = el guion aguanta;
+                          clics altos sin CVR = promesa rota en la landing.
+                        </p>
+                      </>
+                    ) : (
+                      <p className="text-sm text-[#64748b]">
+                        Este creativo aún no cruza con la memoria de Meta (nombres distintos). Sube el export
+                        en la sección Meta o renombra el creativo con el nombre exacto del anuncio.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Copiar todo el contexto del creativo en un clic */}
             <div className="flex justify-end mb-3">
               <CopyButton
@@ -297,24 +370,7 @@ export default function AnalyzePage() {
               />
             </SimpleResults>
 
-            {/* Estudio de clonación (motor de generación real) — oculto en v1 */}
-            {canGenerate() && (
-            <div className="mt-6">
-              <CloneStudio
-                analysis={active as unknown as Record<string, unknown>}
-                creativeType="video"
-                creativeId={creativeId}
-                variantOptions={[
-                  { value: null, label: 'Fiel al original (con persona nueva)' },
-                  ...(active.script_variants ?? []).map((v) => ({
-                    value: v.variant_number,
-                    label: `Variante ${v.variant_number} — ${v.scenario}`,
-                  })),
-                ]}
-              />
-            </div>
-            )}
-          </motion.div>
+                      </motion.div>
         </div>
       </section>
     </main>

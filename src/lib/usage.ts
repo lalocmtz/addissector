@@ -66,42 +66,8 @@ export async function gateAnalysis(): Promise<GateResult> {
     };
   }
 
-  const snapshot = await getUsageSnapshot(user.id);
-
-  if (snapshot.plan.expired) {
-    return {
-      ok: false,
-      response: NextResponse.json(
-        {
-          error:
-            snapshot.plan.plan === 'trial'
-              ? 'Tu prueba gratis terminó. Elige un plan para seguir analizando tus creativos.'
-              : 'Tu suscripción está inactiva. Reactívala para seguir analizando.',
-          code: 'plan_required',
-          upgrade_url: '/#precios',
-        },
-        { status: 402 }
-      ),
-    };
-  }
-
-  if (snapshot.used >= snapshot.limit) {
-    return {
-      ok: false,
-      response: NextResponse.json(
-        {
-          error: `Llegaste al límite de ${snapshot.limit} análisis de tu plan este mes. Sube de plan para seguir escalando.`,
-          code: 'limit_reached',
-          used: snapshot.used,
-          limit: snapshot.limit,
-          upgrade_url: '/#precios',
-        },
-        { status: 402 }
-      ),
-    };
-  }
-
-  return { ok: true, userId: user.id, snapshot };
+  // Plataforma personal: sin planes ni límites de uso.
+  return { ok: true, userId: user.id, snapshot: emptySnapshot() };
 }
 
 /** Incrementa el contador del mes. Llamar SOLO tras un análisis exitoso. */

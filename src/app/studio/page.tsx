@@ -39,6 +39,8 @@ function StudioContent() {
   const [wizardName, setWizardName] = useState('');
   const [wizardSaving, setWizardSaving] = useState(false);
   const isWelcome = searchParams.get('welcome') === '1';
+  // Viene desde Meta: analizar un ganador específico (vincula el análisis al anuncio)
+  const adParam = searchParams.get('ad');
 
   useEffect(() => {
     if (!me?.configured || !activeBrand) return;
@@ -139,7 +141,29 @@ function StudioContent() {
         if (!analyzeRes.ok) await handleApiError(analyzeRes);
         const analysis: AnalysisResult = await analyzeRes.json();
 
-        updateProgress(file.name, 'Guardando en biblioteca...', 90);
+        // Sube el VIDEO ORIGINAL al storage para poder reverlo en la Biblioteca.
+        updateProgress(file.name, 'Guardando video original...', 80);
+        let videoPath: string | null = null;
+        try {
+          const urlRes = await fetch('/api/creatives/upload-url', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ filename: file.name }),
+          });
+          if (urlRes.ok) {
+            const { path, signedUrl } = await urlRes.json();
+            const put = await fetch(signedUrl, {
+              method: 'PUT',
+              headers: { 'Content-Type': file.type || 'video/mp4' },
+              body: file,
+            });
+            if (put.ok) videoPath = path;
+          }
+        } catch {
+          /* el video es best-effort: el análisis no se pierde */
+        }
+
+        updateProgress(file.name, 'Guardando en biblioteca...', 92);
         // Persist to the library (Supabase). Non-blocking: a save failure must
         // never lose the analysis the user just paid for.
         try {
@@ -149,7 +173,7 @@ function StudioContent() {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              name: file.name,
+              name: adParam || file.name,
               type: 'video',
               brandId: activeBrandId,
               previewDataUrl: previewFrame?.dataUrl ?? null,
@@ -157,6 +181,8 @@ function StudioContent() {
               aspectRatio: metadata.aspectRatio,
               transcript: transcript.transcript,
               analysis,
+              videoPath,
+              adName: adParam || file.name,
             }),
           });
         } catch {
@@ -320,6 +346,18 @@ function StudioContent() {
               ¡Tu plan está activo! Sube tu primer creativo ganador.
             </motion.div>
           )}
+          {adParam && (
+            <motion.div
+              initial={{ opacity: 0, y: -8 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="inline-flex items-center gap-2 text-sm px-4 py-2 rounded-full border border-[#eab308]/30 bg-[#eab308]/10 text-[#fde68a] mb-6 max-w-full"
+            >
+              <Film className="w-4 h-4 shrink-0" />
+              <span className="truncate">
+                Analizando el ganador de Meta: <b>{adParam}</b> — descarga el video del Ads Manager y súbelo aquí; quedará vinculado con sus métricas.
+              </span>
+            </motion.div>
+          )}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -400,15 +438,6 @@ function StudioContent() {
               }`}
             >
               <p>{error.message}</p>
-              {error.upgrade && (
-                <Link
-                  href="/#precios"
-                  className="inline-flex items-center gap-2 mt-3 px-4 py-2 rounded-lg gradient-blue text-white text-sm font-semibold"
-                >
-                  Ver planes
-                  <ArrowRight className="w-4 h-4" />
-                </Link>
-              )}
             </motion.div>
           )}
         </div>

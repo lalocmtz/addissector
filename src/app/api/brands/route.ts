@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabase, isSupabaseConfigured } from '@/lib/supabase';
 import { getSessionUser, isAuthConfigured } from '@/lib/supabase-server';
-import { getUsageSnapshot } from '@/lib/usage';
 
 export const runtime = 'nodejs';
 
@@ -53,22 +52,6 @@ export async function POST(request: NextRequest) {
     if (!name) return NextResponse.json({ error: 'La marca necesita un nombre' }, { status: 400 });
 
     const sb = getSupabase();
-    const [{ count }, usage] = await Promise.all([
-      sb.from('brands').select('id', { count: 'exact', head: true }).eq('user_id', user.id),
-      getUsageSnapshot(user.id),
-    ]);
-
-    const maxBrands = usage.plan.limits.maxBrands;
-    if ((count ?? 0) >= maxBrands) {
-      return NextResponse.json(
-        {
-          error: `Tu plan incluye ${maxBrands} marca${maxBrands === 1 ? '' : 's'}. Sube de plan para agregar más.`,
-          code: 'brand_limit',
-          upgrade_url: '/#precios',
-        },
-        { status: 402 }
-      );
-    }
 
     const { data, error } = await sb
       .from('brands')

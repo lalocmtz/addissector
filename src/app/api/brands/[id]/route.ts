@@ -16,6 +16,7 @@ interface UpdateBrandBody {
   tone?: string | null;
   palette?: string | null;
   product?: string | null;
+  economics?: { currency?: string; breakeven?: number; target?: number; kill?: number } | null;
 }
 
 export async function PATCH(
@@ -39,6 +40,7 @@ export async function PATCH(
     if (body.tone !== undefined) patch.tone = body.tone?.trim() || null;
     if (body.palette !== undefined) patch.palette = body.palette?.trim() || null;
     if (body.product !== undefined) patch.product = body.product?.trim() || null;
+    if (body.economics !== undefined) patch.economics = body.economics;
 
     const sb = getSupabase();
     const { data, error } = await sb

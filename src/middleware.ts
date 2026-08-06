@@ -7,7 +7,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
 import { isGenerationRoute } from '@/lib/feature-flags';
 
-const PROTECTED_PREFIXES = ['/studio', '/analyze', '/analyze-image', '/biblioteca', '/app'];
+const PROTECTED_PREFIXES = ['/studio', '/analyze', '/analyze-image', '/biblioteca', '/app', '/meta', '/cerebro', '/research'];
 
 export async function middleware(request: NextRequest) {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
@@ -57,12 +57,12 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
-  // Usuario logueado en /login o /signup → directo al studio.
+  // Usuario logueado en /login o /signup → directo al motor (Meta).
   if (user && (path === '/login' || path === '/signup')) {
-    const studioUrl = request.nextUrl.clone();
-    studioUrl.pathname = '/studio';
-    studioUrl.search = '';
-    return NextResponse.redirect(studioUrl);
+    const metaUrl = request.nextUrl.clone();
+    metaUrl.pathname = '/meta';
+    metaUrl.search = '';
+    return NextResponse.redirect(metaUrl);
   }
 
   return response;
@@ -79,6 +79,12 @@ export const config = {
     '/analyze',
     '/analyze-image',
     '/biblioteca',
+    '/meta/:path*',
+    '/cerebro/:path*',
+    '/research/:path*',
+    '/meta',
+    '/cerebro',
+    '/research',
     '/login',
     '/signup',
   ],

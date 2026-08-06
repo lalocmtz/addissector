@@ -6,12 +6,20 @@
 
 import { useCallback, useEffect, useState } from 'react';
 
+export interface BrandEconomics {
+  currency?: string;
+  breakeven?: number;
+  target?: number;
+  kill?: number;
+}
+
 export interface BrandRow {
   id: string;
   name: string;
   tone: string | null;
   palette: string | null;
   product: string | null;
+  economics?: BrandEconomics | null;
   created_at: string;
 }
 
