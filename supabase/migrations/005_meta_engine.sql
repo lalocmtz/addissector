@@ -120,3 +120,7 @@ drop policy if exists "chat_own" on public.chat_messages;
 create policy "chat_own" on public.chat_messages for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 drop policy if exists "research_own" on public.research_notes;
 create policy "research_own" on public.research_notes for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+-- v3.1: análisis fusionado (video + Meta) por anuncio
+alter table public.meta_ads add column if not exists fusion text;
+alter table public.meta_ads add column if not exists fusion_at timestamptz;

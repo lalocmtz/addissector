@@ -50,9 +50,33 @@ export default function AnalyzePage() {
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [adName, setAdName] = useState<string | null>(null);
   const [metaStats, setMetaStats] = useState<{
-    spend: number; roas: number | null; hook_rate: number | null; ret50: number | null;
+    ad_name: string; spend: number; roas: number | null; hook_rate: number | null; ret50: number | null;
     ret75: number | null; cvr: number | null; freq: number | null; cpa: number | null;
+    fusion: string | null;
   } | null>(null);
+  const [brandId, setBrandId] = useState<string | null>(null);
+  const [fusing, setFusing] = useState(false);
+  const [fusionError, setFusionError] = useState<string | null>(null);
+
+  const generateFusion = async () => {
+    if (!brandId || !metaStats) return;
+    setFusing(true);
+    setFusionError(null);
+    try {
+      const res = await fetch('/api/fusion', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ brandId, adName: metaStats.ad_name }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Error');
+      setMetaStats((m) => (m ? { ...m, fusion: data.fusion } : m));
+    } catch (err) {
+      setFusionError(err instanceof Error ? err.message : 'Error generando el análisis');
+    } finally {
+      setFusing(false);
+    }
+  };
 
   useEffect(() => {
     // Reopen a saved creative from the library: /analyze?id=<uuid>
@@ -75,6 +99,7 @@ export default function AnalyzePage() {
           setAdName(data.ad_name ?? null);
           // Cruza con las métricas de Meta del mismo anuncio (memoria completa)
           const lookup = data.ad_name || data.name;
+          setBrandId(data.brand_id ?? null);
           if (data.brand_id && lookup) {
             const norm = (s: string) =>
               s.toLowerCase().replace(/\.(mp4|mov|webm|m4v|png|jpg|jpeg)$/i, '').replace(/\s+/g, ' ').trim();
@@ -285,71 +310,95 @@ export default function AnalyzePage() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5 }}
           >
-            {/* El creativo, reproducible arriba + sus números reales de Meta */}
-            {(videoUrl || metaStats) && (
-              <div className="mb-6 rounded-2xl border border-[#1e1e2e] bg-[#0d0d14] p-4 sm:p-5">
-                <div className="flex flex-col sm:flex-row gap-5">
+            <div className="lg:grid lg:grid-cols-[300px_minmax(0,1fr)] lg:gap-6 lg:items-start">
+              {/* Columna izquierda FIJA: el video siempre visible mientras lees */}
+              {(videoUrl || metaStats) && (
+                <div className="lg:sticky lg:top-24 mb-6 lg:mb-0 space-y-3">
                   {videoUrl && (
                     <video
                       src={videoUrl}
                       controls
                       playsInline
-                      className="w-full sm:w-[240px] max-h-[420px] rounded-xl bg-black object-contain shrink-0"
+                      className="w-full max-h-[440px] rounded-xl bg-black object-contain border border-[#1e1e2e]"
                     />
                   )}
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[10px] uppercase tracking-wide text-[#64748b] mb-1">
-                      {adName ? `Anuncio en Meta: ${adName}` : 'Creativo'}
+                  <div className="rounded-xl border border-[#1e1e2e] bg-[#0d0d14] p-3">
+                    <p className="text-[10px] uppercase tracking-wide text-[#64748b] mb-2 truncate" title={adName ?? undefined}>
+                      {adName ? `Meta: ${adName}` : 'Creativo'}
                     </p>
                     {metaStats ? (
-                      <>
-                        <p className="text-sm text-[#94a3b8] mb-3">
-                          Números reales de este anuncio (memoria completa):
-                        </p>
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                          {([
-                            ['Gasto', `$${Math.round(metaStats.spend).toLocaleString()}`],
-                            ['ROAS', metaStats.roas != null ? metaStats.roas.toFixed(2) : '—'],
-                            ['CPA', metaStats.cpa != null ? `$${metaStats.cpa.toFixed(2)}` : '—'],
-                            ['Hook rate', metaStats.hook_rate != null ? `${metaStats.hook_rate.toFixed(1)}%` : '—'],
-                            ['Ret 50%', metaStats.ret50 != null ? `${metaStats.ret50.toFixed(0)}%` : '—'],
-                            ['Ret 75%', metaStats.ret75 != null ? `${metaStats.ret75.toFixed(0)}%` : '—'],
-                            ['CVR', metaStats.cvr != null ? `${metaStats.cvr.toFixed(2)}%` : '—'],
-                            ['Frecuencia', metaStats.freq != null ? metaStats.freq.toFixed(1) : '—'],
-                          ] as const).map(([l, v]) => (
-                            <div key={l} className="rounded-lg border border-[#1e1e2e] bg-[#0a0a0f] px-3 py-2">
-                              <p className="text-[9px] uppercase tracking-wide text-[#64748b]">{l}</p>
-                              <p className="text-sm font-bold font-[family-name:var(--font-mono)] text-[#f1f5f9]">{v}</p>
-                            </div>
-                          ))}
-                        </div>
-                        <p className="text-[10px] text-[#64748b] mt-3">
-                          Cruza el guion con estos números: hook alto + retención 75% alta = el guion aguanta;
-                          clics altos sin CVR = promesa rota en la landing.
-                        </p>
-                      </>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        {([
+                          ['Gasto', `$${Math.round(metaStats.spend).toLocaleString()}`],
+                          ['ROAS', metaStats.roas != null ? metaStats.roas.toFixed(2) : '—'],
+                          ['CPA', metaStats.cpa != null ? `$${metaStats.cpa.toFixed(2)}` : '—'],
+                          ['Hook', metaStats.hook_rate != null ? `${metaStats.hook_rate.toFixed(1)}%` : '—'],
+                          ['Ret 50%', metaStats.ret50 != null ? `${metaStats.ret50.toFixed(0)}%` : '—'],
+                          ['Ret 75%', metaStats.ret75 != null ? `${metaStats.ret75.toFixed(0)}%` : '—'],
+                          ['CVR', metaStats.cvr != null ? `${metaStats.cvr.toFixed(2)}%` : '—'],
+                          ['Frec', metaStats.freq != null ? metaStats.freq.toFixed(1) : '—'],
+                        ] as const).map(([l, v]) => (
+                          <div key={l} className="rounded-lg bg-[#0a0a0f] border border-[#15151f] px-2 py-1.5">
+                            <p className="text-[8px] uppercase tracking-wide text-[#64748b]">{l}</p>
+                            <p className="text-xs font-bold font-[family-name:var(--font-mono)] text-[#f1f5f9]">{v}</p>
+                          </div>
+                        ))}
+                      </div>
                     ) : (
-                      <p className="text-sm text-[#64748b]">
-                        Este creativo aún no cruza con la memoria de Meta (nombres distintos). Sube el export
-                        en la sección Meta o renombra el creativo con el nombre exacto del anuncio.
+                      <p className="text-xs text-[#64748b]">
+                        Aún no cruza con la memoria de Meta (nombres distintos). Sube el export en Meta
+                        o usa el nombre exacto del anuncio.
                       </p>
                     )}
                   </div>
                 </div>
-              </div>
-            )}
+              )}
 
-            {/* Copiar todo el contexto del creativo en un clic */}
-            <div className="flex justify-end mb-3">
-              <CopyButton
-                text={analysisToClipboardText(
-                  active as unknown as Record<string, unknown>,
-                  activeKey || keys[0]
+              <div className="min-w-0">
+                {/* Análisis fusionado: video × Meta */}
+                {metaStats && (
+                  <div className="mb-5 rounded-xl border border-[#8b5cf6]/25 bg-[#8b5cf6]/5 p-4">
+                    <div className="flex items-center justify-between gap-2 flex-wrap mb-1.5">
+                      <p className="text-[10px] uppercase tracking-wide text-[#c4b5fd]">
+                        ✦ Análisis fusionado · video × Meta
+                      </p>
+                      <button
+                        onClick={generateFusion}
+                        disabled={fusing}
+                        className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-[#8b5cf6] text-white font-medium disabled:opacity-60"
+                      >
+                        {fusing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+                        {fusing ? 'Desmenuzando… (~1 min)' : metaStats.fusion ? 'Regenerar' : 'Desmenuzar con los números de Meta'}
+                      </button>
+                    </div>
+                    {fusionError && <p className="text-xs text-[#f87171] mb-2">{fusionError}</p>}
+                    {metaStats.fusion ? (
+                      <div className="text-xs text-[#d1d5e8] whitespace-pre-wrap leading-relaxed max-h-[440px] overflow-y-auto rounded-lg bg-[#0a0a0f]/60 p-3">
+                        {metaStats.fusion}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-[#94a3b8]">
+                        Psicólogo + creative strategist + analista: línea de tiempo segundo a segundo,
+                        guion, dolores, psicología, dónde se pierde la atención y cómo mejorarlo — todo
+                        cruzado con la retención y conversión reales.
+                      </p>
+                    )}
+                  </div>
                 )}
-                label="Copiar todo el análisis"
-              />
-            </div>
-            <SimpleResults
+
+                {/* Copiar todo el contexto del creativo en un clic */}
+                <div className="flex justify-end mb-3">
+                  <CopyButton
+                    text={
+                      analysisToClipboardText(
+                        active as unknown as Record<string, unknown>,
+                        activeKey || keys[0]
+                      ) + (metaStats?.fusion ? `\n\n=== ANÁLISIS FUSIONADO (video × Meta) ===\n${metaStats.fusion}` : '')
+                    }
+                    label="Copiar todo el análisis"
+                  />
+                </div>
+                <SimpleResults
               verdict={active.verdict ?? ''}
               overallScore={active.overall_score ?? 0}
               scoreLabel={active.score_label ?? ''}
@@ -369,8 +418,9 @@ export default function AnalyzePage() {
                 isGeneratingCross={isGeneratingCross}
               />
             </SimpleResults>
-
-                      </motion.div>
+              </div>
+            </div>
+          </motion.div>
         </div>
       </section>
     </main>

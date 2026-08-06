@@ -10,8 +10,8 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import {
-  Upload, Loader2, X, ChevronDown, Copy, Check, Film, AlertTriangle,
-  Settings2, CheckCircle2, CircleDashed, ExternalLink,
+  Upload, Loader2, X, Copy, Check, Film, AlertTriangle,
+  Settings2, CheckCircle2, CircleDashed, ExternalLink, Sparkles,
 } from 'lucide-react';
 import AppHeader from '@/components/AppHeader';
 import { useMe } from '@/lib/use-me';
@@ -55,6 +55,8 @@ interface AdRow {
   creative_id: string | null;
   analyzed: boolean;
   has_dossier: boolean;
+  fusion: string | null;
+  fusion_at: string | null;
 }
 
 type SortKey = keyof Pick<AdRow,
@@ -541,7 +543,50 @@ function AdDetail({ ad, brandId, eco, onClose, onSaved, onAnalyze }: {
   const [saving, setSaving] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [fusion, setFusion] = useState<string | null>(ad.fusion);
+  const [fusing, setFusing] = useState(false);
+  const [fusionError, setFusionError] = useState<string | null>(null);
+  const [copiedAll, setCopiedAll] = useState(false);
+  const [copiedFusion, setCopiedFusion] = useState(false);
   const v = verdictFor(ad, eco);
+
+  const generateFusion = async () => {
+    setFusing(true);
+    setFusionError(null);
+    try {
+      const res = await fetch('/api/fusion', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ brandId, adName: ad.ad_name }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Error');
+      setFusion(data.fusion);
+      onSaved();
+    } catch (err) {
+      setFusionError(err instanceof Error ? err.message : 'Error generando el análisis');
+    } finally {
+      setFusing(false);
+    }
+  };
+
+  // Copiar TODOS los datos del anuncio (para pegar en otra guía/IA)
+  const copyAllData = async () => {
+    const lines = [
+      `ANUNCIO: ${ad.ad_name}`,
+      `Veredicto: ${v.label} — ${v.why}`,
+      `Métricas (${ad.days} días): gasto $${ad.spend.toFixed(0)} · ingresos $${ad.revenue.toFixed(0)} · ROAS ${ad.roas?.toFixed(2) ?? 'N/D'} · compras ${Math.round(ad.purchases)} · CPA $${ad.cpa?.toFixed(2) ?? 'N/D'} · hook ${ad.hook_rate?.toFixed(1) ?? 'N/D'}% · ret25 ${ad.ret25?.toFixed(0) ?? 'N/D'}% · ret50 ${ad.ret50?.toFixed(0) ?? 'N/D'}% · ret75 ${ad.ret75?.toFixed(0) ?? 'N/D'}% · CVR ${ad.cvr?.toFixed(2) ?? 'N/D'}% · CPM $${ad.cpm?.toFixed(2) ?? 'N/D'} · CPC $${ad.cpc?.toFixed(2) ?? 'N/D'} · $/ATC $${ad.cost_atc?.toFixed(2) ?? 'N/D'} · frec ${ad.freq?.toFixed(1) ?? 'N/D'} · clics ${ad.link_clicks}`,
+      '',
+      'SERIE DIARIA:',
+      ...daily.map((d) => `${d.date}: gasto $${d.spend.toFixed(2)}, ROAS ${d.roas?.toFixed(2) ?? '—'}, hook ${d.hook_rate?.toFixed(1) ?? '—'}%, frec ${d.freq?.toFixed(1) ?? '—'}`),
+    ];
+    if (dossierMeta) lines.push('', 'EXPEDIENTE META IA:', dossierMeta);
+    if (dossierVideo) lines.push('', 'NOTAS DEL VIDEO:', dossierVideo);
+    if (fusion) lines.push('', 'ANÁLISIS FUSIONADO:', fusion);
+    await navigator.clipboard.writeText(lines.join('\n'));
+    setCopiedAll(true);
+    setTimeout(() => setCopiedAll(false), 1500);
+  };
 
   useEffect(() => {
     fetch(`/api/meta/ads?brand=${brandId}&ad=${encodeURIComponent(ad.ad_name)}`)
@@ -587,9 +632,19 @@ function AdDetail({ ad, brandId, eco, onClose, onSaved, onAnalyze }: {
             </div>
             <p className="text-xs text-[#94a3b8] mt-2">{v.why}</p>
           </div>
-          <button onClick={onClose} className="p-1.5 rounded-lg text-[#94a3b8] hover:text-[#f1f5f9] hover:bg-[#1e1e2e]">
-            <X className="w-4 h-4" />
-          </button>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button
+              onClick={copyAllData}
+              title="Copiar todos los datos (métricas + serie + expedientes + análisis) para pegar en otra IA"
+              className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border border-[#1e1e2e] text-[#94a3b8] hover:text-[#f1f5f9] hover:border-[#3b82f6]/50"
+            >
+              {copiedAll ? <Check className="w-3.5 h-3.5 text-[#4ade80]" /> : <Copy className="w-3.5 h-3.5" />}
+              Datos
+            </button>
+            <button onClick={onClose} className="p-1.5 rounded-lg text-[#94a3b8] hover:text-[#f1f5f9] hover:bg-[#1e1e2e]">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
         </div>
 
         {/* Métricas clave */}
@@ -640,6 +695,51 @@ function AdDetail({ ad, brandId, eco, onClose, onSaved, onAnalyze }: {
                 <Film className="w-3.5 h-3.5" /> Analizar video
               </button>
             </div>
+          )}
+        </div>
+
+        {/* Análisis fusionado: video + Meta (la mesa redonda) */}
+        <div className="mb-4 rounded-xl border border-[#8b5cf6]/25 bg-[#8b5cf6]/5 p-4">
+          <div className="flex items-center justify-between mb-2 gap-2 flex-wrap">
+            <p className="text-[10px] uppercase tracking-wide text-[#c4b5fd] flex items-center gap-1.5">
+              <Sparkles className="w-3.5 h-3.5" /> Análisis fusionado · video × Meta
+            </p>
+            <div className="flex items-center gap-2">
+              {fusion && (
+                <button
+                  onClick={async () => {
+                    await navigator.clipboard.writeText(fusion);
+                    setCopiedFusion(true);
+                    setTimeout(() => setCopiedFusion(false), 1500);
+                  }}
+                  className="flex items-center gap-1.5 text-xs text-[#94a3b8] hover:text-[#f1f5f9]"
+                >
+                  {copiedFusion ? <Check className="w-3.5 h-3.5 text-[#4ade80]" /> : <Copy className="w-3.5 h-3.5" />}
+                  Copiar
+                </button>
+              )}
+              <button
+                onClick={generateFusion}
+                disabled={fusing}
+                className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-[#8b5cf6] text-white font-medium disabled:opacity-60"
+              >
+                {fusing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                {fusing ? 'Desmenuzando… (~1 min)' : fusion ? 'Regenerar' : 'Desmenuzar este anuncio'}
+              </button>
+            </div>
+          </div>
+          {fusionError && <p className="text-xs text-[#f87171] mb-2">{fusionError}</p>}
+          {fusion ? (
+            <div className="text-xs text-[#d1d5e8] whitespace-pre-wrap leading-relaxed max-h-[420px] overflow-y-auto rounded-lg bg-[#0a0a0f]/60 p-3">
+              {fusion}
+            </div>
+          ) : (
+            <p className="text-xs text-[#94a3b8]">
+              Un psicólogo, un creative strategist y un analista desmenuzan este creativo: línea de
+              tiempo segundo a segundo, guion, dolores, psicología, dónde se pierde la atención (con
+              la retención real) y cómo mejorarlo.
+              {!ad.creative_id && ' Consejo: analiza primero el video en la Biblioteca para que la fusión tenga el guion y las tomas.'}
+            </p>
           )}
         </div>
 

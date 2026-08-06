@@ -23,6 +23,9 @@
     },
     "src/app/api/meta/upload/route.ts": {
       "maxDuration": 60
+    },
+    "src/app/api/fusion/route.ts": {
+      "maxDuration": 300
     }
   }
 }
