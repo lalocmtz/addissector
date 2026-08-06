@@ -7,7 +7,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabase } from '@/lib/supabase';
 import { getSessionUser } from '@/lib/supabase-server';
-import type { DailyRow } from '@/lib/meta';
+import { mergeDuplicateDays, type DailyRow } from '@/lib/meta';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -21,10 +21,12 @@ export async function POST(request: NextRequest) {
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: 'No autenticado' }, { status: 401 });
 
-  const { brandId, rows } = (await request.json()) as Body;
-  if (!brandId || !Array.isArray(rows) || rows.length === 0) {
+  const { brandId, rows: rawRows } = (await request.json()) as Body;
+  if (!brandId || !Array.isArray(rawRows) || rawRows.length === 0) {
     return NextResponse.json({ error: 'Faltan brandId o filas' }, { status: 400 });
   }
+  // Defensa extra: nunca mandar dos filas con la misma llave al upsert.
+  const rows = mergeDuplicateDays(rawRows);
 
   const sb = getSupabase();
 

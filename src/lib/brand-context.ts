@@ -13,11 +13,12 @@ export async function buildBrandContext(
   userId: string,
   brandId: string
 ): Promise<string> {
-  const [brandRes, brainRes, learningsRes, notesRes] = await Promise.all([
+  const [brandRes, brainRes, learningsRes, notesRes, docsRes] = await Promise.all([
     sb.from('brands').select('name,product,tone,economics').eq('id', brandId).single(),
     sb.from('brain_sections').select('title,content').eq('brand_id', brandId).order('sort'),
     sb.from('learnings').select('text,evidence,source_ad').eq('brand_id', brandId).eq('active', true).order('created_at', { ascending: false }).limit(30),
     sb.from('research_notes').select('kind,title,body,status').eq('brand_id', brandId).neq('status', 'descartado').order('created_at', { ascending: false }).limit(25),
+    sb.from('brand_docs').select('filename,extracted_text').eq('brand_id', brandId).order('created_at', { ascending: false }).limit(12),
   ]);
 
   const brand = brandRes.data;
@@ -70,6 +71,18 @@ export async function buildBrandContext(
     lines.push('\n# CEREBRO DE LA MARCA');
     for (const s of brain) {
       if (s.content?.trim()) lines.push(`## ${s.title}\n${s.content.trim()}`);
+    }
+  }
+
+  // Capa EXTERNA: documentos subidos por Eduardo (análisis propios, research).
+  // NO se mezcla con lo extraído de los anuncios: es otra fuente y así se cita.
+  const docs = docsRes.data ?? [];
+  if (docs.length) {
+    lines.push('\n# DOCUMENTOS EXTERNOS DE LA MARCA (subidos por Eduardo — fuente distinta a los datos de anuncios; cítalos como "según tu documento X")');
+    for (const d of docs) {
+      if (d.extracted_text?.trim()) {
+        lines.push(`## Documento: ${d.filename}\n${d.extracted_text.trim().slice(0, 4000)}`);
+      }
     }
   }
 

@@ -10,6 +10,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Loader2, Send, Trash2, Plus, X, Brain, Lightbulb, ChevronDown, ChevronRight, Save,
+  FileText, Upload,
 } from 'lucide-react';
 import AppHeader from '@/components/AppHeader';
 import { useMe } from '@/lib/use-me';
@@ -252,6 +253,9 @@ export default function CerebroPage() {
               </div>
             </div>
 
+            {/* Documentos externos de la marca */}
+            {activeBrandId && <BrandDocsPanel brandId={activeBrandId} />}
+
             {/* Aprendizajes */}
             <div className="rounded-xl border border-[#1e1e2e] bg-[#0d0d14] p-4">
               <h2 className="text-xs font-bold uppercase tracking-wide text-[#94a3b8] mb-3 flex items-center gap-1.5">
@@ -311,6 +315,108 @@ function SectionRow({ section, open, onToggle, onSave, onDelete }: {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * Documentos externos de la marca (análisis propios, research, briefs).
+ * Se destilan con IA y alimentan TODO el ecosistema como fuente SEPARADA de
+ * lo que se extrae de los anuncios.
+ */
+function BrandDocsPanel({ brandId }: { brandId: string }) {
+  const [docs, setDocs] = useState<Array<{ id: string; filename: string; created_at: string }>>([]);
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const load = useCallback(() => {
+    fetch(`/api/brands/${brandId}/docs`)
+      .then((r) => (r.ok ? r.json() : { docs: [] }))
+      .then((d) => setDocs(d.docs ?? []))
+      .catch(() => {});
+  }, [brandId]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const upload = async (file: File) => {
+    setUploading(true);
+    setError(null);
+    try {
+      const buf = await file.arrayBuffer();
+      let binary = '';
+      const bytes = new Uint8Array(buf);
+      for (let i = 0; i < bytes.length; i += 0x8000) {
+        binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+      }
+      const dataBase64 = btoa(binary);
+      const mime = file.type || (file.name.endsWith('.pdf') ? 'application/pdf' : 'text/plain');
+      const res = await fetch(`/api/brands/${brandId}/docs`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename: file.name, dataBase64, mime }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Error subiendo el documento');
+      load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error subiendo el documento');
+    } finally {
+      setUploading(false);
+      if (fileRef.current) fileRef.current.value = '';
+    }
+  };
+
+  const remove = async (id: string) => {
+    if (!confirm('¿Quitar este documento del contexto?')) return;
+    await fetch(`/api/brands/${brandId}/docs?doc=${id}`, { method: 'DELETE' });
+    load();
+  };
+
+  return (
+    <div className="rounded-xl border border-[#1e1e2e] bg-[#0d0d14] p-4">
+      <div className="flex items-center justify-between mb-2">
+        <h2 className="text-xs font-bold uppercase tracking-wide text-[#94a3b8] flex items-center gap-1.5">
+          <FileText className="w-3.5 h-3.5 text-[#8b5cf6]" /> Documentos de la marca ({docs.length})
+        </h2>
+        <button
+          onClick={() => fileRef.current?.click()}
+          disabled={uploading}
+          className="flex items-center gap-1.5 text-xs text-[#3b82f6] hover:text-[#60a5fa] disabled:opacity-60"
+        >
+          {uploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+          {uploading ? 'Destilando…' : 'Subir'}
+        </button>
+        <input
+          ref={fileRef}
+          type="file"
+          accept=".pdf,.txt,.md,.markdown,text/plain,application/pdf"
+          className="hidden"
+          onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])}
+        />
+      </div>
+      <p className="text-[10px] text-[#64748b] mb-2">
+        Tus análisis y research propios (PDF/TXT/MD, máx 8 MB). La IA los destila y los usa como
+        fuente EXTERNA — separada de lo que sale de los anuncios.
+      </p>
+      {error && <p className="text-xs text-[#f87171] mb-2">{error}</p>}
+      <div className="space-y-1.5 max-h-52 overflow-y-auto">
+        {docs.map((d) => (
+          <div key={d.id} className="group flex items-center gap-2 text-xs text-[#cbd5e1] rounded-lg border border-[#15151f] bg-[#0a0a0f] px-2.5 py-2">
+            <FileText className="w-3.5 h-3.5 text-[#64748b] shrink-0" />
+            <span className="flex-1 truncate" title={d.filename}>{d.filename}</span>
+            <span className="text-[9px] text-[#475569]">{new Date(d.created_at).toLocaleDateString('es-MX')}</span>
+            <button onClick={() => remove(d.id)} className="opacity-0 group-hover:opacity-100 text-[#64748b] hover:text-[#f43f5e]">
+              <X className="w-3 h-3" />
+            </button>
+          </div>
+        ))}
+        {docs.length === 0 && (
+          <p className="text-xs text-[#64748b]">
+            Sube aquí los análisis que ya hiciste — el chat, el research y los guiones los tomarán en cuenta.
+          </p>
+        )}
+      </div>
     </div>
   );
 }
