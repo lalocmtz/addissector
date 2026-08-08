@@ -4,10 +4,9 @@ import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { ArrowLeft, Scan, Loader2 } from 'lucide-react';
-import AnalysisResults from '@/components/AnalysisResults';
-import CopyButton from '@/components/CopyButton';
+import CreativeOnePager, { type ReplicaVariant } from '@/components/CreativeOnePager';
+import CrossAnalysis from '@/components/CrossAnalysis';
 import { analysisToClipboardText } from '@/lib/copy-context';
-import SimpleResults, { type ReplicaVariant } from '@/components/SimpleResults';
 import { ensureVideoInterpretation } from '@/lib/interpretation';
 import { getStoredActiveBrandId } from '@/lib/use-me';
 import type { AnalysisResult, CrossAnalysisResult } from '@/lib/analysis-schema';
@@ -386,38 +385,48 @@ export default function AnalyzePage() {
                   </div>
                 )}
 
-                {/* Copiar todo el contexto del creativo en un clic */}
-                <div className="flex justify-end mb-3">
-                  <CopyButton
-                    text={
-                      analysisToClipboardText(
-                        active as unknown as Record<string, unknown>,
-                        activeKey || keys[0]
-                      ) + (metaStats?.fusion ? `\n\n=== ANÁLISIS FUSIONADO (video × Meta) ===\n${metaStats.fusion}` : '')
-                    }
-                    label="Copiar todo el análisis"
-                  />
-                </div>
-                <SimpleResults
-              verdict={active.verdict ?? ''}
-              overallScore={active.overall_score ?? 0}
-              scoreLabel={active.score_label ?? ''}
-              signals={active.signals ?? null}
-              winningRecipe={active.winning_recipe ?? []}
-              keep={active.keep ?? []}
-              test={active.test ?? []}
-              variants={toReplicaVariants(active)}
-            >
-              {/* Capa 3 — análisis completo con los componentes existentes */}
-              <AnalysisResults
-                results={results}
-                crossAnalysis={crossAnalysis}
-                onGenerateVariants={handleGenerateVariants}
-                onGenerateCrossAnalysis={results.size >= 2 ? handleGenerateCrossAnalysis : undefined}
-                isGeneratingVariants={isGeneratingVariants}
-                isGeneratingCross={isGeneratingCross}
-              />
-            </SimpleResults>
+                {/* UN SOLO entregable: veredicto -> qué hacer -> línea de tiempo ->
+                    por qué funciona -> dónde se pierde -> guion y prompts (colapsados) */}
+                <CreativeOnePager
+                  analysis={active}
+                  name={adName || activeKey || keys[0]}
+                  retention={
+                    metaStats
+                      ? { hookRate: metaStats.hook_rate, ret50: metaStats.ret50, ret75: metaStats.ret75 }
+                      : null
+                  }
+                  variants={toReplicaVariants(active)}
+                  onGenerateVariants={() => handleGenerateVariants(activeKey || keys[0])}
+                  isGeneratingVariants={isGeneratingVariants}
+                  copyAllText={
+                    analysisToClipboardText(
+                      active as unknown as Record<string, unknown>,
+                      activeKey || keys[0]
+                    ) +
+                    (metaStats?.fusion
+                      ? `\n\n=== ANÁLISIS FUSIONADO (video × Meta) ===\n${metaStats.fusion}`
+                      : '')
+                  }
+                />
+
+                {/* Patrón común cuando se analizan varios videos a la vez */}
+                {keys.length > 1 && (
+                  <div className="mt-8">
+                    {crossAnalysis ? (
+                      <CrossAnalysis data={crossAnalysis} />
+                    ) : (
+                      <button
+                        onClick={handleGenerateCrossAnalysis}
+                        disabled={isGeneratingCross}
+                        className="w-full py-3 rounded-xl border border-dashed border-[#2e2e42] text-sm text-[#94a3b8] hover:text-[#f1f5f9] hover:border-[#3b82f6]/50 transition-colors disabled:opacity-50"
+                      >
+                        {isGeneratingCross
+                          ? 'Buscando patrones…'
+                          : `Buscar el patrón común entre los ${keys.length} videos`}
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           </motion.div>

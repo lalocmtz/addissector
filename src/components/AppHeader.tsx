@@ -2,7 +2,8 @@
 
 // =============================================================================
 // AdDNA — Header unificado de la plataforma personal.
-// Un solo menú en TODAS las secciones: Meta · Biblioteca · Cerebro · Research.
+// Un solo menú en TODAS las secciones:
+// Meta · Planificación · Biblioteca · Cerebro · Analizar video.
 // El selector de marca cambia el contexto de toda la plataforma.
 // =============================================================================
 
@@ -10,7 +11,7 @@ import { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
-  Scan, ChevronDown, Check, Plus, LogOut, BarChart3, Library, Brain, Search, Film,
+  Scan, LayoutGrid, ChevronDown, Check, Plus, LogOut, BarChart3, Library, Brain, Film,
 } from 'lucide-react';
 import type { MeData, BrandRow } from '@/lib/use-me';
 
@@ -22,9 +23,9 @@ interface AppHeaderProps {
 
 const NAV = [
   { href: '/meta', label: 'Meta', icon: BarChart3 },
+  { href: '/plan', label: 'Planificación', icon: LayoutGrid },
   { href: '/biblioteca', label: 'Biblioteca', icon: Library },
   { href: '/cerebro', label: 'Cerebro', icon: Brain },
-  { href: '/research', label: 'Research', icon: Search },
   { href: '/studio', label: 'Analizar video', icon: Film },
 ] as const;
 
