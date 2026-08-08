@@ -1,7 +1,7 @@
 // =============================================================================
 // /api/learnings — Aprendizajes acumulados de la marca.
 // GET ?brand= · POST {brandId, text, evidence?, source_ad?} ·
-// PATCH {id, active} · DELETE ?id=
+// PATCH {id, active?, text?, evidence?, source_ad?} · DELETE ?id=
 // =============================================================================
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -51,11 +51,15 @@ export async function POST(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: 'No autenticado' }, { status: 401 });
-  const body = (await request.json()) as { id: string; active?: boolean; text?: string };
+  const body = (await request.json()) as {
+    id: string; active?: boolean; text?: string; evidence?: string; source_ad?: string;
+  };
   if (!body.id) return NextResponse.json({ error: 'Falta id' }, { status: 400 });
   const patch: Record<string, unknown> = {};
   if (body.active !== undefined) patch.active = body.active;
   if (body.text !== undefined) patch.text = body.text;
+  if (body.evidence !== undefined) patch.evidence = body.evidence || null;
+  if (body.source_ad !== undefined) patch.source_ad = body.source_ad || null;
   const sb = getSupabase();
   const { error } = await sb.from('learnings').update(patch).eq('id', body.id).eq('user_id', user.id);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });

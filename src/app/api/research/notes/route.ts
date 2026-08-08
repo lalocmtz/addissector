@@ -1,7 +1,7 @@
 // =============================================================================
 // /api/research/notes — Banco de ángulos / reseñas / dudas.
 // GET ?brand= · POST {brandId, kind, title, body?, source?} ·
-// PATCH {id, status?, title?, body?} · DELETE ?id=
+// PATCH {id, status?, title?, body?, source?} · DELETE ?id=
 // =============================================================================
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -54,12 +54,13 @@ export async function POST(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: 'No autenticado' }, { status: 401 });
-  const body = (await request.json()) as { id: string; status?: string; title?: string; body?: string };
+  const body = (await request.json()) as { id: string; status?: string; title?: string; body?: string; source?: string };
   if (!body.id) return NextResponse.json({ error: 'Falta id' }, { status: 400 });
   const patch: Record<string, unknown> = {};
   if (body.status !== undefined) patch.status = body.status;
   if (body.title !== undefined) patch.title = body.title;
   if (body.body !== undefined) patch.body = body.body;
+  if (body.source !== undefined) patch.source = body.source;
   const sb = getSupabase();
   const { error } = await sb.from('research_notes').update(patch).eq('id', body.id).eq('user_id', user.id);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
