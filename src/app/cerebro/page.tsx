@@ -15,6 +15,7 @@ import Link from 'next/link';
 import {
   Loader2, Send, Trash2, Plus, X, Brain, Lightbulb, ChevronDown, ChevronRight, Save,
   FileText, Upload, Users, Compass, Layers, Zap, CheckCircle2, Globe, Search, ArrowRight,
+  Sparkles,
 } from 'lucide-react';
 import AppHeader from '@/components/AppHeader';
 import { useMe } from '@/lib/use-me';
@@ -26,11 +27,14 @@ import { ANGLE_STATUS, CONCEPT_STATUS } from '@/lib/plan';
 
 interface Msg { id?: string; role: 'user' | 'assistant'; content: string }
 interface Section { id: string; title: string; content: string; sort: number }
-interface Learning { id: string; text: string; evidence: string | null; source_ad: string | null; active: boolean }
+interface Learning {
+  id: string; text: string; evidence: string | null; source_ad: string | null;
+  active: boolean; source: string | null;
+}
 interface Persona {
   id: string; name: string | null; description: string | null; pains: string | null;
   desires: string | null; objections: string | null; awareness_stage: string | null;
-  evidence: string | null; status: string | null;
+  evidence: string | null; status: string | null; source: string | null;
 }
 interface Angle {
   id: string; code: string | null; name: string | null; persona_id: string | null;
@@ -44,7 +48,7 @@ interface Concept {
 }
 interface Note {
   id: string; kind: string; title: string; body: string | null;
-  source: string | null; status: string; created_at: string;
+  source: string | null; evidence: string | null; status: string; created_at: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -120,6 +124,22 @@ function Field({ label, value, placeholder, rows, mono, onSave }: {
           onBlur={(e) => commit(e.target.value)}
           className={`${INPUT_CLS}${mono ? ' font-[family-name:var(--font-mono)] uppercase tracking-wide' : ''}`}
         />
+      )}
+    </div>
+  );
+}
+
+/** Marca lo que descubrió la plataforma sola, para distinguirlo de lo que
+ *  escribió Eduardo. Debajo, la evidencia (anuncio y números) en letra chica. */
+function IaMark({ source, evidence }: { source: string | null; evidence?: string | null }) {
+  if (source !== 'ia') return null;
+  return (
+    <div className="space-y-1">
+      <span className="inline-flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded border border-[#3b82f6]/40 bg-[#3b82f6]/10 text-[#60a5fa] font-[family-name:var(--font-mono)]">
+        <Sparkles className="w-2.5 h-2.5" /> IA
+      </span>
+      {evidence && (
+        <p className="text-[9px] text-[#475569] leading-snug whitespace-pre-wrap">{evidence}</p>
       )}
     </div>
   );
@@ -204,6 +224,109 @@ function useBank<T extends { id: string }>(url: string, brandId: string | null) 
 }
 
 // ---------------------------------------------------------------------------
+// Banner de ingesta — el cerebro se pone al día con los análisis pendientes.
+// ---------------------------------------------------------------------------
+
+interface Counts { personas: number; angles: number; hooks: number; learnings: number }
+
+function IngestBanner({ brandId }: { brandId: string | null }) {
+  const [pending, setPending] = useState(0);
+  const [running, setRunning] = useState(false);
+  const [done, setDone] = useState(0);
+  const [total, setTotal] = useState(0);
+  const [result, setResult] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    await Promise.resolve();
+    if (!brandId) { setPending(0); return; }
+    try {
+      const r = await fetch(`/api/brain/ingest?brand=${brandId}`);
+      const d = await r.json();
+      setPending(Number(d.pending) || 0);
+    } catch {
+      setPending(0);
+    }
+  }, [brandId]);
+
+  // La carga va dentro de un microtask: así el efecto nunca hace setState síncrono.
+  useEffect(() => { void Promise.resolve().then(load); }, [load]);
+
+  const run = async () => {
+    if (!brandId || running) return;
+    setRunning(true);
+    setResult(null);
+    setTotal(pending);
+    setDone(0);
+    const acc: Counts = { personas: 0, angles: 0, hooks: 0, learnings: 0 };
+    let left = pending;
+    try {
+      // Se llama en bucle hasta que no quede nada. El backfill procesa de 8 en 8
+      // para no pasarse del tiempo de la función.
+      for (let i = 0; i < 40 && left > 0; i++) {
+        const res = await fetch('/api/brain/ingest/backfill', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ brandId }),
+        });
+        const d = (await res.json()) as {
+          processed?: number; remaining?: number; created?: Counts;
+        };
+        for (const k of ['personas', 'angles', 'hooks', 'learnings'] as const) {
+          acc[k] += d.created?.[k] ?? 0;
+        }
+        const remaining = Number(d.remaining) || 0;
+        setDone((v) => v + (Number(d.processed) || 0));
+        setPending(remaining);
+        // Si no avanzó, no tiene caso seguir dándole vueltas.
+        if (!d.processed || remaining >= left) { left = 0; break; }
+        left = remaining;
+      }
+      const parts: string[] = [];
+      if (acc.personas) parts.push(`${acc.personas} persona${acc.personas > 1 ? 's' : ''}`);
+      if (acc.angles) parts.push(`${acc.angles} ángulo${acc.angles > 1 ? 's' : ''}`);
+      if (acc.hooks) parts.push(`${acc.hooks} hook${acc.hooks > 1 ? 's' : ''}`);
+      if (acc.learnings) parts.push(`${acc.learnings} aprendizaje${acc.learnings > 1 ? 's' : ''}`);
+      setResult(parts.length ? `El cerebro guardó ${parts.join(', ')}.` : 'El cerebro leyó todo: no había nada nuevo que guardar.');
+    } catch {
+      setResult('Algo falló leyendo los análisis. Vuelve a intentarlo.');
+    } finally {
+      setRunning(false);
+      await load();
+    }
+  };
+
+  if (!brandId || (pending === 0 && !running && !result)) return null;
+
+  return (
+    <div className="mb-4 rounded-xl border border-[#3b82f6]/25 bg-[#3b82f6]/5 px-4 py-3 flex items-center justify-between gap-4 flex-wrap">
+      <div className="min-w-0">
+        <p className="text-xs text-[#e2e8f0] flex items-center gap-2">
+          <Sparkles className="w-3.5 h-3.5 text-[#60a5fa] shrink-0" />
+          {running
+            ? `Leyendo tus anuncios ganadores… ${done}${total ? ` de ${total}` : ''}`
+            : pending > 0
+              ? `Tienes ${pending} análisis que el cerebro todavía no ha leído`
+              : 'El cerebro está al día'}
+        </p>
+        <p className="text-[10px] text-[#64748b] mt-0.5">
+          {result ?? 'Cada anuncio que subiste es un ganador: de ahí salen las personas, los ángulos, los hooks y las pruebas.'}
+        </p>
+      </div>
+      {pending > 0 && (
+        <button
+          onClick={run}
+          disabled={running}
+          className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg gradient-blue text-white disabled:opacity-60 shrink-0"
+        >
+          {running ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Brain className="w-3.5 h-3.5" />}
+          {running ? 'Leyendo…' : 'Alimentar el cerebro'}
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Página
 // ---------------------------------------------------------------------------
 
@@ -256,6 +379,7 @@ function CerebroInner() {
 
       <section className="flex-1 px-4 sm:px-6 py-5">
         <div className="max-w-[1400px] mx-auto">
+          <IngestBanner key={activeBrandId} brandId={activeBrandId} />
           {tab === 'chat' && <ChatTab brandId={activeBrandId} brandName={activeBrand?.name ?? ''} />}
           {tab === 'personas' && <PersonasTab key={activeBrandId} brandId={activeBrandId} />}
           {tab === 'angulos' && <AnglesTab key={activeBrandId} brandId={activeBrandId} />}
@@ -582,6 +706,7 @@ function PersonasTab({ brandId }: { brandId: string | null }) {
                   <X className="w-3.5 h-3.5" />
                 </button>
               </div>
+              <IaMark source={p.source} />
               <Field label="Descripción" value={p.description} rows={2} placeholder="Quién es, en una frase que puedas imaginar" onSave={(v) => patch(p.id, { description: v })} />
               <Field label="Dolores" value={p.pains} rows={2} placeholder="Qué le duele, en sus palabras" onSave={(v) => patch(p.id, { pains: v })} />
               <Field label="Deseos" value={p.desires} rows={2} placeholder="Qué quiere que pase después de comprar" onSave={(v) => patch(p.id, { desires: v })} />
@@ -642,6 +767,8 @@ function AnglesTab({ brandId }: { brandId: string | null }) {
                   <X className="w-3.5 h-3.5" />
                 </button>
               </div>
+
+              <IaMark source={a.source} />
 
               <div className="flex flex-wrap gap-1">
                 {ANGLE_STATUS.map((s) => (
@@ -831,8 +958,11 @@ function HooksTab({ brandId }: { brandId: string | null }) {
                   <X className="w-3.5 h-3.5" />
                 </button>
               </div>
+              <IaMark source={n.source} evidence={n.evidence} />
               <Field label="Por qué funcionó" value={n.body} rows={2} placeholder="Qué tensión abre, qué promete" onSave={(v) => patch(n.id, { body: v })} />
-              <Field label="De qué anuncio salió" value={n.source} placeholder="Nombre del anuncio" onSave={(v) => patch(n.id, { source: v })} />
+              {n.source !== 'ia' && (
+                <Field label="De qué anuncio salió" value={n.source} placeholder="Nombre del anuncio" onSave={(v) => patch(n.id, { source: v })} />
+              )}
             </div>
           ))}
         </div>
@@ -881,6 +1011,7 @@ function PruebasTab({ brandId }: { brandId: string | null }) {
           <X className="w-3.5 h-3.5" />
         </button>
       </div>
+      <IaMark source={l.source} />
       <Field label="Evidencia" value={l.evidence} rows={2} placeholder="Los números que lo prueban" onSave={(v) => patch(l.id, { evidence: v })} />
       <Field label="Anuncio" value={l.source_ad} placeholder="De qué anuncio salió" onSave={(v) => patch(l.id, { source_ad: v })} />
     </div>

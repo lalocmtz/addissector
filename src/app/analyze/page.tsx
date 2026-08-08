@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { ArrowLeft, Scan, Loader2 } from 'lucide-react';
@@ -37,6 +37,26 @@ function toReplicaVariants(analysis: AnalysisResult): ReplicaVariant[] {
   }));
 }
 
+// ---------------------------------------------------------------------------
+// El cerebro comiendo: cuenta lo que se guardó en lenguaje de Eduardo.
+// ---------------------------------------------------------------------------
+
+interface BrainCounts { personas: number; angles: number; hooks: number; learnings: number }
+
+const emptyCounts = (): BrainCounts => ({ personas: 0, angles: 0, hooks: 0, learnings: 0 });
+
+function brainLabel(created: BrainCounts, merged: BrainCounts): string {
+  const parts: string[] = [];
+  if (created.hooks) parts.push(`${created.hooks} hook${created.hooks > 1 ? 's' : ''}`);
+  if (created.angles) parts.push(`${created.angles} ángulo${created.angles > 1 ? 's' : ''} nuevo${created.angles > 1 ? 's' : ''}`);
+  if (created.personas) parts.push(`${created.personas} persona${created.personas > 1 ? 's' : ''}`);
+  if (created.learnings) parts.push(`${created.learnings} aprendizaje${created.learnings > 1 ? 's' : ''}`);
+  if (parts.length) return `Cerebro alimentado — ${parts.join(', ')}`;
+  const refuerzo = merged.personas + merged.angles;
+  if (refuerzo) return `Cerebro actualizado — reforzó ${refuerzo} ficha${refuerzo > 1 ? 's' : ''} que ya tenías`;
+  return 'Cerebro al día — nada nuevo que guardar';
+}
+
 export default function AnalyzePage() {
   const router = useRouter();
   const [results, setResults] = useState<Map<string, AnalysisResult>>(new Map());
@@ -56,6 +76,58 @@ export default function AnalyzePage() {
   const [brandId, setBrandId] = useState<string | null>(null);
   const [fusing, setFusing] = useState(false);
   const [fusionError, setFusionError] = useState<string | null>(null);
+  const [feedingBrain, setFeedingBrain] = useState(false);
+  const [brainChip, setBrainChip] = useState<string | null>(null);
+  const brainBusy = useRef(false);
+  const autoFed = useRef(false);
+
+  /** Manda uno o varios análisis al Cerebro. Corre en segundo plano: la vista
+   *  del análisis nunca se bloquea, el chip aparece cuando termina. */
+  const feedBrain = useCallback(async (ids: string[], bid: string | null) => {
+    const clean = ids.filter(Boolean);
+    if (!clean.length || brainBusy.current) return;
+    brainBusy.current = true;
+    setFeedingBrain(true);
+    const created = emptyCounts();
+    const merged = emptyCounts();
+    try {
+      for (const id of clean) {
+        const res = await fetch('/api/brain/ingest', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ creativeId: id, brandId: bid }),
+        });
+        const data = (await res.json()) as { created?: BrainCounts; merged?: BrainCounts };
+        for (const k of ['personas', 'angles', 'hooks', 'learnings'] as const) {
+          created[k] += data.created?.[k] ?? 0;
+          merged[k] += data.merged?.[k] ?? 0;
+        }
+      }
+      setBrainChip(brainLabel(created, merged));
+    } catch {
+      setBrainChip(null);
+    } finally {
+      brainBusy.current = false;
+      setFeedingBrain(false);
+    }
+  }, []);
+
+  // Disparo automático tras guardar un análisis nuevo: studio deja los ids
+  // recién guardados en sessionStorage y aquí el cerebro se los come solo.
+  useEffect(() => {
+    if (autoFed.current) return;
+    const raw = sessionStorage.getItem('addna-ingest-queue');
+    if (!raw) return;
+    autoFed.current = true;
+    sessionStorage.removeItem('addna-ingest-queue');
+    let ids: string[] = [];
+    try {
+      ids = JSON.parse(raw) as string[];
+    } catch {
+      return;
+    }
+    if (ids.length) void Promise.resolve().then(() => feedBrain(ids, null));
+  }, [feedBrain]);
 
   const generateFusion = async () => {
     if (!brandId || !metaStats) return;
@@ -398,6 +470,9 @@ export default function AnalyzePage() {
                   variants={toReplicaVariants(active)}
                   onGenerateVariants={() => handleGenerateVariants(activeKey || keys[0])}
                   isGeneratingVariants={isGeneratingVariants}
+                  onFeedBrain={creativeId ? () => void feedBrain([creativeId], brandId) : undefined}
+                  feedingBrain={feedingBrain}
+                  brainChip={brainChip}
                   copyAllText={
                     analysisToClipboardText(
                       active as unknown as Record<string, unknown>,

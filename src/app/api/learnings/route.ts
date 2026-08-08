@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
   const sb = getSupabase();
   const { data, error } = await sb
     .from('learnings')
-    .select('id,text,evidence,source_ad,active,created_at')
+    .select('id,text,evidence,source_ad,active,source,created_at')
     .eq('brand_id', brandId)
     .eq('user_id', user.id)
     .order('created_at', { ascending: false })

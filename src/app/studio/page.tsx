@@ -93,6 +93,9 @@ function StudioContent() {
     setIsProcessing(true);
     setError(null);
     const newResults = new Map<string, AnalysisResult>();
+    // Ids de los creativos recién guardados: /analyze se los pasa al Cerebro
+    // para que se alimente solo de cada ganador.
+    const savedIds: string[] = [];
 
     for (const file of files) {
       try {
@@ -169,7 +172,7 @@ function StudioContent() {
         try {
           const previewFrame =
             selectedFrames[Math.floor(selectedFrames.length / 2)] ?? selectedFrames[0];
-          await fetch('/api/creatives', {
+          const saveRes = await fetch('/api/creatives', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -185,6 +188,10 @@ function StudioContent() {
               adName: adParam || file.name,
             }),
           });
+          if (saveRes.ok) {
+            const saved = (await saveRes.json()) as { id?: string };
+            if (saved.id) savedIds.push(saved.id);
+          }
         } catch {
           /* library save is best-effort */
         }
@@ -205,6 +212,7 @@ function StudioContent() {
 
     if (newResults.size > 0) {
       sessionStorage.setItem('addissector-results', JSON.stringify(Object.fromEntries(newResults)));
+      sessionStorage.setItem('addna-ingest-queue', JSON.stringify(savedIds));
       router.push('/analyze');
     }
   }, [router, updateProgress, activeBrandId, refresh, handleApiError]);
