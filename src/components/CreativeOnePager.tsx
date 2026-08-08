@@ -20,7 +20,7 @@
 
 import { useMemo, useState } from 'react';
 import {
-  AlertTriangle, Brain, ChevronDown, Clock, FileText, Heart, Lock,
+  AlertTriangle, Brain, ChevronDown, Clock, FileText, Heart, Loader2, Lock,
   Quote, Sparkles, Target, TrendingDown, Users, Wand2, Zap,
 } from 'lucide-react';
 import CopyButton from './CopyButton';
@@ -59,6 +59,11 @@ interface CreativeOnePagerProps {
   isGeneratingVariants?: boolean;
   /** Texto completo para el botón "Copiar todo". */
   copyAllText?: string;
+  /** Manda este análisis al Cerebro (extrae persona, ángulo, hooks y aprendizajes). */
+  onFeedBrain?: () => void;
+  feedingBrain?: boolean;
+  /** Resultado corto de la última ingesta: "2 hooks, 1 ángulo nuevo". */
+  brainChip?: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -196,6 +201,9 @@ export default function CreativeOnePager({
   onGenerateVariants,
   isGeneratingVariants = false,
   copyAllText,
+  onFeedBrain,
+  feedingBrain = false,
+  brainChip = null,
 }: CreativeOnePagerProps) {
   const [mode, setMode] = useState<'ia' | 'equipo'>('ia');
 
@@ -272,7 +280,29 @@ export default function CreativeOnePager({
           <p className="text-[10px] uppercase tracking-wider text-[#60a5fa] font-[family-name:var(--font-mono)] truncate max-w-full">
             Veredicto · {name}
           </p>
-          {copyAllText && <CopyButton text={copyAllText} label="Copiar todo" />}
+          <div className="flex items-center gap-2 flex-wrap">
+            {brainChip && (
+              <span className="flex items-center gap-1.5 text-[10px] px-2.5 py-1.5 rounded-lg border border-[#22c55e]/30 bg-[#22c55e]/5 text-[#4ade80]">
+                <Brain className="w-3 h-3" /> {brainChip}
+              </span>
+            )}
+            {onFeedBrain && (
+              <button
+                onClick={onFeedBrain}
+                disabled={feedingBrain}
+                title="Extrae la persona, el ángulo, los hooks y los aprendizajes de este análisis y los guarda en el Cerebro"
+                className="flex items-center gap-1.5 text-[11px] px-2.5 py-1.5 rounded-lg border border-[#1e1e2e] text-[#94a3b8] hover:text-[#f1f5f9] hover:border-[#3b82f6]/50 transition-colors disabled:opacity-50"
+              >
+                {feedingBrain ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Brain className="w-3.5 h-3.5" />
+                )}
+                {feedingBrain ? 'Leyendo…' : 'Alimentar el cerebro'}
+              </button>
+            )}
+            {copyAllText && <CopyButton text={copyAllText} label="Copiar todo" />}
+          </div>
         </div>
 
         <div className="flex flex-col sm:flex-row sm:items-center gap-5">

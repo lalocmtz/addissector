@@ -5,7 +5,7 @@ export const runtime = 'nodejs';
 
 const crud = makeCrud({
   table: 'personas',
-  select: 'id,name,description,pains,desires,objections,awareness_stage,evidence,status,created_at',
+  select: 'id,name,description,pains,desires,objections,awareness_stage,evidence,status,source,created_at',
   writable: ['name', 'description', 'pains', 'desires', 'objections', 'awareness_stage', 'evidence', 'status'],
 });
 
