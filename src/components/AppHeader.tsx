@@ -10,7 +10,7 @@ import { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
-  Scan, ChevronDown, Check, Plus, LogOut, BarChart3, Library, Brain, Search, Film,
+  Scan, LayoutGrid, ChevronDown, Check, Plus, LogOut, BarChart3, Library, Brain, Search, Film,
 } from 'lucide-react';
 import type { MeData, BrandRow } from '@/lib/use-me';
 
@@ -22,6 +22,7 @@ interface AppHeaderProps {
 
 const NAV = [
   { href: '/meta', label: 'Meta', icon: BarChart3 },
+  { href: '/plan', label: 'Planificación', icon: LayoutGrid },
   { href: '/biblioteca', label: 'Biblioteca', icon: Library },
   { href: '/cerebro', label: 'Cerebro', icon: Brain },
   { href: '/research', label: 'Research', icon: Search },
