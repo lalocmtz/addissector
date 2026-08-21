@@ -24,8 +24,20 @@
     "src/app/api/meta/upload/route.ts": {
       "maxDuration": 60
     },
+    "src/app/api/meta/sync/route.ts": {
+      "maxDuration": 120
+    },
     "src/app/api/fusion/route.ts": {
       "maxDuration": 300
+    },
+    "src/app/api/auto-analyze/route.ts": {
+      "maxDuration": 300
     }
-  }
+  },
+  "crons": [
+    {
+      "path": "/api/auto-analyze",
+      "schedule": "40 */2 * * *"
+    }
+  ]
 }

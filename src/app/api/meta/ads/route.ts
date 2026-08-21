@@ -48,7 +48,7 @@ export async function GET(request: NextRequest) {
   // Dimensión: expediente + creativo vinculado
   const { data: dims } = await sb
     .from('meta_ads')
-    .select('id,name,status,created_date,first_seen,last_seen,dossier_meta,dossier_video,creative_id,fusion,fusion_at')
+    .select('id,name,status,created_date,first_seen,last_seen,dossier_meta,dossier_video,creative_id,fusion,fusion_at,media_url,media_type,thumbnail_url')
     .eq('brand_id', brandId);
   const dimMap = new Map((dims ?? []).map((d) => [d.name, d]));
 
@@ -93,10 +93,13 @@ export async function GET(request: NextRequest) {
       dossier_meta: dim?.dossier_meta ?? null,
       dossier_video: dim?.dossier_video ?? null,
       creative_id: linked?.id ?? null,
-      analyzed: Boolean(linked) || Boolean(dim?.dossier_video),
+      analyzed: Boolean(linked) || Boolean(dim?.dossier_video) || Boolean(dim?.fusion),
       has_dossier: Boolean(dim?.dossier_meta || dim?.dossier_video),
       fusion: dim?.fusion ?? null,
       fusion_at: dim?.fusion_at ?? null,
+      media_url: dim?.media_url ?? null,
+      media_type: dim?.media_type ?? null,
+      thumbnail_url: dim?.thumbnail_url ?? null,
     };
   });
 
