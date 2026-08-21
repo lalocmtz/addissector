@@ -11,7 +11,7 @@ import { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
-  Scan, LayoutGrid, ChevronDown, Check, Plus, LogOut, BarChart3, Library, Brain, Film,
+  Scan, LayoutGrid, ChevronDown, Check, Plus, LogOut, BarChart3, Library, Brain,
 } from 'lucide-react';
 import type { MeData, BrandRow } from '@/lib/use-me';
 
@@ -21,12 +21,13 @@ interface AppHeaderProps {
   onBrandChange: (id: string) => void;
 }
 
+// El análisis de video ya corre en automático (pipeline Meta → Biblioteca →
+// Cerebro), así que /studio sale del menú; la ruta sigue viva para deep-dives.
 const NAV = [
   { href: '/meta', label: 'Meta', icon: BarChart3 },
-  { href: '/plan', label: 'Planificación', icon: LayoutGrid },
   { href: '/biblioteca', label: 'Biblioteca', icon: Library },
+  { href: '/plan', label: 'Planificación', icon: LayoutGrid },
   { href: '/cerebro', label: 'Cerebro', icon: Brain },
-  { href: '/studio', label: 'Analizar video', icon: Film },
 ] as const;
 
 export default function AppHeader({ me, activeBrand, onBrandChange }: AppHeaderProps) {

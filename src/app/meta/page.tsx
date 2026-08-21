@@ -2,21 +2,22 @@
 
 // =============================================================================
 // AdDNA — META: el motor de la plataforma.
-// Sube el export del socio → memoria acumulativa por anuncio+día en Supabase →
-// tabla con las columnas estrella → veredicto por anuncio → los ganadores
-// piden ser analizados (vínculo directo con la Biblioteca y el Cerebro).
+// Sincronización automática con la API de Meta (cada hora) → memoria por
+// anuncio+día en Supabase → tabla con las columnas estrella → veredicto por
+// anuncio → ganadores y antivideos se analizan SOLOS (cron auto-analyze) y
+// alimentan al Cerebro. Los botones de sync son el "por si se traba".
 // =============================================================================
 
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import {
-  Upload, Loader2, X, Copy, Check, Film, AlertTriangle,
+  Loader2, X, Copy, Check, Film, RefreshCw, Download, Skull,
   Settings2, CheckCircle2, CircleDashed, ExternalLink, Sparkles,
 } from 'lucide-react';
 import AppHeader from '@/components/AppHeader';
 import { useMe } from '@/lib/use-me';
 import {
-  parseMetaExport, verdictFor, metaAiPrompt, DEFAULT_ECONOMICS,
+  verdictFor, metaAiPrompt, DEFAULT_ECONOMICS,
   type Economics, type Verdict, type DailyRow,
 } from '@/lib/meta';
 
@@ -57,6 +58,14 @@ interface AdRow {
   has_dossier: boolean;
   fusion: string | null;
   fusion_at: string | null;
+  media_url: string | null;
+  media_type: string | null;
+  thumbnail_url: string | null;
+}
+
+interface SyncStatus {
+  lastSyncedAt: string | null;
+  media: { total: number; done: number };
 }
 
 type SortKey = keyof Pick<AdRow,
@@ -64,10 +73,13 @@ type SortKey = keyof Pick<AdRow,
   'ret25' | 'ret50' | 'ret75' | 'freq' | 'cost_atc' | 'link_clicks' | 'cpc' | 'cvr' | 'days'>;
 
 const RANGES = [
+  { id: 'today', label: 'Hoy', days: 1 },
+  { id: 'yesterday', label: 'Ayer', days: 1 },
   { id: '7', label: '7 días', days: 7 },
   { id: '14', label: '14 días', days: 14 },
   { id: '30', label: '30 días', days: 30 },
   { id: 'all', label: 'Todo', days: 0 },
+  { id: 'custom', label: 'Personalizado', days: -1 },
 ] as const;
 
 // Columnas estrella (las del export del socio) — dirección del heat map
@@ -109,10 +121,12 @@ export default function MetaPage() {
   const [sortDesc, setSortDesc] = useState(true);
   const [onlyActive, setOnlyActive] = useState(true);
   const [selected, setSelected] = useState<AdRow | null>(null);
-  const [uploading, setUploading] = useState(false);
-  const [uploadMsg, setUploadMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [showEco, setShowEco] = useState(false);
-  const fileRef = useRef<HTMLInputElement>(null);
+  const [customFrom, setCustomFrom] = useState('');
+  const [customTo, setCustomTo] = useState('');
+  const [sync, setSync] = useState<SyncStatus | null>(null);
+  const [syncing, setSyncing] = useState<null | 'sync' | 'creatives'>(null);
+  const [syncMsg, setSyncMsg] = useState<string | null>(null);
 
   const eco: Economics = useMemo(
     () => ({ ...DEFAULT_ECONOMICS, ...((activeBrand?.economics as Economics) ?? {}) }),
@@ -134,6 +148,27 @@ export default function MetaPage() {
         setAds(probe.ads ?? []);
         return;
       }
+      // Rango personalizado: usa las fechas elegidas
+      if (r.id === 'custom') {
+        if (!customFrom) { setAds(probe.ads ?? []); return; }
+        const qs = `&from=${customFrom}${customTo ? `&to=${customTo}` : ''}`;
+        const res = await fetch(`/api/meta/ads?brand=${activeBrandId}${qs}`);
+        const data = await res.json();
+        if (data.error) throw new Error(data.error);
+        setAds(data.ads ?? []);
+        return;
+      }
+      // Hoy / Ayer: un solo día contra el último día con datos (memoryTo)
+      if (r.id === 'today' || r.id === 'yesterday') {
+        const d = new Date(`${probe.memoryTo}T00:00:00Z`);
+        if (r.id === 'yesterday') d.setUTCDate(d.getUTCDate() - 1);
+        const day = d.toISOString().slice(0, 10);
+        const res = await fetch(`/api/meta/ads?brand=${activeBrandId}&from=${day}&to=${day}`);
+        const data = await res.json();
+        if (data.error) throw new Error(data.error);
+        setAds(data.ads ?? []);
+        return;
+      }
       // El rango se calcula contra el último día con datos (memoryTo)
       const d = new Date(`${probe.memoryTo}T00:00:00Z`);
       d.setUTCDate(d.getUTCDate() - (r.days - 1));
@@ -147,44 +182,55 @@ export default function MetaPage() {
     } finally {
       setLoading(false);
     }
-  }, [activeBrandId, range]);
+  }, [activeBrandId, range, customFrom, customTo]);
 
   useEffect(() => { load(); }, [load]);
 
   // -------------------------------------------------------------------------
-  // Subida del CSV
+  // Estado de la sincronización automática + disparo manual
   // -------------------------------------------------------------------------
-  const handleFile = useCallback(async (file: File) => {
+  const loadSync = useCallback(async () => {
     if (!activeBrandId) return;
-    setUploading(true);
-    setUploadMsg(null);
     try {
-      const text = await file.text();
-      const parsed = parseMetaExport(text);
-      if (!parsed.rows.length) {
-        setUploadMsg({ ok: false, text: parsed.warnings.join(' · ') || 'No se encontraron filas.' });
-        return;
-      }
-      const res = await fetch('/api/meta/upload', {
+      const d = await fetch(`/api/meta/sync?brand=${activeBrandId}`).then((x) => x.json());
+      if (!d.error) setSync({ lastSyncedAt: d.lastSyncedAt ?? null, media: d.media ?? { total: 0, done: 0 } });
+    } catch { /* silencioso */ }
+  }, [activeBrandId]);
+
+  useEffect(() => {
+    loadSync();
+    const t = setInterval(loadSync, 60000);
+    return () => clearInterval(t);
+  }, [loadSync]);
+
+  const triggerSync = useCallback(async (action: 'sync' | 'creatives') => {
+    setSyncing(action);
+    setSyncMsg(action === 'sync' ? 'Sincronizando con Meta…' : 'Descargando creativos…');
+    try {
+      const res = await fetch('/api/meta/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ brandId: activeBrandId, rows: parsed.rows }),
+        body: JSON.stringify({ action }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Error subiendo');
-      const warn = parsed.warnings.length ? ` · Aviso: ${parsed.warnings.join('; ')}` : '';
-      setUploadMsg({
-        ok: true,
-        text: `Memoria actualizada: ${data.ads} anuncios, ${data.days} días (${parsed.dateFrom} → ${parsed.dateTo})${warn}`,
-      });
-      await load();
+      if (!res.ok || data.error) throw new Error(data.error || 'Error');
+      setSyncMsg('✓ Listo');
+      await Promise.all([load(), loadSync()]);
     } catch (err) {
-      setUploadMsg({ ok: false, text: err instanceof Error ? err.message : 'Error procesando el archivo' });
+      setSyncMsg(`⚠️ ${err instanceof Error ? err.message : 'Error'}`);
     } finally {
-      setUploading(false);
-      if (fileRef.current) fileRef.current.value = '';
+      setSyncing(null);
+      setTimeout(() => setSyncMsg((m) => (m?.startsWith('✓') ? null : m)), 5000);
     }
-  }, [activeBrandId, load]);
+  }, [load, loadSync]);
+
+  const syncAgo = useMemo(() => {
+    if (!sync?.lastSyncedAt) return null;
+    const min = Math.round((Date.now() - new Date(sync.lastSyncedAt).getTime()) / 60000);
+    const color = min < 75 ? '#22c55e' : min < 180 ? '#eab308' : '#ef4444';
+    const txt = min < 1 ? 'justo ahora' : min < 60 ? `hace ${min} min` : `hace ${Math.floor(min / 60)} h ${min % 60} min`;
+    return { txt, color };
+  }, [sync]);
 
   // -------------------------------------------------------------------------
   // Orden + filtro + heat map
@@ -237,6 +283,16 @@ export default function MetaPage() {
   );
   const pendingWinners = winners.filter((w) => !w.analyzed);
 
+  // Antivideos: Meta les dio gasto real (≥2× kill), tuvieron ≥7 días y aun así
+  // pierden dinero → autopsia automática para extraer anti-patrones.
+  const antivideos = useMemo(
+    () => visible.filter((a) =>
+      a.spend >= eco.kill * 2 && (a.roas ?? 0) < eco.breakeven && a.days >= 7
+    ),
+    [visible, eco]
+  );
+  const pendingAntis = antivideos.filter((a) => !a.analyzed && !a.fusion);
+
   const sortBy = (k: SortKey) => {
     if (sortKey === k) setSortDesc((d) => !d);
     else { setSortKey(k); setSortDesc(true); }
@@ -254,10 +310,21 @@ export default function MetaPage() {
               <h1 className="text-xl font-bold font-[family-name:var(--font-mono)] tracking-tight">
                 Meta · {activeBrand?.name ?? ''}
               </h1>
-              <p className="text-xs text-[#64748b] mt-0.5">
+              <p className="text-xs text-[#64748b] mt-0.5 flex items-center gap-2 flex-wrap">
                 {memoryFrom && memoryTo
                   ? `Memoria: ${memoryFrom} → ${memoryTo}`
-                  : 'Sin datos todavía — sube tu primer export'}
+                  : 'Sin datos todavía — la sincronización con Meta corre cada hora'}
+                {syncAgo && (
+                  <span className="inline-flex items-center gap-1.5" title="Última sincronización con la API de Meta (automática cada hora)">
+                    <span className="w-2 h-2 rounded-full inline-block" style={{ background: syncAgo.color }} />
+                    <span style={{ color: syncAgo.color }}>Actualizado {syncAgo.txt}</span>
+                  </span>
+                )}
+                {sync && sync.media.total > 0 && (
+                  <span title="Creativos (MP4/imagen) descargados automáticamente de Meta">
+                    · 🎬 {sync.media.done}/{sync.media.total} creativos
+                  </span>
+                )}
               </p>
             </div>
 
@@ -292,22 +359,59 @@ export default function MetaPage() {
                 <Settings2 className="w-4 h-4" />
               </button>
               <button
-                onClick={() => fileRef.current?.click()}
-                disabled={uploading}
+                onClick={() => triggerSync('sync')}
+                disabled={syncing !== null}
+                title="La sincronización corre sola cada hora; este botón es por si se traba"
                 className="flex items-center gap-2 text-sm px-4 py-2 rounded-lg gradient-blue text-white font-medium disabled:opacity-60"
               >
-                {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-                Subir export
+                {syncing === 'sync' ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                Sincronizar
               </button>
-              <input
-                ref={fileRef}
-                type="file"
-                accept=".csv"
-                className="hidden"
-                onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])}
-              />
+              <button
+                onClick={() => triggerSync('creatives')}
+                disabled={syncing !== null}
+                title="Descarga los MP4/imágenes pendientes (también corre solo cada hora)"
+                className="flex items-center gap-2 text-sm px-3 py-2 rounded-lg border border-[#1e1e2e] text-[#94a3b8] hover:text-[#f1f5f9] hover:border-[#3b82f6]/50 disabled:opacity-60"
+              >
+                {syncing === 'creatives' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+                Creativos
+              </button>
             </div>
           </div>
+
+          {range === 'custom' && (
+            <div className="mb-4 flex items-center gap-3 flex-wrap rounded-xl border border-[#1e1e2e] bg-[#0d0d14] px-4 py-3">
+              <label className="text-xs text-[#94a3b8]">Del
+                <input
+                  type="date"
+                  value={customFrom}
+                  min={memoryFrom ?? undefined}
+                  max={memoryTo ?? undefined}
+                  onChange={(e) => setCustomFrom(e.target.value)}
+                  className="block mt-1 rounded-lg border border-[#1e1e2e] bg-[#111118] px-2.5 py-1.5 text-sm text-[#f1f5f9] focus:border-[#3b82f6] outline-none"
+                />
+              </label>
+              <label className="text-xs text-[#94a3b8]">Al
+                <input
+                  type="date"
+                  value={customTo}
+                  min={customFrom || (memoryFrom ?? undefined)}
+                  max={memoryTo ?? undefined}
+                  onChange={(e) => setCustomTo(e.target.value)}
+                  className="block mt-1 rounded-lg border border-[#1e1e2e] bg-[#111118] px-2.5 py-1.5 text-sm text-[#f1f5f9] focus:border-[#3b82f6] outline-none"
+                />
+              </label>
+              <p className="text-[10px] text-[#64748b]">Elige "del" (y opcionalmente "al") para ver ese periodo exacto.</p>
+            </div>
+          )}
+
+          {syncMsg && (
+            <div className="mb-4 rounded-lg border border-[#1e1e2e] bg-[#0d0d14] px-4 py-2.5 text-sm text-[#94a3b8] flex items-center gap-2">
+              {syncing ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+              <span>{syncMsg}</span>
+              <button onClick={() => setSyncMsg(null)} className="ml-auto"><X className="w-3.5 h-3.5" /></button>
+            </div>
+          )}
 
           {showEco && activeBrand && (
             <EconomicsEditor
@@ -316,16 +420,6 @@ export default function MetaPage() {
               onSaved={() => { setShowEco(false); refresh(); }}
               onClose={() => setShowEco(false)}
             />
-          )}
-
-          {uploadMsg && (
-            <div className={`mb-4 rounded-lg border px-4 py-2.5 text-sm flex items-start gap-2 ${
-              uploadMsg.ok ? 'border-[#22c55e]/30 bg-[#22c55e]/10 text-[#4ade80]' : 'border-[#ef4444]/30 bg-[#ef4444]/10 text-[#f87171]'
-            }`}>
-              {uploadMsg.ok ? <Check className="w-4 h-4 mt-0.5 shrink-0" /> : <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />}
-              <span>{uploadMsg.text}</span>
-              <button onClick={() => setUploadMsg(null)} className="ml-auto"><X className="w-3.5 h-3.5" /></button>
-            </div>
           )}
 
           {/* Resumen del rango */}
@@ -340,14 +434,15 @@ export default function MetaPage() {
             <Stat label="Compras" value={String(Math.round(totals.purchases))} />
           </div>
 
-          {/* Ganadores pendientes de análisis */}
+          {/* Ganadores pendientes de análisis (el cron los analiza solo cada 2h) */}
           {pendingWinners.length > 0 && (
-            <div className="mb-5 rounded-xl border border-[#eab308]/30 bg-[#eab308]/5 px-4 py-3">
+            <div className="mb-3 rounded-xl border border-[#eab308]/30 bg-[#eab308]/5 px-4 py-3">
               <p className="text-sm text-[#facc15] font-medium flex items-center gap-2">
                 <CircleDashed className="w-4 h-4" />
                 {pendingWinners.length === 1
-                  ? `1 ganador sin analizar — descarga el video y extráele todo`
-                  : `${pendingWinners.length} ganadores sin analizar — descarga los videos y extráeles todo`}
+                  ? `1 ganador en cola de análisis automático`
+                  : `${pendingWinners.length} ganadores en cola de análisis automático`}
+                <span className="text-[10px] text-[#a16207] font-normal">· se analizan solos cada 2 h — clic para adelantarlo</span>
               </p>
               <div className="flex flex-wrap gap-2 mt-2">
                 {pendingWinners.map((w) => (
@@ -363,6 +458,30 @@ export default function MetaPage() {
             </div>
           )}
 
+          {/* Antivideos: perdedores caros → autopsia de anti-patrones */}
+          {pendingAntis.length > 0 && (
+            <div className="mb-5 rounded-xl border border-[#ef4444]/30 bg-[#ef4444]/5 px-4 py-3">
+              <p className="text-sm text-[#f87171] font-medium flex items-center gap-2">
+                <Skull className="w-4 h-4" />
+                {pendingAntis.length === 1
+                  ? `1 antivideo en cola — gastó de verdad y perdió: autopsia para saber qué NO hacer`
+                  : `${pendingAntis.length} antivideos en cola — gastaron de verdad y perdieron: autopsia para saber qué NO hacer`}
+                <span className="text-[10px] text-[#b91c1c] font-normal">· se analizan solos cada 2 h</span>
+              </p>
+              <div className="flex flex-wrap gap-2 mt-2">
+                {pendingAntis.map((a) => (
+                  <button
+                    key={a.ad_name}
+                    onClick={() => setSelected(a)}
+                    className="text-xs px-3 py-1.5 rounded-lg border border-[#ef4444]/30 text-[#fca5a5] hover:bg-[#ef4444]/10 transition-colors"
+                  >
+                    {a.ad_name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Tabla */}
           {loading ? (
             <div className="flex items-center justify-center py-24">
@@ -370,11 +489,11 @@ export default function MetaPage() {
             </div>
           ) : visible.length === 0 ? (
             <div className="rounded-xl border border-dashed border-[#1e1e2e] bg-[#0d0d14] p-12 text-center">
-              <Upload className="w-10 h-10 text-[#334155] mx-auto mb-4" />
-              <p className="text-[#f1f5f9] font-medium">Sube el export de Meta para empezar</p>
+              <RefreshCw className="w-10 h-10 text-[#334155] mx-auto mb-4" />
+              <p className="text-[#f1f5f9] font-medium">Sin datos en este rango</p>
               <p className="text-sm text-[#64748b] mt-2 max-w-md mx-auto">
-                Nivel anuncio · desglose por día · CSV. La memoria es acumulativa: cada export
-                extiende la historia sin duplicar.
+                La sincronización con la API de Meta corre sola cada hora. Si acabas de conectar
+                la marca, dale a "Sincronizar" arriba para traer los datos ahora.
               </p>
             </div>
           ) : (
@@ -549,6 +668,8 @@ function AdDetail({ ad, brandId, eco, onClose, onSaved, onAnalyze }: {
   const [copiedAll, setCopiedAll] = useState(false);
   const [copiedFusion, setCopiedFusion] = useState(false);
   const v = verdictFor(ad, eco);
+  // Perdedor caro con historia = autopsia (anti-patrones) en vez de análisis de ganador
+  const isAnti = (v.id === 'dejar' || v.id === 'apagar') && ad.spend >= eco.kill * 2 && ad.days >= 7;
 
   const generateFusion = async () => {
     setFusing(true);
@@ -557,7 +678,7 @@ function AdDetail({ ad, brandId, eco, onClose, onSaved, onAnalyze }: {
       const res = await fetch('/api/fusion', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ brandId, adName: ad.ad_name }),
+        body: JSON.stringify({ brandId, adName: ad.ad_name, mode: isAnti ? 'antivideo' : 'ganador' }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Error');
@@ -674,7 +795,20 @@ function AdDetail({ ad, brandId, eco, onClose, onSaved, onAnalyze }: {
 
         {/* Estado del análisis del creativo */}
         <div className="mb-4 rounded-xl border border-[#1e1e2e] p-4">
-          <p className="text-[10px] uppercase tracking-wide text-[#64748b] mb-2">Creativo</p>
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-[10px] uppercase tracking-wide text-[#64748b]">Creativo</p>
+            {ad.media_url && ad.media_type !== 'unavailable' && (
+              <a
+                href={ad.media_url}
+                target="_blank"
+                rel="noreferrer"
+                className="flex items-center gap-1.5 text-xs text-[#3b82f6] hover:text-[#60a5fa]"
+                title="Archivo descargado automáticamente de Meta"
+              >
+                <Film className="w-3.5 h-3.5" /> Ver {ad.media_type === 'video' ? 'video' : 'imagen'} <ExternalLink className="w-3 h-3" />
+              </a>
+            )}
+          </div>
           {ad.creative_id ? (
             <div className="flex items-center justify-between gap-2">
               <p className="text-sm text-[#4ade80] flex items-center gap-2"><CheckCircle2 className="w-4 h-4" /> Analizado en la Biblioteca</p>
@@ -724,7 +858,7 @@ function AdDetail({ ad, brandId, eco, onClose, onSaved, onAnalyze }: {
                 className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-[#8b5cf6] text-white font-medium disabled:opacity-60"
               >
                 {fusing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
-                {fusing ? 'Desmenuzando… (~1 min)' : fusion ? 'Regenerar' : 'Desmenuzar este anuncio'}
+                {fusing ? 'Desmenuzando… (~1 min)' : fusion ? 'Regenerar' : isAnti ? 'Autopsia (anti-patrones)' : 'Desmenuzar este anuncio'}
               </button>
             </div>
           </div>
