@@ -37,7 +37,7 @@
   "crons": [
     {
       "path": "/api/auto-analyze",
-      "schedule": "40 */2 * * *"
+      "schedule": "40 13 * * *"
     }
   ]
 }
