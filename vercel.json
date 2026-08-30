@@ -26,6 +26,21 @@
     },
     "src/app/api/fusion/route.ts": {
       "maxDuration": 300
+    },
+    "src/app/api/meta/sync/route.ts": {
+      "maxDuration": 300
+    },
+    "src/app/api/meta/asset/route.ts": {
+      "maxDuration": 120
+    },
+    "src/app/api/meta/queue/route.ts": {
+      "maxDuration": 30
     }
-  }
+  },
+  "crons": [
+    {
+      "path": "/api/meta/sync?phase=todo&days=14&limite=200",
+      "schedule": "0 13 * * *"
+    }
+  ]
 }

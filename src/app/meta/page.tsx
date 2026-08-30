@@ -7,6 +7,7 @@
 // piden ser analizados (vínculo directo con la Biblioteca y el Cerebro).
 // =============================================================================
 
+import Link from 'next/link';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import {
@@ -291,6 +292,12 @@ export default function MetaPage() {
               >
                 <Settings2 className="w-4 h-4" />
               </button>
+              <Link
+                href="/meta/barrido"
+                className="inline-flex items-center gap-2 rounded-lg bg-[#2563eb] px-4 py-2 text-sm font-medium text-white hover:bg-[#1d4ed8]"
+              >
+                Barrido automático
+              </Link>
               <button
                 onClick={() => fileRef.current?.click()}
                 disabled={uploading}

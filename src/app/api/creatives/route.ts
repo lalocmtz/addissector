@@ -54,6 +54,14 @@ interface SaveBody {
   videoPath?: string | null;
   /** Nombre EXACTO del anuncio en Meta para cruzar métricas y marcarlo como analizado. */
   adName?: string | null;
+  /** Vínculo DURO con Meta (viene del barrido automático): no depende del nombre. */
+  metaAdId?: string | null;
+  /** video_id de Meta: permite deduplicar cuando varios anuncios comparten video. */
+  metaVideoId?: string | null;
+  /** 'manual' (Studio) o 'auto' (barrido desde la API). */
+  source?: 'manual' | 'auto' | null;
+  /** URL pública del asset ya alojado, cuando el barrido lo subió al bucket. */
+  videoUrlDirect?: string | null;
 }
 
 export async function POST(request: NextRequest) {
@@ -158,14 +166,27 @@ export async function POST(request: NextRequest) {
       product,
       video_type: videoType,
       hook_score: hookScore,
-      video_url: videoUrl,
+      video_url: videoUrl ?? body.videoUrlDirect ?? null,
       ad_name: adName,
+      meta_ad_id: body.metaAdId ?? null,
+      meta_video_id: body.metaVideoId ?? null,
+      source: body.source ?? 'manual',
     });
     if (error) throw error;
 
-    // Si el creativo corresponde a un anuncio de Meta, vincúlalo (queda "Analizado").
-    // Match tolerante: con/sin extensión, mayúsculas y espacios.
-    if (adName && brandId) {
+    // Vínculo DURO por ad_id (barrido automático). No hay ambigüedad posible.
+    let vinculado = false;
+    if (body.metaAdId && brandId) {
+      const { error: linkErr } = await sb
+        .from('meta_ads')
+        .update({ creative_id: id, analyzed_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+        .eq('brand_id', brandId)
+        .eq('ad_id', body.metaAdId);
+      vinculado = !linkErr;
+    }
+
+    // Fallback: match tolerante por nombre (flujo manual del Studio).
+    if (!vinculado && adName && brandId) {
       const norm = (s: string) =>
         s.toLowerCase().replace(/\.(mp4|mov|webm|m4v|png|jpg|jpeg)$/i, '').replace(/\s+/g, ' ').trim();
       const { data: metaAds } = await sb
