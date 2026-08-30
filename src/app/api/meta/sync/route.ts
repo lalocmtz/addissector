@@ -15,7 +15,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSupabase } from '@/lib/supabase';
 import { getSessionUser } from '@/lib/supabase-server';
 import { mergeDuplicateDays } from '@/lib/meta';
-import { fetchAds, fetchDailyInsights, resolveAsset, videoIdsOf, MetaApiError, type RawAd } from '@/lib/meta-api';
+import { fetchAds, fetchDailyInsights, resolveAsset, videoIdsOf, pageIdOf, MetaApiError, type RawAd } from '@/lib/meta-api';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
@@ -187,6 +187,7 @@ async function syncCreativos(sb: ReturnType<typeof getSupabase>, brand: BrandRow
       adset_id: ad.adset_id ?? null,
       campaign_id: ad.campaign_id ?? null,
       creative_meta_id: ad.creative?.id ?? null,
+      page_id: pageIdOf(ad),
       video_id: vids[0] ?? null,
       status: ad.effective_status ?? ad.status ?? null,
       created_date: ad.created_time ? ad.created_time.slice(0, 10) : null,

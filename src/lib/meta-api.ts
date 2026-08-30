@@ -38,11 +38,10 @@ export function adToken(): string {
 }
 
 /**
- * Token de Página, OPCIONAL. Los videos que usan los anuncios viven bajo la
- * Página, no bajo la videoteca de la cuenta publicitaria: sin este token el
- * campo `source` responde error #10 y no se puede bajar el MP4.
+ * Override manual de token de Página (rara vez necesario: normalmente se
+ * generan solos, ver tokenForPage).
  */
-export function pageToken(): string | null {
+export function pageTokenOverride(): string | null {
   return process.env.META_PAGE_TOKEN || null;
 }
 
@@ -320,6 +319,38 @@ export interface ResolvedAsset {
   error?: string;
 }
 
+/** page_id al que pertenece el creativo del anuncio. */
+export function pageIdOf(ad: RawAd): string | null {
+  return ad.creative?.object_story_spec?.page_id ?? null;
+}
+
+/**
+ * Token de la Página, generado al vuelo desde el token de usuario.
+ *
+ * ESTE ES EL DESBLOQUEO. Los videos que usan los anuncios no viven en la
+ * videoteca de la cuenta publicitaria sino bajo la Página, y el nodo
+ * /{video_id} solo entrega `source` a quien tiene token de esa Página.
+ * Con un token de usuario que traiga pages_show_list + pages_read_engagement,
+ * /{page_id}?fields=access_token devuelve ese token — así que basta guardar
+ * UN token y el servidor se fabrica los de cada página solo.
+ */
+const pageTokenCache = new Map<string, string | null>();
+
+export async function tokenForPage(pageId: string): Promise<string | null> {
+  const override = pageTokenOverride();
+  if (override) return override;
+  if (pageTokenCache.has(pageId)) return pageTokenCache.get(pageId)!;
+  let token: string | null = null;
+  try {
+    const r = await graph<{ access_token?: string }>(pageId, { fields: 'access_token' });
+    token = r.access_token ?? null;
+  } catch {
+    token = null;
+  }
+  pageTokenCache.set(pageId, token);
+  return token;
+}
+
 /** Catálogo de la videoteca de la cuenta, cacheado por proceso. */
 const catalogCache = new Map<string, Map<string, { source?: string; length?: number; picture?: string }>>();
 
@@ -353,7 +384,8 @@ export async function advideoCatalog(actId: string) {
 export async function resolveAsset(ad: RawAd, actId: string): Promise<ResolvedAsset> {
   const vids = videoIdsOf(ad);
   const errors: string[] = [];
-  const pt = pageToken();
+  const pageId = pageIdOf(ad);
+  const pt = pageId ? await tokenForPage(pageId) : pageTokenOverride();
 
   for (const vid of vids) {
     // 1 y 2 — nodo del video, primero con token de página
