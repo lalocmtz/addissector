@@ -89,6 +89,8 @@ export default function BarridoPage() {
       let cre: { restantes?: number; limitado?: boolean; resueltos?: number;
                  encolados?: number; omitidos?: number; bloqueados?: number;
                  adsVistos?: number; estrategias?: Record<string, number> } | null = null;
+      let esperaMin = 0;
+      let limitado = false;
       try {
         const r = await fetch('/api/meta/sync', {
           method: 'POST',
@@ -101,6 +103,8 @@ export default function BarridoPage() {
         for (const m of j.marcas ?? []) {
           if (m.error) { apunta('err', `${m.marca}: ${m.error}`); continue; }
           if (m.numeros) apunta('ok', `${m.marca}: ${m.numeros.dias ?? 0} días de métricas guardados`);
+          if (m.limitado) limitado = true;
+          if (m.esperaMin) esperaMin = Math.max(esperaMin, m.esperaMin);
           cre = m.creativos ?? null;
           if (cre) {
             totalResueltos += cre.resueltos ?? 0;
@@ -118,16 +122,24 @@ export default function BarridoPage() {
       fase = 'creativos'; // los números solo hacen falta una vez
       await cargarResumen();
 
+      if (limitado || cre?.limitado) {
+        // Meta bloquea por app durante una ventana; su propio encabezado dice
+        // cuántos minutos faltan. Reintentar antes solo gasta y alarga el bloqueo.
+        const min = esperaMin || cre?.restantes === -1 ? esperaMin : 0;
+        if (min > 0) {
+          apunta('err', `Meta bloqueó las peticiones por ${min} min. Espero y sigo solo — puedes dejar esto abierto.`);
+          await esperar(Math.min(min, 60) * 60000 + 15000);
+        } else {
+          apunta('info', 'Meta pidió calma. Espero 5 min y sigo...');
+          await esperar(300000);
+        }
+        continue;
+      }
       if (!cre || (cre.restantes ?? 0) === 0) {
         apunta('ok', `Sincronización completa. ${totalResueltos} creativos descubiertos.`);
         break;
       }
-      if (cre.limitado) {
-        apunta('info', 'Meta pidió calma (límite de peticiones). Esperando 60 s y sigo...');
-        await esperar(60000);
-      } else {
-        await esperar(1500);
-      }
+      await esperar(1500);
     }
 
     setSincronizando(false);

@@ -164,7 +164,7 @@ async function syncCreativos(sb: ReturnType<typeof getSupabase>, brand: BrandRow
     .from('creatives').select('id,meta_video_id').eq('brand_id', brand.id).not('meta_video_id', 'is', null);
   const videosAnalizados = new Map((yaHechos ?? []).map((c) => [c.meta_video_id as string, c.id]));
 
-  let resueltos = 0, encolados = 0, omitidos = 0, bloqueados = 0, restantes = 0;
+  let resueltos = 0, encolados = 0, omitidos = 0, bloqueados = 0, restantes = 0, esperaMin = 0;
   let limitado = false;
   const estrategias: Record<string, number> = {};
   let pendientesDeEscribir: Record<string, unknown>[] = [];
@@ -232,7 +232,12 @@ async function syncCreativos(sb: ReturnType<typeof getSupabase>, brand: BrandRow
         // Respiro entre anuncios: el limite de Meta es por ritmo, no por total.
         await sleep(250);
       } catch (e) {
-        if (esLimiteDePeticiones(e)) { limitado = true; restantes++; continue; }
+        if (esLimiteDePeticiones(e)) {
+          limitado = true;
+          esperaMin = Math.max(esperaMin, (e as MetaApiError).esperaMin ?? 0);
+          restantes++;
+          continue;
+        }
         throw e;
       }
     }
@@ -241,7 +246,7 @@ async function syncCreativos(sb: ReturnType<typeof getSupabase>, brand: BrandRow
   }
 
   await volcar();
-  return { adsVistos: ads.length, resueltos, encolados, omitidos, bloqueados, restantes, limitado, estrategias };
+  return { adsVistos: ads.length, resueltos, encolados, omitidos, bloqueados, restantes, limitado, esperaMin, estrategias };
 }
 
 // ---------------------------------------------------------------------------
@@ -260,7 +265,7 @@ async function run(request: NextRequest, body: Body) {
 
   const sb = getSupabase();
   const phase: Phase = body.phase ?? 'todo';
-  const days = Math.min(Math.max(body.days ?? 30, 1), 365);
+  const days = Math.min(Math.max(body.days ?? 14, 1), 365);
   const limite = Math.min(Math.max(body.limiteCreativos ?? 60, 1), 300);
 
   const brands = await targetBrands(sb, user?.id ?? null, body.brandId);
@@ -276,8 +281,31 @@ async function run(request: NextRequest, body: Body) {
     const started = new Date().toISOString();
     const r: Record<string, unknown> = { marca: brand.name, cuenta: brand.meta_ad_account_id };
     try {
-      if (phase === 'numeros' || phase === 'todo') r.numeros = await syncNumeros(sb, brand, days);
-      if (phase === 'creativos' || phase === 'todo') r.creativos = await syncCreativos(sb, brand, limite);
+      // Cada fase se aísla: que Meta corte la cuota bajando números no debe
+      // borrar el avance de creativos, ni al revés.
+      if (phase === 'numeros' || phase === 'todo') {
+        try {
+          r.numeros = await syncNumeros(sb, brand, days);
+        } catch (e) {
+          if (!esLimiteDePeticiones(e)) throw e;
+          r.numeros = { dias: 0, ads: 0, limitado: true };
+          r.esperaMin = (e as MetaApiError).esperaMin ?? 0;
+          r.limitado = true;
+        }
+      }
+      if (phase === 'creativos' || phase === 'todo') {
+        try {
+          r.creativos = await syncCreativos(sb, brand, limite);
+          const c = r.creativos as { limitado?: boolean };
+          if (c?.limitado) r.limitado = true;
+        } catch (e) {
+          if (!esLimiteDePeticiones(e)) throw e;
+          r.creativos = { adsVistos: 0, resueltos: 0, encolados: 0, omitidos: 0,
+                          bloqueados: 0, restantes: -1, limitado: true, estrategias: {} };
+          r.esperaMin = Math.max((r.esperaMin as number) ?? 0, (e as MetaApiError).esperaMin ?? 0);
+          r.limitado = true;
+        }
+      }
       await sb.from('meta_sync_runs').insert({
         user_id: brand.user_id, brand_id: brand.id, kind: phase, status: 'ok',
         dias_escritos: (r.numeros as { dias?: number } | undefined)?.dias ?? 0,

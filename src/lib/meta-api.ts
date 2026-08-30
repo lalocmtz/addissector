@@ -18,16 +18,49 @@ import type { DailyRow } from './meta';
 export const GRAPH_VERSION = 'v25.0';
 const GRAPH = `https://graph.facebook.com/${GRAPH_VERSION}`;
 const PAGE_LIMIT = 100;
+/**
+ * El tope de 100 existe SOLO por el bug de /ads con creative{} anidado.
+ * Insights no lo tiene, y ahí sí importa: 153 anuncios x 90 días son ~13,000
+ * filas — 130 páginas de 100 contra 27 de 500. Esa diferencia es justo lo que
+ * hacía reventar la cuota de la app.
+ */
+const INSIGHTS_LIMIT = 500;
 
 export class MetaApiError extends Error {
   code?: number;
   subcode?: number;
-  constructor(message: string, code?: number, subcode?: number) {
+  /** Minutos que Meta dice que faltan para recuperar el acceso (encabezado de cuota). */
+  esperaMin?: number;
+  constructor(message: string, code?: number, subcode?: number, esperaMin?: number) {
     super(message);
     this.name = 'MetaApiError';
     this.code = code;
     this.subcode = subcode;
+    this.esperaMin = esperaMin;
   }
+}
+
+/**
+ * Meta reporta el consumo de cuota en encabezados, no en el cuerpo. Ahí viene
+ * `estimated_time_to_regain_access` en minutos, que es la única forma honesta
+ * de decirle al usuario cuánto falta en vez de "reintenta a ver".
+ */
+function leerCuota(res: Response): { usoPct: number; esperaMin: number } {
+  let usoPct = 0, esperaMin = 0;
+  for (const h of ['x-business-use-case-usage', 'x-ad-account-usage', 'x-app-usage']) {
+    const raw = res.headers.get(h);
+    if (!raw) continue;
+    try {
+      const j = JSON.parse(raw) as Record<string, unknown>;
+      const entradas = Array.isArray(j) ? j : Object.values(j).flat();
+      for (const e of entradas as Array<Record<string, number>>) {
+        if (!e) continue;
+        usoPct = Math.max(usoPct, e.call_count ?? 0, e.total_cputime ?? 0, e.total_time ?? 0);
+        esperaMin = Math.max(esperaMin, e.estimated_time_to_regain_access ?? 0);
+      }
+    } catch { /* encabezado con formato inesperado: se ignora */ }
+  }
+  return { usoPct, esperaMin };
 }
 
 /** Token de la cuenta publicitaria (ads_read + ads_management). */
@@ -70,10 +103,13 @@ async function graph<T>(path: string, query: GraphQuery = {}, token?: string): P
   let ultimo: unknown = null;
   for (let intento = 0; intento < 3; intento++) {
     const res = await fetch(url, { cache: 'no-store' });
+    const cuota = leerCuota(res);
     const json = (await res.json()) as T & { error?: { message: string; code: number; error_subcode?: number } };
     if (!json.error) return json;
-    const err = new MetaApiError(json.error.message, json.error.code, json.error.error_subcode);
-    if (!esLimiteDePeticiones(err) || intento === 2) throw err;
+    const err = new MetaApiError(json.error.message, json.error.code, json.error.error_subcode, cuota.esperaMin);
+    // Si Meta dice cuántos minutos faltan, reintentar aquí es tirar el tiempo:
+    // se propaga para que el llamador guarde lo hecho y avise cuánto esperar.
+    if (!esLimiteDePeticiones(err) || intento === 2 || cuota.esperaMin > 0) throw err;
     ultimo = err;
     await sleep(3000 * (intento + 1));
   }
@@ -89,7 +125,7 @@ interface Paged<T> {
 async function graphAll<T>(
   path: string,
   query: GraphQuery = {},
-  { token, maxPages = 25 }: { token?: string; maxPages?: number } = {}
+  { token, maxPages = 25, pageSize = PAGE_LIMIT }: { token?: string; maxPages?: number; pageSize?: number } = {}
 ): Promise<T[]> {
   const out: T[] = [];
   let first = true;
@@ -99,7 +135,7 @@ async function graphAll<T>(
   for (let page = 0; page < maxPages; page++) {
     let json: Paged<T>;
     if (first) {
-      json = await graph<Paged<T>>(path, { ...query, limit: PAGE_LIMIT }, tk);
+      json = await graph<Paged<T>>(path, { ...query, limit: pageSize }, tk);
       first = false;
     } else {
       if (!next) break;
@@ -251,7 +287,9 @@ export async function fetchDailyInsights(
   } else {
     query.date_preset = opts.datePreset ?? 'last_30d';
   }
-  const raw = await graphAll<RawInsight>(`${actId}/insights`, query, { maxPages: opts.maxPages ?? 40 });
+  const raw = await graphAll<RawInsight>(`${actId}/insights`, query, {
+    maxPages: opts.maxPages ?? 40, pageSize: INSIGHTS_LIMIT,
+  });
   const impressions = new Map<string, number>();
   const rows: ApiDailyRow[] = [];
   for (const r of raw) {
