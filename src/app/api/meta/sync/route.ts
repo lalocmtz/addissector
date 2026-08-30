@@ -15,7 +15,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSupabase } from '@/lib/supabase';
 import { getSessionUser } from '@/lib/supabase-server';
 import { mergeDuplicateDays } from '@/lib/meta';
-import { fetchAds, fetchDailyInsights, resolveAsset, videoIdsOf, pageIdOf, MetaApiError, type RawAd } from '@/lib/meta-api';
+import { fetchAds, fetchDailyInsights, resolveAsset, videoIdsOf, pageIdOf, sleep, esLimiteDePeticiones, MetaApiError, type RawAd } from '@/lib/meta-api';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
@@ -153,32 +153,43 @@ async function syncCreativos(sb: ReturnType<typeof getSupabase>, brand: BrandRow
   const actId = brand.meta_ad_account_id!;
   const ads: RawAd[] = await fetchAds(actId);
 
-  // Estado actual: qué anuncios ya tienen asset resuelto o ya fueron analizados
   const { data: rows } = await sb
     .from('meta_ads')
-    .select('id,name,ad_id,asset_kind,queue_status,creative_id')
+    .select('id,name,ad_id,asset_kind,asset_url,queue_status,creative_id')
     .eq('brand_id', brand.id);
   const byName = new Map((rows ?? []).map((r) => [r.name, r]));
 
-  // Videos ya analizados en la biblioteca -> dedup (muchos ads comparten video)
+  // Videos ya analizados -> dedup (muchos anuncios comparten el mismo video)
   const { data: yaHechos } = await sb
     .from('creatives').select('id,meta_video_id').eq('brand_id', brand.id).not('meta_video_id', 'is', null);
   const videosAnalizados = new Map((yaHechos ?? []).map((c) => [c.meta_video_id as string, c.id]));
 
-  let resueltos = 0, encolados = 0, omitidos = 0, bloqueados = 0;
+  let resueltos = 0, encolados = 0, omitidos = 0, bloqueados = 0, restantes = 0;
+  let limitado = false;
   const estrategias: Record<string, number> = {};
-  const updates: Record<string, unknown>[] = [];
+  let pendientesDeEscribir: Record<string, unknown>[] = [];
+
+  // Guarda lo avanzado. Con cuentas de 150+ anuncios el limite de Meta llega a
+  // media corrida: sin esto se perderia TODO el trabajo hecho hasta ese punto.
+  const volcar = async () => {
+    if (pendientesDeEscribir.length === 0) return;
+    const { error } = await sb
+      .from('meta_ads').upsert(pendientesDeEscribir, { onConflict: 'brand_id,name' });
+    if (error) throw new Error(`meta_ads(creativos): ${error.message}`);
+    pendientesDeEscribir = [];
+  };
 
   for (const ad of ads) {
     const prev = byName.get(ad.name);
-    // Ya resuelto y encolado/listo: no gastar cuota de nuevo
-    if (prev?.asset_kind && prev.queue_status && prev.queue_status !== 'pendiente') continue;
-    if (resueltos >= limite) break;
+    // Ya resuelto de verdad (con asset descargable) o ya analizado: no regastar cuota
+    const yaResuelto = Boolean(prev?.asset_url) || prev?.queue_status === 'listo' || prev?.queue_status === 'omitido';
+    if (yaResuelto) continue;
+    if (resueltos >= limite || limitado) { restantes++; continue; }
 
     const vids = videoIdsOf(ad);
     const yaAnalizado = vids.find((v) => videosAnalizados.has(v));
 
-    let update: Record<string, unknown> = {
+    const base = {
       ...(prev ? { id: prev.id } : {}),
       user_id: brand.user_id,
       brand_id: brand.id,
@@ -188,47 +199,49 @@ async function syncCreativos(sb: ReturnType<typeof getSupabase>, brand: BrandRow
       campaign_id: ad.campaign_id ?? null,
       creative_meta_id: ad.creative?.id ?? null,
       page_id: pageIdOf(ad),
-      video_id: vids[0] ?? null,
       status: ad.effective_status ?? ad.status ?? null,
       created_date: ad.created_time ? ad.created_time.slice(0, 10) : null,
       updated_at: new Date().toISOString(),
     };
 
     if (yaAnalizado) {
-      // Otro anuncio ya subió este mismo video: reusar el análisis, no repetirlo.
-      update = { ...update, queue_status: 'listo', asset_kind: 'video',
-                 asset_strategy: 'dedup-video', creative_id: videosAnalizados.get(yaAnalizado),
-                 analyzed_at: new Date().toISOString() };
+      pendientesDeEscribir.push({
+        ...base, video_id: yaAnalizado, queue_status: 'listo', asset_kind: 'video',
+        asset_strategy: 'dedup-video', creative_id: videosAnalizados.get(yaAnalizado),
+        analyzed_at: new Date().toISOString(),
+      });
       omitidos++;
     } else {
-      const asset = await resolveAsset(ad, actId);
-      resueltos++;
-      estrategias[asset.strategy] = (estrategias[asset.strategy] ?? 0) + 1;
-      update = {
-        ...update,
-        asset_kind: asset.kind,
-        asset_url: asset.url,
-        asset_strategy: asset.strategy,
-        asset_error: asset.error ?? null,
-        thumbnail_url: asset.thumbnail,
-        duration: asset.duration,
-        video_id: asset.videoId ?? vids[0] ?? null,
-        queue_status: asset.kind === 'none' ? 'omitido' : 'pendiente',
-        queue_error: asset.kind === 'none' ? (asset.error ?? 'sin asset descargable') : null,
-      };
-      if (asset.kind === 'none') bloqueados++;
-      else encolados++;
+      try {
+        const asset = await resolveAsset(ad, actId);
+        resueltos++;
+        estrategias[asset.strategy] = (estrategias[asset.strategy] ?? 0) + 1;
+        pendientesDeEscribir.push({
+          ...base,
+          asset_kind: asset.kind,
+          asset_url: asset.url,
+          asset_strategy: asset.strategy,
+          asset_error: asset.error ?? null,
+          thumbnail_url: asset.thumbnail,
+          duration: asset.duration,
+          video_id: asset.videoId ?? vids[0] ?? null,
+          queue_status: asset.kind === 'none' ? 'omitido' : 'pendiente',
+          queue_error: asset.kind === 'none' ? (asset.error ?? 'sin asset descargable') : null,
+        });
+        if (asset.kind === 'none') bloqueados++; else encolados++;
+        // Respiro entre anuncios: el limite de Meta es por ritmo, no por total.
+        await sleep(250);
+      } catch (e) {
+        if (esLimiteDePeticiones(e)) { limitado = true; restantes++; continue; }
+        throw e;
+      }
     }
-    updates.push(update);
+
+    if (pendientesDeEscribir.length >= 25) await volcar();
   }
 
-  for (let i = 0; i < updates.length; i += 100) {
-    const { error } = await sb
-      .from('meta_ads').upsert(updates.slice(i, i + 100), { onConflict: 'brand_id,name' });
-    if (error) throw new Error(`meta_ads(creativos): ${error.message}`);
-  }
-
-  return { adsVistos: ads.length, resueltos, encolados, omitidos, bloqueados, estrategias };
+  await volcar();
+  return { adsVistos: ads.length, resueltos, encolados, omitidos, bloqueados, restantes, limitado, estrategias };
 }
 
 // ---------------------------------------------------------------------------

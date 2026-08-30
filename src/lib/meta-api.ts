@@ -49,16 +49,35 @@ interface GraphQuery {
   [k: string]: string | number | undefined;
 }
 
+export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** Códigos con los que Meta dice "vas muy rápido": conviene esperar y reintentar. */
+export function esLimiteDePeticiones(e: unknown): boolean {
+  const c = (e as MetaApiError)?.code;
+  return c === 4 || c === 17 || c === 32 || c === 613 || c === 80004;
+}
+
 async function graph<T>(path: string, query: GraphQuery = {}, token?: string): Promise<T> {
   const url = new URL(`${GRAPH}/${path}`);
   for (const [k, v] of Object.entries(query)) {
     if (v !== undefined && v !== null) url.searchParams.set(k, String(v));
   }
   url.searchParams.set('access_token', token ?? adToken());
-  const res = await fetch(url, { cache: 'no-store' });
-  const json = (await res.json()) as T & { error?: { message: string; code: number; error_subcode?: number } };
-  if (json.error) throw new MetaApiError(json.error.message, json.error.code, json.error.error_subcode);
-  return json;
+
+  // Meta limita por app, no por endpoint: al pasarse responde #4 y TODO empieza
+  // a fallar. Dos reintentos con espera creciente absorben los picos; si aun
+  // asi insiste, se propaga para que el llamador guarde lo hecho y se detenga.
+  let ultimo: unknown = null;
+  for (let intento = 0; intento < 3; intento++) {
+    const res = await fetch(url, { cache: 'no-store' });
+    const json = (await res.json()) as T & { error?: { message: string; code: number; error_subcode?: number } };
+    if (!json.error) return json;
+    const err = new MetaApiError(json.error.message, json.error.code, json.error.error_subcode);
+    if (!esLimiteDePeticiones(err) || intento === 2) throw err;
+    ultimo = err;
+    await sleep(3000 * (intento + 1));
+  }
+  throw ultimo as MetaApiError;
 }
 
 interface Paged<T> {

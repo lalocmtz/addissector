@@ -21,13 +21,15 @@ export async function GET(request: NextRequest) {
   const limit = Math.min(Number(sp.get('limit') ?? 25), 100);
 
   const sb = getSupabase();
+  // Solo entra a la cola lo que YA tiene asset descargable. Un anuncio sin
+  // asset_url todavia no fue resuelto por /api/meta/sync: no hay nada que bajar.
   const { data, error } = await sb
     .from('meta_ads')
     .select('id,name,ad_id,video_id,asset_kind,asset_strategy,thumbnail_url,duration,queue_status,queue_attempts')
     .eq('brand_id', brandId)
     .eq('user_id', user.id)
     .in('queue_status', ['pendiente', 'error'])
-    .neq('asset_kind', 'none')
+    .not('asset_url', 'is', null)
     .lt('queue_attempts', 3)
     .order('last_seen', { ascending: false })
     .limit(limit);
@@ -36,13 +38,20 @@ export async function GET(request: NextRequest) {
   // Resumen para la barra de progreso
   const { data: todos } = await sb
     .from('meta_ads')
-    .select('queue_status,asset_kind')
+    .select('queue_status,asset_url')
     .eq('brand_id', brandId)
     .eq('user_id', user.id);
-  const resumen = { pendiente: 0, listo: 0, error: 0, omitido: 0, total: (todos ?? []).length };
+  const resumen = {
+    pendiente: 0, listo: 0, error: 0, omitido: 0,
+    sinResolver: 0, total: (todos ?? []).length,
+  };
   for (const r of todos ?? []) {
-    const k = (r.queue_status ?? 'pendiente') as keyof typeof resumen;
-    if (k in resumen && k !== 'total') resumen[k]++;
+    const est = (r.queue_status ?? 'pendiente') as string;
+    if (est === 'listo') resumen.listo++;
+    else if (est === 'omitido') resumen.omitido++;
+    else if (!r.asset_url) resumen.sinResolver++;   // aun no descubierto en Meta
+    else if (est === 'error') resumen.error++;
+    else resumen.pendiente++;
   }
 
   return NextResponse.json({ items: data ?? [], resumen });

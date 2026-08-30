@@ -37,7 +37,9 @@ interface QueueItem {
   duration: number | null;
 }
 
-interface Resumen { pendiente: number; listo: number; error: number; omitido: number; total: number }
+interface Resumen { pendiente: number; listo: number; error: number; omitido: number; sinResolver: number; total: number }
+
+const esperar = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 type LogKind = 'ok' | 'err' | 'info';
 interface LogLine { t: string; kind: LogKind; msg: string }
@@ -74,31 +76,61 @@ export default function BarridoPage() {
   const sincronizar = useCallback(async () => {
     if (!activeBrandId) return;
     setSincronizando(true);
-    apunta('info', 'Sincronizando con Meta (números + creativos)...');
-    try {
-      const r = await fetch('/api/meta/sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ brandId: activeBrandId, phase: 'todo', days: 90, limiteCreativos: 200 }),
-      });
-      const j = await r.json();
-      if (!r.ok) throw new Error(j.error || 'Error sincronizando');
-      for (const m of j.marcas ?? []) {
-        if (m.error) { apunta('err', `${m.marca}: ${m.error}`); continue; }
-        const nums = m.numeros ?? {};
-        const cre = m.creativos ?? {};
-        apunta('ok', `${m.marca}: ${nums.dias ?? 0} días de métricas · ${cre.adsVistos ?? 0} anuncios vistos · ${cre.encolados ?? 0} encolados · ${cre.omitidos ?? 0} dedup · ${cre.bloqueados ?? 0} sin asset`);
-        if (cre.estrategias) {
-          const e = Object.entries(cre.estrategias as Record<string, number>)
-            .map(([k, v]) => `${k}:${v}`).join(' · ');
-          if (e) apunta('info', `Rutas de descarga -> ${e}`);
+    detener.current = false;
+    apunta('info', 'Sincronizando con Meta...');
+
+    // Meta limita por RITMO, no por total: con cuentas grandes hay que ir por
+    // tandas. Cada vuelta resuelve unas cuantas y guarda; si Meta pide calma,
+    // se espera y se retoma donde se quedo.
+    let fase: 'todo' | 'creativos' = 'todo';
+    let totalResueltos = 0;
+
+    for (let vuelta = 0; vuelta < 60 && !detener.current; vuelta++) {
+      let cre: { restantes?: number; limitado?: boolean; resueltos?: number;
+                 encolados?: number; omitidos?: number; bloqueados?: number;
+                 adsVistos?: number; estrategias?: Record<string, number> } | null = null;
+      try {
+        const r = await fetch('/api/meta/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ brandId: activeBrandId, phase: fase, days: 90, limiteCreativos: 25 }),
+        });
+        const j = await r.json();
+        if (!r.ok) throw new Error(j.error || 'Error sincronizando');
+
+        for (const m of j.marcas ?? []) {
+          if (m.error) { apunta('err', `${m.marca}: ${m.error}`); continue; }
+          if (m.numeros) apunta('ok', `${m.marca}: ${m.numeros.dias ?? 0} días de métricas guardados`);
+          cre = m.creativos ?? null;
+          if (cre) {
+            totalResueltos += cre.resueltos ?? 0;
+            apunta('ok', `Creativos: ${cre.encolados ?? 0} listos para analizar · ${cre.omitidos ?? 0} repetidos · ${cre.bloqueados ?? 0} sin video · faltan ${cre.restantes ?? 0}`);
+            if (cre.estrategias && Object.keys(cre.estrategias).length) {
+              apunta('info', 'Rutas: ' + Object.entries(cre.estrategias).map(([k, v]) => `${k}:${v}`).join(' · '));
+            }
+          }
         }
+      } catch (e) {
+        apunta('err', e instanceof Error ? e.message : 'Error sincronizando');
+        break;
       }
-    } catch (e) {
-      apunta('err', e instanceof Error ? e.message : 'Error sincronizando');
+
+      fase = 'creativos'; // los números solo hacen falta una vez
+      await cargarResumen();
+
+      if (!cre || (cre.restantes ?? 0) === 0) {
+        apunta('ok', `Sincronización completa. ${totalResueltos} creativos descubiertos.`);
+        break;
+      }
+      if (cre.limitado) {
+        apunta('info', 'Meta pidió calma (límite de peticiones). Esperando 60 s y sigo...');
+        await esperar(60000);
+      } else {
+        await esperar(1500);
+      }
     }
+
     setSincronizando(false);
-    cargarResumen();
   }, [activeBrandId, apunta, cargarResumen]);
 
   // -------------------------------------------------------------------------
@@ -334,13 +366,14 @@ export default function BarridoPage() {
             <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-[#1e293b]">
               <div className="h-full rounded-full bg-[#2563eb] transition-all" style={{ width: `${pct}%` }} />
             </div>
-            <div className="mt-4 grid grid-cols-2 gap-3 text-sm sm:grid-cols-5">
+            <div className="mt-4 grid grid-cols-2 gap-3 text-sm sm:grid-cols-6">
               {([
                 ['Total', resumen.total, '#e2e8f0'],
                 ['Analizados', resumen.listo, '#4ade80'],
                 ['Pendientes', resumen.pendiente, '#facc15'],
                 ['Con error', resumen.error, '#f87171'],
-                ['Sin asset', resumen.omitido, '#94a3b8'],
+                ['Sin video', resumen.omitido, '#94a3b8'],
+                ['Sin descubrir', resumen.sinResolver, '#a78bfa'],
               ] as const).map(([label, v, color]) => (
                 <div key={label}>
                   <div className="text-xs text-[#64748b]">{label}</div>
