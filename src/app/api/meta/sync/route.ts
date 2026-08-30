@@ -26,6 +26,8 @@ interface Body {
   brandId?: string;
   phase?: Phase;
   days?: number;
+  /** Gasto minimo para que un anuncio valga la pena analizar. Ver nota abajo. */
+  gastoMinimo?: number;
   /** Cuántos anuncios resolver por corrida (la resolución es la parte lenta). */
   limiteCreativos?: number;
 }
@@ -149,9 +151,24 @@ async function syncNumeros(sb: ReturnType<typeof getSupabase>, brand: BrandRow, 
 // ---------------------------------------------------------------------------
 // Fase 2 — creativos: resolver el asset y encolar
 // ---------------------------------------------------------------------------
-async function syncCreativos(sb: ReturnType<typeof getSupabase>, brand: BrandRow, limite: number) {
+async function syncCreativos(
+  sb: ReturnType<typeof getSupabase>, brand: BrandRow, limite: number, gastoMinimo: number
+) {
   const actId = brand.meta_ad_account_id!;
   const ads: RawAd[] = await fetchAds(actId);
+
+  // Gasto acumulado por anuncio. Un creativo con gasto irrelevante no se
+  // analiza: no es solo ahorro, es calidad. Un anuncio que gasto $8 no
+  // "fracaso" — nunca tuvo oportunidad, y meterlo al Cerebro como ejemplo de
+  // lo que no funciona envenena las conclusiones.
+  const gastoPorAd = new Map<string, number>();
+  if (gastoMinimo > 0) {
+    const { data: dias } = await sb
+      .from('meta_daily').select('ad_name,spend').eq('brand_id', brand.id).limit(50000);
+    for (const d of dias ?? []) {
+      gastoPorAd.set(d.ad_name, (gastoPorAd.get(d.ad_name) ?? 0) + Number(d.spend ?? 0));
+    }
+  }
 
   const { data: rows } = await sb
     .from('meta_ads')
@@ -164,7 +181,7 @@ async function syncCreativos(sb: ReturnType<typeof getSupabase>, brand: BrandRow
     .from('creatives').select('id,meta_video_id').eq('brand_id', brand.id).not('meta_video_id', 'is', null);
   const videosAnalizados = new Map((yaHechos ?? []).map((c) => [c.meta_video_id as string, c.id]));
 
-  let resueltos = 0, encolados = 0, omitidos = 0, bloqueados = 0, restantes = 0, esperaMin = 0;
+  let resueltos = 0, encolados = 0, omitidos = 0, bloqueados = 0, restantes = 0, esperaMin = 0, pocoGasto = 0;
   let limitado = false;
   const estrategias: Record<string, number> = {};
   let pendientesDeEscribir: Record<string, unknown>[] = [];
@@ -203,6 +220,19 @@ async function syncCreativos(sb: ReturnType<typeof getSupabase>, brand: BrandRow
       created_date: ad.created_time ? ad.created_time.slice(0, 10) : null,
       updated_at: new Date().toISOString(),
     };
+
+    // Descarte por gasto ANTES de pedirle nada a Meta: ahorra cuota y tokens.
+    const gasto = gastoPorAd.get(ad.name) ?? 0;
+    if (gastoMinimo > 0 && gasto < gastoMinimo) {
+      pendientesDeEscribir.push({
+        ...base, video_id: vids[0] ?? null, queue_status: 'omitido',
+        asset_strategy: 'poco-gasto',
+        queue_error: `Gasto $${gasto.toFixed(0)} < $${gastoMinimo}: sin señal suficiente para analizar`,
+      });
+      pocoGasto++;
+      if (pendientesDeEscribir.length >= 25) await volcar();
+      continue;
+    }
 
     if (yaAnalizado) {
       pendientesDeEscribir.push({
@@ -246,7 +276,7 @@ async function syncCreativos(sb: ReturnType<typeof getSupabase>, brand: BrandRow
   }
 
   await volcar();
-  return { adsVistos: ads.length, resueltos, encolados, omitidos, bloqueados, restantes, limitado, esperaMin, estrategias };
+  return { adsVistos: ads.length, resueltos, encolados, omitidos, bloqueados, pocoGasto, restantes, limitado, esperaMin, estrategias };
 }
 
 // ---------------------------------------------------------------------------
@@ -267,6 +297,9 @@ async function run(request: NextRequest, body: Body) {
   const phase: Phase = body.phase ?? 'todo';
   const days = Math.min(Math.max(body.days ?? 14, 1), 365);
   const limite = Math.min(Math.max(body.limiteCreativos ?? 60, 1), 300);
+  // Por defecto usa el "kill" de la economia de la marca (lo que ya define
+  // cuanto gasto hace falta para opinar de un anuncio). 0 = analizar todo.
+  const gastoMinimo = Math.max(body.gastoMinimo ?? 58, 0);
 
   const brands = await targetBrands(sb, user?.id ?? null, body.brandId);
   if (brands.length === 0) {
@@ -295,12 +328,12 @@ async function run(request: NextRequest, body: Body) {
       }
       if (phase === 'creativos' || phase === 'todo') {
         try {
-          r.creativos = await syncCreativos(sb, brand, limite);
+          r.creativos = await syncCreativos(sb, brand, limite, gastoMinimo);
           const c = r.creativos as { limitado?: boolean };
           if (c?.limitado) r.limitado = true;
         } catch (e) {
           if (!esLimiteDePeticiones(e)) throw e;
-          r.creativos = { adsVistos: 0, resueltos: 0, encolados: 0, omitidos: 0,
+          r.creativos = { adsVistos: 0, resueltos: 0, encolados: 0, omitidos: 0, pocoGasto: 0,
                           bloqueados: 0, restantes: -1, limitado: true, estrategias: {} };
           r.esperaMin = Math.max((r.esperaMin as number) ?? 0, (e as MetaApiError).esperaMin ?? 0);
           r.limitado = true;
@@ -340,6 +373,7 @@ export async function GET(request: NextRequest) {
     brandId: sp.get('brand') ?? undefined,
     phase: (sp.get('phase') as Phase) ?? undefined,
     days: sp.get('days') ? Number(sp.get('days')) : undefined,
+    gastoMinimo: sp.get('gastoMin') ? Number(sp.get('gastoMin')) : undefined,
     limiteCreativos: sp.get('limite') ? Number(sp.get('limite')) : undefined,
   });
 }

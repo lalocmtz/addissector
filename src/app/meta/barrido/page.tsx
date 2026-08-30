@@ -95,7 +95,7 @@ export default function BarridoPage() {
         const r = await fetch('/api/meta/sync', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ brandId: activeBrandId, phase: fase, days: 90, limiteCreativos: 25 }),
+          body: JSON.stringify({ brandId: activeBrandId, phase: fase, days: 90, limiteCreativos: 25, gastoMinimo: 58 }),
         });
         const j = await r.json();
         if (!r.ok) throw new Error(j.error || 'Error sincronizando');
@@ -108,7 +108,7 @@ export default function BarridoPage() {
           cre = m.creativos ?? null;
           if (cre) {
             totalResueltos += cre.resueltos ?? 0;
-            apunta('ok', `Creativos: ${cre.encolados ?? 0} listos para analizar · ${cre.omitidos ?? 0} repetidos · ${cre.bloqueados ?? 0} sin video · faltan ${cre.restantes ?? 0}`);
+            apunta('ok', `Creativos: ${cre.encolados ?? 0} valen la pena · ${(cre as {pocoGasto?:number}).pocoGasto ?? 0} descartados por poco gasto · ${cre.omitidos ?? 0} repetidos · faltan ${cre.restantes ?? 0}`);
             if (cre.estrategias && Object.keys(cre.estrategias).length) {
               apunta('info', 'Rutas: ' + Object.entries(cre.estrategias).map(([k, v]) => `${k}:${v}`).join(' · '));
             }
@@ -149,9 +149,6 @@ export default function BarridoPage() {
   // Paso 2 — analizar un anuncio (mismo pipeline que el Studio)
   // -------------------------------------------------------------------------
   const analizarUno = useCallback(async (item: QueueItem): Promise<void> => {
-    setActual(item.name);
-
-    setPaso('Descargando de Meta...');
     const assetRes = await fetch(`/api/meta/asset?ad=${item.id}`);
     if (!assetRes.ok) {
       const j = await assetRes.json().catch(() => ({}));
@@ -169,22 +166,20 @@ export default function BarridoPage() {
     let creativeId: string | null = null;
 
     if (esVideo) {
-      setPaso('Extrayendo frames...');
       const { frames, metadata } = await extractFrames(file);
-      const selected = selectFramesForAnalysis(frames, 12);
+      // 8 en vez de 12: el hook vive en los primeros segundos y los ultimos
+      // frames repiten. Menos imagenes = menos tokens de vision por anuncio.
+      const selected = selectFramesForAnalysis(frames, 8);
 
-      setPaso('Extrayendo audio...');
       let audio: File = file;
       try { audio = await extractAudioForTranscription(file); } catch { audio = file; }
 
-      setPaso('Transcribiendo...');
       const fd = new FormData();
       fd.append('file', audio);
       const tr = await fetch('/api/transcribe', { method: 'POST', body: fd });
       if (!tr.ok) throw new Error(`Transcripción falló (${tr.status})`);
       const transcript: TranscriptResult = await tr.json();
 
-      setPaso('Analizando con Claude...');
       const ar = await fetch('/api/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -205,7 +200,6 @@ export default function BarridoPage() {
       }
       const analysis: AnalysisResult = await ar.json();
 
-      setPaso('Guardando en biblioteca...');
       const preview = selected[Math.floor(selected.length / 2)] ?? selected[0];
       const save = await fetch('/api/creatives', {
         method: 'POST',
@@ -221,10 +215,8 @@ export default function BarridoPage() {
       });
       if (save.ok) creativeId = (await save.json()).id ?? null;
     } else {
-      setPaso('Preparando imagen...');
       const prep = await prepareImageForAnalysis(file);
 
-      setPaso('Analizando con Claude...');
       const ar = await fetch('/api/analyze-image', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -241,7 +233,6 @@ export default function BarridoPage() {
       }
       const analysis: ImageAnalysisResult = await ar.json();
 
-      setPaso('Guardando en biblioteca...');
       const save = await fetch('/api/creatives', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -256,7 +247,6 @@ export default function BarridoPage() {
     }
 
     // --- Encadenado automático: fusión + Cerebro -----------------------------
-    setPaso('Fusionando con sus números...');
     try {
       await fetch('/api/fusion', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -265,7 +255,6 @@ export default function BarridoPage() {
     } catch { /* la fusión es best-effort */ }
 
     if (creativeId) {
-      setPaso('Alimentando el Cerebro...');
       try {
         await fetch('/api/brain/ingest', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -289,32 +278,47 @@ export default function BarridoPage() {
     setCorriendo(true);
     apunta('info', 'Barrido iniciado. Deja esta pestaña abierta.');
 
+    // Un anuncio nunca debe colgar el barrido: si un MP4 grande atora la
+    // extraccion de frames, se corta, se marca con error y se sigue.
+    const conLimiteDeTiempo = <T,>(p: Promise<T>, ms: number, que: string) =>
+      Promise.race([p, new Promise<never>((_, rej) =>
+        setTimeout(() => rej(new Error(`Se pasó de ${Math.round(ms / 60000)} min en: ${que}`)), ms))]);
+
+    const EN_PARALELO = 3;
     let hechos = 0;
+
     while (!detener.current) {
-      const r = await fetch(`/api/meta/queue?brand=${activeBrandId}&limit=25`);
+      const r = await fetch(`/api/meta/queue?brand=${activeBrandId}&limit=24`);
       if (!r.ok) { apunta('err', 'No se pudo leer la cola'); break; }
       const { items, resumen: res } = (await r.json()) as { items: QueueItem[]; resumen: Resumen };
       setResumen(res);
-      if (items.length === 0) { apunta('ok', `Barrido completo. ${hechos} anuncios procesados en esta sesión.`); break; }
+      if (items.length === 0) { apunta('ok', `Barrido completo. ${hechos} anuncios procesados.`); break; }
 
-      for (const item of items) {
-        if (detener.current) break;
-        try {
-          await analizarUno(item);
-          hechos++;
-          apunta('ok', item.name);
-        } catch (e) {
-          const err = e as Error & { upgrade?: boolean };
-          apunta('err', `${item.name} — ${err.message}`);
-          await fetch('/api/meta/queue', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ id: item.id, status: 'error', error: err.message.slice(0, 300) }),
-          });
-          if (err.upgrade) {
-            apunta('err', 'Límite del plan alcanzado. El barrido se detiene aquí.');
-            detener.current = true;
+      // De uno en uno tardaba ~5 min por anuncio. De tres en tres el tiempo
+      // total se corta a un tercio sin pedirle mas a Claude por anuncio.
+      for (let i = 0; i < items.length && !detener.current; i += EN_PARALELO) {
+        const tanda = items.slice(i, i + EN_PARALELO);
+        setActual(`${tanda.length} en paralelo`);
+        setPaso(tanda.map((t) => t.name).join(' · ').slice(0, 90));
+
+        await Promise.all(tanda.map(async (item) => {
+          try {
+            await conLimiteDeTiempo(analizarUno(item), 5 * 60000, item.name);
+            hechos++;
+            apunta('ok', item.name);
+          } catch (e) {
+            const err = e as Error & { upgrade?: boolean };
+            apunta('err', `${item.name} — ${err.message}`);
+            await fetch('/api/meta/queue', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ id: item.id, status: 'error', error: err.message.slice(0, 300) }),
+            });
+            if (err.upgrade) {
+              apunta('err', 'Límite del plan alcanzado. El barrido se detiene aquí.');
+              detener.current = true;
+            }
           }
-        }
+        }));
         await cargarResumen();
       }
       refresh();
