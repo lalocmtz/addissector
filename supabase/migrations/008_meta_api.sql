@@ -15,6 +15,7 @@ alter table public.meta_ads add column if not exists adset_id text;
 alter table public.meta_ads add column if not exists campaign_id text;
 alter table public.meta_ads add column if not exists creative_meta_id text;
 alter table public.meta_ads add column if not exists video_id text;
+alter table public.meta_ads add column if not exists page_id text;
 
 -- Asset descargable resuelto por la cadena de estrategias
 alter table public.meta_ads add column if not exists asset_url text;
@@ -35,6 +36,7 @@ create index if not exists meta_ads_queue_idx
   on public.meta_ads (brand_id, queue_status, last_seen desc);
 create index if not exists meta_ads_ad_id_idx on public.meta_ads (ad_id);
 create index if not exists meta_ads_video_idx on public.meta_ads (video_id);
+create index if not exists meta_ads_page_idx on public.meta_ads (page_id);
 
 -- --- Hechos diarios: ad_id real --------------------------------------------
 alter table public.meta_daily add column if not exists ad_id text;
