@@ -234,11 +234,19 @@ export async function fetchDailyInsights(
   }
   const raw = await graphAll<RawInsight>(`${actId}/insights`, query, { maxPages: opts.maxPages ?? 40 });
   const impressions = new Map<string, number>();
-  const rows = raw.map((r) => {
+  const rows: ApiDailyRow[] = [];
+  for (const r of raw) {
+    // Meta devuelve una fila por cada día que el anuncio EXISTIÓ, entregara o
+    // no. Guardar los días en cero inflaría `days` en aggregateAds y con eso
+    // el veredicto (un anuncio "de 40 días" que en realidad corrió 6). Los
+    // días sin gasto ni impresiones no aportan información: se descartan.
+    const gasto = Number(r.spend ?? 0);
+    const imps = Number(r.impressions ?? 0);
+    if (gasto === 0 && imps === 0) continue;
     const row = insightToDailyRow(r);
-    impressions.set(`${row.ad_id}|${row.date}`, Number(r.impressions ?? 0));
-    return row;
-  });
+    impressions.set(`${row.ad_id}|${row.date}`, imps);
+    rows.push(row);
+  }
   return { rows, impressions };
 }
 
