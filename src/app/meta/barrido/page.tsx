@@ -41,6 +41,47 @@ interface Resumen { pendiente: number; listo: number; error: number; omitido: nu
 
 const esperar = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/**
+ * "Failed to fetch" es el mensaje que da el navegador cuando la conexion se
+ * corta, y no dice nada de donde. Descargar un MP4 grande por el proxy o una
+ * sincronizacion larga fallan asi de vez en cuando sin que nada este roto.
+ * Este helper reintenta, corta lo que se queda colgado, y sobre todo etiqueta
+ * el error con el paso exacto para que el proximo fallo sea diagnosticable.
+ */
+async function pedir(
+  url: string,
+  opciones: RequestInit,
+  etiqueta: string,
+  { intentos = 3, msLimite = 120000 }: { intentos?: number; msLimite?: number } = {}
+): Promise<Response> {
+  let ultimo = '';
+  for (let i = 0; i < intentos; i++) {
+    const corte = new AbortController();
+    const t = setTimeout(() => corte.abort(), msLimite);
+    try {
+      const r = await fetch(url, { ...opciones, signal: corte.signal });
+      clearTimeout(t);
+      if (r.ok) return r;
+      // 4xx que no sean 429: reintentar no cambia nada
+      if (r.status >= 400 && r.status < 500 && r.status !== 429) {
+        const j = await r.json().catch(() => ({}));
+        const e = new Error(`${etiqueta}: ${j.error || r.status}`) as Error & { upgrade?: boolean };
+        e.upgrade = r.status === 402;
+        throw e;
+      }
+      ultimo = `${etiqueta}: respondió ${r.status}`;
+    } catch (err) {
+      clearTimeout(t);
+      if ((err as Error & { upgrade?: boolean }).upgrade) throw err;
+      if ((err as Error).name === 'AbortError') ultimo = `${etiqueta}: se pasó de ${Math.round(msLimite / 1000)} s`;
+      else if ((err as Error).message?.startsWith(etiqueta)) throw err;
+      else ultimo = `${etiqueta}: ${(err as Error).message}`;
+    }
+    if (i < intentos - 1) await esperar(2000 * (i + 1));
+  }
+  throw new Error(ultimo || `${etiqueta}: falló`);
+}
+
 type LogKind = 'ok' | 'err' | 'info';
 interface LogLine { t: string; kind: LogKind; msg: string }
 
@@ -92,13 +133,14 @@ export default function BarridoPage() {
       let esperaMin = 0;
       let limitado = false;
       try {
-        const r = await fetch('/api/meta/sync', {
+        // Tandas de 12: una corrida larga se pasa del tiempo del servidor y el
+        // navegador solo ve "Failed to fetch", sin pista de por que.
+        const r = await pedir('/api/meta/sync', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ brandId: activeBrandId, phase: fase, days: 90, limiteCreativos: 25, gastoMinimo: 58 }),
-        });
+          body: JSON.stringify({ brandId: activeBrandId, phase: fase, days: 90, limiteCreativos: 12, gastoMinimo: 58 }),
+        }, 'Sincronización con Meta', { intentos: 3, msLimite: 280000 });
         const j = await r.json();
-        if (!r.ok) throw new Error(j.error || 'Error sincronizando');
 
         for (const m of j.marcas ?? []) {
           if (m.error) { apunta('err', `${m.marca}: ${m.error}`); continue; }
@@ -149,11 +191,9 @@ export default function BarridoPage() {
   // Paso 2 — analizar un anuncio (mismo pipeline que el Studio)
   // -------------------------------------------------------------------------
   const analizarUno = useCallback(async (item: QueueItem): Promise<void> => {
-    const assetRes = await fetch(`/api/meta/asset?ad=${item.id}`);
-    if (!assetRes.ok) {
-      const j = await assetRes.json().catch(() => ({}));
-      throw new Error(j.error || `No se pudo descargar (${assetRes.status})`);
-    }
+    // La descarga es el paso que mas falla: video pesado por un proxy sin estado.
+    const assetRes = await pedir(`/api/meta/asset?ad=${item.id}`, {}, 'Descarga del creativo',
+      { intentos: 3, msLimite: 150000 });
     const blob = await assetRes.blob();
     if (blob.size < 1024) throw new Error('El archivo descargado está vacío');
 
@@ -176,11 +216,11 @@ export default function BarridoPage() {
 
       const fd = new FormData();
       fd.append('file', audio);
-      const tr = await fetch('/api/transcribe', { method: 'POST', body: fd });
-      if (!tr.ok) throw new Error(`Transcripción falló (${tr.status})`);
+      const tr = await pedir('/api/transcribe', { method: 'POST', body: fd }, 'Transcripción',
+        { intentos: 2, msLimite: 120000 });
       const transcript: TranscriptResult = await tr.json();
 
-      const ar = await fetch('/api/analyze', {
+      const ar = await pedir('/api/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -191,13 +231,7 @@ export default function BarridoPage() {
             height: metadata.height, aspectRatio: metadata.aspectRatio,
           },
         }),
-      });
-      if (!ar.ok) {
-        const j = await ar.json().catch(() => ({}));
-        const e = new Error(j.error || `Análisis falló (${ar.status})`) as Error & { upgrade?: boolean };
-        e.upgrade = ar.status === 402;
-        throw e;
-      }
+      }, 'Análisis con Claude', { intentos: 2, msLimite: 300000 });
       const analysis: AnalysisResult = await ar.json();
 
       const preview = selected[Math.floor(selected.length / 2)] ?? selected[0];
@@ -217,20 +251,14 @@ export default function BarridoPage() {
     } else {
       const prep = await prepareImageForAnalysis(file);
 
-      const ar = await fetch('/api/analyze-image', {
+      const ar = await pedir('/api/analyze-image', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           image: prep.dataUrl,
           imageMeta: { width: prep.width, height: prep.height, aspectRatio: prep.aspectRatio },
         }),
-      });
-      if (!ar.ok) {
-        const j = await ar.json().catch(() => ({}));
-        const e = new Error(j.error || `Análisis falló (${ar.status})`) as Error & { upgrade?: boolean };
-        e.upgrade = ar.status === 402;
-        throw e;
-      }
+      }, 'Análisis de imagen', { intentos: 2, msLimite: 300000 });
       const analysis: ImageAnalysisResult = await ar.json();
 
       const save = await fetch('/api/creatives', {
@@ -284,7 +312,9 @@ export default function BarridoPage() {
       Promise.race([p, new Promise<never>((_, rej) =>
         setTimeout(() => rej(new Error(`Se pasó de ${Math.round(ms / 60000)} min en: ${que}`)), ms))]);
 
-    const EN_PARALELO = 3;
+    // Dos, no tres: tres descargas de MP4 al mismo tiempo por el proxy son
+    // justo lo que empezo a tirar "Failed to fetch".
+    const EN_PARALELO = 2;
     let hechos = 0;
 
     while (!detener.current) {
