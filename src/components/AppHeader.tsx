@@ -11,8 +11,7 @@ import { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
-  Scan, LayoutGrid, ChevronDown, Check, Plus, LogOut, BarChart3, Library, Brain, Film, SunMoon,
-} from 'lucide-react';
+  Scan, LayoutGrid, ChevronDown, Check, Plus, LogOut, BarChart3, Library, Brain, Film, SunMoon, FlaskConical } from 'lucide-react';
 import type { MeData, BrandRow } from '@/lib/use-me';
 import { useT, useLocale, setLocaleCookie, type Locale } from '@/lib/i18n';
 
@@ -24,6 +23,7 @@ interface AppHeaderProps {
 
 const NAV = [
   { href: '/meta', key: 'nav.meta', icon: BarChart3 },
+  { href: '/experiments', key: 'nav.experiments', icon: FlaskConical },
   { href: '/plan', key: 'nav.plan', icon: LayoutGrid },
   { href: '/biblioteca', key: 'nav.library', icon: Library },
   { href: '/cerebro', key: 'nav.brain', icon: Brain },

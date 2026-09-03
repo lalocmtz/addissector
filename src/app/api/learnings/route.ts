@@ -14,15 +14,17 @@ export async function GET(request: NextRequest) {
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: 'No autenticado' }, { status: 401 });
   const brandId = request.nextUrl.searchParams.get('brand');
-  if (!brandId) return NextResponse.json({ error: 'Falta brand' }, { status: 400 });
+  const id = request.nextUrl.searchParams.get('id');
+  if (!brandId && !id) return NextResponse.json({ error: 'Falta brand' }, { status: 400 });
   const sb = getSupabase();
-  const { data, error } = await sb
+  let q = sb
     .from('learnings')
-    .select('id,text,evidence,source_ad,active,source,created_at')
-    .eq('brand_id', brandId)
+    .select('id,text,evidence,source_ad,active,source,created_at,status,suspect,experiment_id,persona_id,angle_id,concept_id,hook_id,dimension,dimension_value')
     .eq('user_id', user.id)
     .order('created_at', { ascending: false })
     .limit(200);
+  if (id) q = q.eq('id', id); else q = q.eq('brand_id', brandId!);
+  const { data, error } = await q;
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ learnings: data ?? [] });
 }

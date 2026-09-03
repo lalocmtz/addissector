@@ -41,6 +41,12 @@
     },
     "src/app/api/agents/link-learnings/route.ts": {
       "maxDuration": 300
+    },
+    "src/app/api/experiments/brief/route.ts": {
+      "maxDuration": 120
+    },
+    "src/app/api/experiments/route.ts": {
+      "maxDuration": 60
     }
   },
   "crons": [
