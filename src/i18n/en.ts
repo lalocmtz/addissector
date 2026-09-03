@@ -132,4 +132,22 @@ export const en: Record<string, string> = {
   'meta.chart.target': 'target {target}',
   'meta.chart.spend': 'spend',
   'meta.metricsPending': 'Video metrics are being recomputed from Meta with the corrected definitions. Hook, hold and retention show up as the resync lands.',
+
+  // Auth
+  'auth.confirmSent': 'We sent you a confirmation email. Open it to activate your account.',
+  'auth.genericError': 'Something went wrong. Try again.',
+  'auth.badCredentials': 'Wrong email or password.',
+  'auth.alreadyRegistered': 'That email already has an account. Sign in.',
+  'auth.googleDisabled': 'Google sign-in is not enabled yet. Use your email and password.',
+  'auth.googleFailed': 'Could not sign in with Google. Try email and password.',
+  'auth.createAccount': 'Create account',
+  'auth.signIn': 'Sign in',
+  'auth.signupHint': 'Set up your workspace.',
+  'auth.loginHint': 'Creative strategy for Meta Ads.',
+  'auth.orEmail': 'or with email',
+  'auth.namePh': 'Your name',
+  'auth.emailPh': 'you@example.com',
+  'auth.passwordPh': 'Password',
+  'auth.google': 'Continue with Google',
+  'auth.passwordMinPh': 'Password (at least 6 characters)',
 };

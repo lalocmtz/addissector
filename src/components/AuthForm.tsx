@@ -11,6 +11,7 @@ import { motion } from 'framer-motion';
 import { Scan, Loader2, Mail, Lock, User } from 'lucide-react';
 import { createBrowserClient } from '@/lib/supabase-browser';
 import { BRAND } from '@/lib/brand';
+import { useT } from '@/lib/i18n';
 
 interface AuthFormProps {
   mode: 'login' | 'signup';
@@ -38,6 +39,7 @@ export default function AuthForm({ mode }: AuthFormProps) {
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
 
+  const t = useT();
   const isSignup = mode === 'signup';
   const next = searchParams.get('next') || '/studio';
   // Continuar a checkout tras registrarse desde la landing de precios.
@@ -82,7 +84,7 @@ export default function AuthForm({ mode }: AuthFormProps) {
         if (data.session) {
           await afterAuth();
         } else {
-          setInfo('Te enviamos un correo de confirmación. Ábrelo para activar tu cuenta.');
+          setInfo(t('auth.confirmSent'));
         }
       } else {
         const { error: err } = await supabase.auth.signInWithPassword({ email, password });
@@ -90,12 +92,12 @@ export default function AuthForm({ mode }: AuthFormProps) {
         await afterAuth();
       }
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Algo salió mal. Intenta de nuevo.';
+      const message = err instanceof Error ? err.message : t('auth.genericError');
       setError(
         /invalid login credentials/i.test(message)
-          ? 'Correo o contraseña incorrectos.'
+          ? t('auth.badCredentials')
           : /already registered/i.test(message)
-            ? 'Ese correo ya tiene cuenta. Inicia sesión.'
+            ? t('auth.alreadyRegistered')
             : message
       );
     } finally {
@@ -119,8 +121,8 @@ export default function AuthForm({ mode }: AuthFormProps) {
       const message = err instanceof Error ? err.message : '';
       setError(
         /not enabled|unsupported provider|validation_failed/i.test(message)
-          ? 'El acceso con Google aún no está habilitado. Por ahora entra con tu correo y contraseña.'
-          : 'No se pudo iniciar con Google. Intenta con tu correo y contraseña.'
+          ? t('auth.googleDisabled')
+          : t('auth.googleFailed')
       );
       setGoogleLoading(false);
     }
@@ -143,12 +145,12 @@ export default function AuthForm({ mode }: AuthFormProps) {
 
         <div className="rounded-2xl border border-line bg-surface p-6">
           <h1 className="text-xl font-bold mb-1">
-            {isSignup ? 'Create account' : 'Sign in'}
+            {isSignup ? t('auth.createAccount') : t('auth.signIn')}
           </h1>
           <p className="text-sm text-ink-3 mb-6">
             {isSignup
-              ? 'Set up your workspace.'
-              : 'Creative strategy for Meta Ads.'}
+              ? t('auth.signupHint')
+              : t('auth.loginHint')}
           </p>
 
           <button
@@ -157,12 +159,12 @@ export default function AuthForm({ mode }: AuthFormProps) {
             className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-medium border border-line-strong text-ink hover:border-accent/50 transition-colors disabled:opacity-60 mb-4"
           >
             {googleLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <GoogleIcon />}
-            Continuar con Google
+            {t('auth.google')}
           </button>
 
           <div className="flex items-center gap-3 mb-4">
             <div className="h-px flex-1 bg-surface-2" />
-            <span className="text-[10px] uppercase tracking-wide text-ink-4">o con correo</span>
+            <span className="text-[10px] uppercase tracking-wide text-ink-4">{t('auth.orEmail')}</span>
             <div className="h-px flex-1 bg-surface-2" />
           </div>
 
@@ -174,7 +176,7 @@ export default function AuthForm({ mode }: AuthFormProps) {
                   type="text"
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
-                  placeholder="Tu nombre"
+                  placeholder={t('auth.namePh')}
                   className="w-full pl-9 pr-3 py-2.5 rounded-xl bg-canvas border border-line text-sm text-ink placeholder:text-ink-4 focus:border-accent/60 focus:outline-none"
                 />
               </div>
@@ -186,7 +188,7 @@ export default function AuthForm({ mode }: AuthFormProps) {
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="tucorreo@ejemplo.com"
+                placeholder={t('auth.emailPh')}
                 className="w-full pl-9 pr-3 py-2.5 rounded-xl bg-canvas border border-line text-sm text-ink placeholder:text-ink-4 focus:border-accent/60 focus:outline-none"
               />
             </div>
@@ -198,7 +200,7 @@ export default function AuthForm({ mode }: AuthFormProps) {
                 minLength={6}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder={isSignup ? 'Contraseña (mínimo 6 caracteres)' : 'Contraseña'}
+                placeholder={isSignup ? t('auth.passwordMinPh') : t('auth.passwordPh')}
                 className="w-full pl-9 pr-3 py-2.5 rounded-xl bg-canvas border border-line text-sm text-ink placeholder:text-ink-4 focus:border-accent/60 focus:outline-none"
               />
             </div>
@@ -212,7 +214,7 @@ export default function AuthForm({ mode }: AuthFormProps) {
               className="w-full py-2.5 rounded-xl text-sm font-semibold gradient-blue text-on-accent shadow-lg  hover: transition-all disabled:opacity-60 flex items-center justify-center gap-2"
             >
               {loading && <Loader2 className="w-4 h-4 animate-spin" />}
-              {isSignup ? 'Create account' : 'Sign in'}
+              {isSignup ? t('auth.createAccount') : t('auth.signIn')}
             </button>
           </form>
         </div>

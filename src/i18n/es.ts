@@ -128,4 +128,22 @@ export const es: Record<string, string> = {
   'meta.chart.target': 'meta {target}',
   'meta.chart.spend': 'gasto',
   'meta.metricsPending': 'Las métricas de video se están recalculando desde Meta con las definiciones corregidas. Hook, hold y retención aparecen conforme aterriza la resincronización.',
+
+  // Auth
+  'auth.confirmSent': 'Te enviamos un correo de confirmación. Ábrelo para activar tu cuenta.',
+  'auth.genericError': 'Algo salió mal. Intenta de nuevo.',
+  'auth.badCredentials': 'Correo o contraseña incorrectos.',
+  'auth.alreadyRegistered': 'Ese correo ya tiene cuenta. Inicia sesión.',
+  'auth.googleDisabled': 'El acceso con Google aún no está habilitado. Entra con tu correo y contraseña.',
+  'auth.googleFailed': 'No se pudo iniciar con Google. Intenta con tu correo y contraseña.',
+  'auth.createAccount': 'Crear cuenta',
+  'auth.signIn': 'Entrar',
+  'auth.signupHint': 'Configura tu espacio de trabajo.',
+  'auth.loginHint': 'Estrategia creativa para Meta Ads.',
+  'auth.orEmail': 'o con correo',
+  'auth.namePh': 'Tu nombre',
+  'auth.emailPh': 'tucorreo@ejemplo.com',
+  'auth.passwordPh': 'Contraseña',
+  'auth.google': 'Continuar con Google',
+  'auth.passwordMinPh': 'Contraseña (mínimo 6 caracteres)',
 };
