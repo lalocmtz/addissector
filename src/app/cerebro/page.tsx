@@ -38,7 +38,7 @@ interface Persona {
 }
 interface Angle {
   id: string; code: string | null; name: string | null; persona_id: string | null;
-  pain: string | null; mechanism: string | null; objection: string | null;
+  pain: string | null; mechanism: string | null; psychology: string | null; objection: string | null;
   status: string | null; evidence: string | null; source: string | null;
 }
 interface Concept {
@@ -799,7 +799,8 @@ function AnglesTab({ brandId }: { brandId: string | null }) {
               </div>
 
               <Field label="Dolor" value={a.pain} rows={2} placeholder="Qué problema real ataca" onSave={(v) => patch(a.id, { pain: v })} />
-              <Field label="Mecanismo" value={a.mechanism} rows={2} placeholder="Por qué el producto lo resuelve" onSave={(v) => patch(a.id, { mechanism: v })} />
+              <Field label="Mecanismo (producto)" value={a.mechanism} rows={2} placeholder="Por qué el producto resuelve el dolor (ingrediente, proceso)" onSave={(v) => patch(a.id, { mechanism: v })} />
+              <Field label="Psicología (por qué convierte)" value={a.psychology} rows={2} placeholder="La palanca mental que activa" onSave={(v) => patch(a.id, { psychology: v })} />
               <Field label="Objeción" value={a.objection} rows={2} placeholder="Qué duda hay que tumbar" onSave={(v) => patch(a.id, { objection: v })} />
               <Field label="Evidencia" value={a.evidence} rows={2} placeholder="Qué te hace creer que este ángulo jala" onSave={(v) => patch(a.id, { evidence: v })} />
             </div>
@@ -883,8 +884,7 @@ function ConceptsTab({ brandId }: { brandId: string | null }) {
 // ===========================================================================
 
 function HooksTab({ brandId }: { brandId: string | null }) {
-  const { items, loading, create, patch, remove } = useBank<Note>('/api/research/notes', brandId);
-  const hooks = items.filter((n) => n.kind === 'hook');
+  const { items: hooks, loading, create, patch, remove } = useBank<Note>('/api/plan/hooks', brandId);
 
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
@@ -892,7 +892,7 @@ function HooksTab({ brandId }: { brandId: string | null }) {
 
   const add = async () => {
     if (!title.trim()) return;
-    await create({ kind: 'hook', title: title.trim(), body: body.trim() || null, source: source.trim() || null });
+    await create({ title: title.trim(), body: body.trim() || null, source: source.trim() || 'manual' });
     setTitle(''); setBody(''); setSource('');
   };
 

@@ -36,7 +36,7 @@ export async function GET(request: NextRequest) {
     sb.from('personas').select('id,name,description,status').eq('brand_id', brandId).eq('user_id', user.id),
     sb.from('angles').select('id,code,name,persona_id,status,funnel_stage,priority,learnings').eq('brand_id', brandId).eq('user_id', user.id),
     sb.from('concepts').select('id,angle_id,persona_id,number,code,name,narrative_format,hypothesis,status,owner,target_assets,planned_for,origin,origin_ad_name,brief,do_not_change').eq('brand_id', brandId).eq('user_id', user.id).order('number', { ascending: false }),
-    sb.from('planned_ads').select('id,concept_id,ad_name,meta_ad_id,variant,format,hook,status,owner,uploaded_at').eq('brand_id', brandId).eq('user_id', user.id),
+    sb.from('experiment_variant').select('id,concept_id,experiment_id,ad_name,meta_ad_id,variant,format,hook,status,owner_id,uploaded_at').eq('brand_id', brandId).eq('user_id', user.id),
     sb.from('ad_daily').select(AD_DAILY_COLUMNS).eq('brand_id', brandId).eq('user_id', user.id).not('ad_id', 'is', null).gte('date', sinceStr).limit(50000),
   ]);
 

@@ -166,7 +166,7 @@ export async function ingestCreative(opts: IngestOptions): Promise<IngestSummary
   // 1 · El creativo -----------------------------------------------------------
   const { data: creative } = await sb
     .from('creatives')
-    .select('id,brand_id,name,ad_name,analysis,transcript')
+    .select('id,brand_id,name,ad_name,meta_ad_id,analysis,transcript')
     .eq('id', opts.creativeId)
     .eq('user_id', opts.userId)
     .maybeSingle();
@@ -186,6 +186,7 @@ export async function ingestCreative(opts: IngestOptions): Promise<IngestSummary
   }
 
   // 2 · Sus números reales en Meta (la evidencia) -----------------------------
+  const metaAdId: string | null = (creative as { meta_ad_id?: string | null }).meta_ad_id ?? null;
   const metrics: IngestMetrics = {};
   let dossier = '';
   try {
@@ -239,8 +240,8 @@ export async function ingestCreative(opts: IngestOptions): Promise<IngestSummary
   // 4 · Los bancos que ya existen, en forma compacta --------------------------
   const [personasRes, anglesRes, hooksRes, learningsRes] = await Promise.all([
     sb.from('personas').select('id,name').eq('brand_id', brandId).eq('user_id', opts.userId).limit(200),
-    sb.from('angles').select('id,code,name,pain,mechanism').eq('brand_id', brandId).eq('user_id', opts.userId).limit(200),
-    sb.from('research_notes').select('id,title').eq('brand_id', brandId).eq('user_id', opts.userId).eq('kind', 'hook').limit(200),
+    sb.from('angles').select('id,code,name,pain,mechanism:psychology').eq('brand_id', brandId).eq('user_id', opts.userId).limit(200),
+    sb.from('hook').select('id,title').eq('brand_id', brandId).eq('user_id', opts.userId).limit(200),
     sb.from('learnings').select('id,text').eq('brand_id', brandId).eq('user_id', opts.userId).limit(200),
   ]);
 
@@ -368,7 +369,7 @@ export async function ingestCreative(opts: IngestOptions): Promise<IngestSummary
         name: txt(ad.name),
         persona_id: personaId,
         pain: txt(ad.pain) || null,
-        mechanism: txt(ad.mechanism) || null,
+        psychology: txt(ad.mechanism) || null,
         objection: txt(ad.objection) || null,
         awareness_stage: txt(ad.awareness_stage) || null,
         funnel_stage: txt(ad.funnel_stage) || 'tofu',
@@ -385,7 +386,7 @@ export async function ingestCreative(opts: IngestOptions): Promise<IngestSummary
       const id = txt(ad.id ?? '');
       const { data: existing } = await sb
         .from('angles')
-        .select('id,name,pain,mechanism,objection,evidence,learnings')
+        .select('id,name,pain,mechanism:psychology,objection,evidence,learnings')
         .eq('id', id)
         .eq('user_id', opts.userId)
         .maybeSingle();
@@ -398,7 +399,7 @@ export async function ingestCreative(opts: IngestOptions): Promise<IngestSummary
           updated_at: now,
         };
         if (!txt(existing.pain) && txt(ad.pain)) patch.pain = txt(ad.pain);
-        if (!txt(existing.mechanism) && txt(ad.mechanism)) patch.mechanism = txt(ad.mechanism);
+        if (!txt(existing.mechanism) && txt(ad.mechanism)) patch.psychology = txt(ad.mechanism);
         if (!txt(existing.objection) && txt(ad.objection)) patch.objection = txt(ad.objection);
         await sb.from('angles').update(patch).eq('id', id).eq('user_id', opts.userId);
         merged.angles++;
@@ -414,15 +415,16 @@ export async function ingestCreative(opts: IngestOptions): Promise<IngestSummary
     .map((h) => ({
       user_id: opts.userId,
       brand_id: brandId,
-      kind: 'hook',
       title: txt(h.title).slice(0, 400),
       body: txt(h.body) || null,
       source: 'ia',
       evidence: candidates.hooks[0]?.evidence ?? adName,
-      status: 'funciona',
+      // No performance criterion yet: the ingest marks it 'testing', never 'validated'.
+      status: 'testing',
+      ad_ids: metaAdId ? [metaAdId] : [],
     }));
   if (hookRows.length) {
-    const { error } = await sb.from('research_notes').insert(hookRows);
+    const { error } = await sb.from('hook').insert(hookRows);
     if (!error) {
       created.hooks += hookRows.length;
       for (const h of hookRows) items.push({ kind: 'hook', action: 'create', label: h.title });

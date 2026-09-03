@@ -35,7 +35,7 @@ export async function buildBrandContextWithMeta(
 ): Promise<{ text: string; meta: BrandContextMeta }> {
   const own = { brand_id: brandId, user_id: userId };
 
-  const [brandRes, accountRes, brainRes, learningsRes, notesRes, docsRes, personasRes, anglesRes, conceptsRes, plannedRes] = await Promise.all([
+  const [brandRes, accountRes, brainRes, learningsRes, notesRes, docsRes, personasRes, anglesRes, conceptsRes, plannedRes, hooksRes] = await Promise.all([
     sb.from('brands').select('name,product,tone,economics').eq('id', brandId).eq('user_id', userId).single(),
     sb.from('ad_account').select('currency,timezone').eq('brand_id', brandId).eq('active', true).order('created_at').limit(1).maybeSingle(),
     sb.from('brain_sections').select('title,content').match(own).order('sort'),
@@ -43,9 +43,10 @@ export async function buildBrandContextWithMeta(
     sb.from('research_notes').select('kind,title,body,status').match(own).neq('status', 'descartado').order('created_at', { ascending: false }).limit(25),
     sb.from('brand_docs').select('filename,extracted_text').match(own).order('created_at', { ascending: false }).limit(12),
     sb.from('personas').select('id,name,description,pains,desires,objections,awareness_stage,status').match(own).order('created_at'),
-    sb.from('angles').select('id,code,name,persona_id,pain,mechanism,objection,awareness_stage,status,priority,evidence').match(own).order('created_at'),
+    sb.from('angles').select('id,code,name,persona_id,pain,desire,mechanism,psychology,objection,awareness_stage,status,priority,evidence').match(own).order('created_at'),
     sb.from('concepts').select('id,code,name,angle_id,persona_id,narrative_format,hypothesis,status,origin').match(own).order('number'),
-    sb.from('planned_ads').select('ad_name,meta_ad_id,concept_id,status,hook,format').match(own).order('created_at'),
+    sb.from('experiment_variant').select('ad_name,meta_ad_id,concept_id,experiment_id,status,hook,format').match(own).order('created_at'),
+    sb.from('hook').select('id,title,status,ad_ids').match(own).order('created_at', { ascending: false }).limit(40),
   ]);
 
   const brand = brandRes.data;
@@ -126,15 +127,20 @@ export async function buildBrandContextWithMeta(
       for (const p of personas) lines.push(`- [${p.id}] ${p.name} (${p.status}) — ${p.description ?? ''}${p.pains ? ` · pains: ${String(p.pains).slice(0, 200)}` : ''}${p.desires ? ` · desires: ${String(p.desires).slice(0, 200)}` : ''}${p.objections ? ` · objections: ${String(p.objections).slice(0, 200)}` : ''}`);
     }
     if (angles.length) {
-      lines.push('## Angles (pain · mechanism · objection it neutralizes)');
-      for (const a of angles) lines.push(`- [${a.id}] ${a.code ?? ''} ${a.name} (${a.status}${a.priority ? `, priority ${a.priority}` : ''}) — pain: ${a.pain ?? '—'} · mechanism: ${a.mechanism ?? '—'} · objection: ${a.objection ?? '—'}${a.evidence ? ` · evidence: ${String(a.evidence).slice(0, 240)}` : ''}`);
+      lines.push('## Angles (pain/desire · product mechanism · objection it neutralizes · psychology)');
+      for (const a of angles) lines.push(`- [${a.id}] ${a.code ?? ''} ${a.name} (${a.status}${a.priority ? `, priority ${a.priority}` : ''}) — pain: ${a.pain ?? '—'}${a.desire ? ` · desire: ${a.desire}` : ''} · mechanism: ${a.mechanism ?? '—'} · objection: ${a.objection ?? '—'}${a.psychology ? ` · psychology: ${String(a.psychology).slice(0, 200)}` : ''}${a.evidence ? ` · evidence: ${String(a.evidence).slice(0, 240)}` : ''}`);
     }
     if (concepts.length) {
       lines.push('## Concepts');
       for (const c of concepts) lines.push(`- [${c.id}] ${c.code ?? ''} ${c.name} (${c.status}, origin ${c.origin ?? 'manual'}) — angle ${c.angle_id ?? '—'} · format ${c.narrative_format ?? '—'} · hypothesis: ${c.hypothesis ?? '—'}`);
     }
+    const hooks = hooksRes.data ?? [];
+    if (hooks.length) {
+      lines.push('## Hook bank');
+      for (const h of hooks) lines.push(`- [${h.id}] ${h.title} (${h.status}${h.ad_ids?.length ? `, used in ${h.ad_ids.length} ads` : ''})`);
+    }
     if (planned.length) {
-      lines.push('## Planned ads');
+      lines.push('## Planned ads (experiment variants)');
       for (const p of planned) lines.push(`- ${p.ad_name}${p.meta_ad_id ? ` (meta ad ${p.meta_ad_id})` : ' (not yet detected in Meta)'} · ${p.status} · concept ${p.concept_id}${p.hook ? ` · hook: ${String(p.hook).slice(0, 120)}` : ''}`);
     }
   }
@@ -174,7 +180,7 @@ export async function buildBrandContextWithMeta(
 
   const notes = notesRes.data ?? [];
   if (notes.length) {
-    lines.push('\n# CREATIVE RESEARCH (hook / angle bank)');
+    lines.push('\n# RESEARCH NOTES');
     lines.push(...notes.map((n) => `- [${n.kind}/${n.status}] ${n.title}${n.body ? `: ${n.body.slice(0, 300)}` : ''}`));
   }
 

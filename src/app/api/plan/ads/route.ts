@@ -1,12 +1,12 @@
-// /api/plan/ads — anuncios planeados. Su ad_name es el puente con Meta.
+// /api/plan/ads — experiment variants (the ads to produce). Pinned to Meta by meta_ad_id.
 import { makeCrud } from '@/lib/crud';
 
 export const runtime = 'nodejs';
 
 const crud = makeCrud({
-  table: 'planned_ads',
-  select: 'id,concept_id,ad_name,variant,format,hook,script,visual_notes,status,owner,uploaded_at,created_at',
-  writable: ['concept_id', 'ad_name', 'variant', 'format', 'hook', 'script', 'visual_notes', 'status', 'owner', 'uploaded_at'],
+  table: 'experiment_variant',
+  select: 'id,experiment_id,concept_id,ad_name,variant,hook_id,hook,format,script,visual_notes,status,owner_id,meta_ad_id,matched_at,uploaded_at,created_at',
+  writable: ['experiment_id', 'concept_id', 'ad_name', 'variant', 'hook_id', 'hook', 'format', 'script', 'visual_notes', 'status', 'owner_id', 'meta_ad_id', 'uploaded_at'],
   orderBy: { column: 'ad_name', ascending: true },
   limit: 2000,
 });

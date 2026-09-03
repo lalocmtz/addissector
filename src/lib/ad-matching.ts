@@ -10,8 +10,8 @@
 //      of the account (#28_C, SG#63_V1, CR_00496_C, B07_10). Same number and
 //      variant → match, again only if unambiguous.
 //
-// The first match is PINNED (planned_ads.meta_ad_id + matched_at) so the name
-// stops mattering from then on.
+// The first match is PINNED (experiment_variant.meta_ad_id + matched_at) so the
+// name stops mattering from then on.
 // =============================================================================
 
 import type { SupabaseClient } from '@supabase/supabase-js';
@@ -81,7 +81,7 @@ export function matchPlannedAds<P extends PlannedLike>(planned: P[], metaAds: Me
   });
 }
 
-/** Matches and pins new links in planned_ads. Returns the results (pinned ones included). */
+/** Matches and pins new links in experiment_variant. Returns the results (pinned ones included). */
 export async function matchAndPin<P extends PlannedLike>(
   sb: SupabaseClient, planned: P[], metaAds: MetaAdLike[],
 ): Promise<MatchResult<P>[]> {
@@ -89,7 +89,7 @@ export async function matchAndPin<P extends PlannedLike>(
   const fresh = results.filter((r) => r.adId && r.via !== 'pinned');
   const now = new Date().toISOString();
   await Promise.all(fresh.map((r) =>
-    sb.from('planned_ads').update({ meta_ad_id: r.adId, matched_at: now, updated_at: now }).eq('id', r.planned.id),
+    sb.from('experiment_variant').update({ meta_ad_id: r.adId, matched_at: now, updated_at: now }).eq('id', r.planned.id),
   ));
   return results;
 }

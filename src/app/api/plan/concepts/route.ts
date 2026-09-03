@@ -95,9 +95,8 @@ export async function POST(request: NextRequest) {
     concept_id: concept.id,
     ad_name: plannedAdName(code, v),
     variant: v.toUpperCase(),
-    owner: body.owner || null,
   }));
-  const { data: ads } = await sb.from('planned_ads').insert(rows).select('id,ad_name,variant,status,format,hook,owner');
+  const { data: ads } = await sb.from('experiment_variant').insert(rows).select('id,ad_name,variant,status,format,hook,owner_id,meta_ad_id');
 
   return NextResponse.json({ item: concept, ads: ads ?? [] });
 }
@@ -138,10 +137,11 @@ export async function PATCH(request: NextRequest) {
       const newCode = conceptCode(brandPrefix(brand?.name), current.number, angle?.code ?? null);
       if (newCode !== current.code) {
         patch.code = newCode;
+        // Only variants not yet pinned to a Meta ad get renamed: once matched, the name is irrelevant.
         const { data: pending } = await sb
-          .from('planned_ads').select('id,variant').eq('concept_id', id).neq('status', 'subido').neq('status', 'con_datos');
+          .from('experiment_variant').select('id,variant').eq('concept_id', id).is('meta_ad_id', null);
         for (const p of pending ?? []) {
-          await sb.from('planned_ads').update({ ad_name: plannedAdName(newCode, p.variant ?? 'A') }).eq('id', p.id);
+          await sb.from('experiment_variant').update({ ad_name: plannedAdName(newCode, p.variant ?? 'A') }).eq('id', p.id);
         }
       }
     }
