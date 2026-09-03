@@ -1,30 +1,19 @@
 // =============================================================================
-// AdDNA — Cliente de la Meta Marketing API.
+// Meta Marketing API client — ads, creatives and the MP4 resolution chain.
 //
-// Reemplaza el export CSV del socio por lectura directa de la cuenta. Dos
-// diferencias importantes contra el parser de CSV (src/lib/meta.ts):
-//
-//   1. Aquí llega `ad_id` REAL, así que el vínculo entre números y creativo
-//      deja de depender del matching por nombre.
-//   2. Impresiones y reproducciones vienen REALES, no derivadas de
-//      spend/cpm ni de hook_rate x impresiones.
+// Daily insights are NOT fetched from here anymore: the single writer of
+// ad_daily is the Supabase edge function `meta-sync` (supabase/functions/
+// meta-sync), which has network access to graph.facebook.com and runs hourly.
+// This module keeps what only Vercel can do: resolve the downloadable asset
+// of each ad with Page tokens generated on the fly (see tokenForPage).
 //
 // TRAMPA DOCUMENTADA: /act_<id>/ads con `creative{}` anidado y limit=200
 // devuelve `data: []` SIN error. Por eso PAGE_LIMIT nunca pasa de 100.
 // =============================================================================
 
-import type { DailyRow } from './meta';
-
 export const GRAPH_VERSION = 'v25.0';
 const GRAPH = `https://graph.facebook.com/${GRAPH_VERSION}`;
 const PAGE_LIMIT = 100;
-/**
- * El tope de 100 existe SOLO por el bug de /ads con creative{} anidado.
- * Insights no lo tiene, y ahí sí importa: 153 anuncios x 90 días son ~13,000
- * filas — 130 páginas de 100 contra 27 de 500. Esa diferencia es justo lo que
- * hacía reventar la cuota de la app.
- */
-const INSIGHTS_LIMIT = 500;
 
 export class MetaApiError extends Error {
   code?: number;
@@ -151,160 +140,6 @@ async function graphAll<T>(
     if (!next) break;
   }
   return out;
-}
-
-// ---------------------------------------------------------------------------
-// Insights: la serie diaria por anuncio (reemplazo del CSV)
-// ---------------------------------------------------------------------------
-
-const INSIGHT_FIELDS = [
-  'ad_id', 'ad_name', 'date_start', 'spend', 'impressions', 'frequency', 'cpm', 'cpc',
-  'purchase_roas', 'actions', 'action_values', 'cost_per_action_type',
-  'video_play_actions', 'video_p25_watched_actions', 'video_p50_watched_actions',
-  'video_p75_watched_actions',
-].join(',');
-
-interface ActionEntry { action_type: string; value: string }
-interface RawInsight {
-  ad_id: string;
-  ad_name: string;
-  date_start: string;
-  spend?: string;
-  impressions?: string;
-  frequency?: string;
-  cpm?: string;
-  cpc?: string;
-  purchase_roas?: ActionEntry[];
-  actions?: ActionEntry[];
-  action_values?: ActionEntry[];
-  cost_per_action_type?: ActionEntry[];
-  video_play_actions?: ActionEntry[];
-  video_p25_watched_actions?: ActionEntry[];
-  video_p50_watched_actions?: ActionEntry[];
-  video_p75_watched_actions?: ActionEntry[];
-}
-
-const n = (v: string | undefined): number | null => {
-  if (v === undefined || v === '') return null;
-  const x = Number(v);
-  return Number.isFinite(x) ? x : null;
-};
-
-/** Suma las variantes de un action_type (omni_purchase, offsite_conversion..., etc). */
-function actionSum(list: ActionEntry[] | undefined, ...types: string[]): number | null {
-  if (!list?.length) return null;
-  let total = 0;
-  let found = false;
-  for (const a of list) {
-    if (types.some((t) => a.action_type === t)) {
-      const v = Number(a.value);
-      if (Number.isFinite(v)) { total += v; found = true; }
-    }
-  }
-  return found ? total : null;
-}
-
-/** Primer valor de un action_type (para ROAS, que no se suma). */
-function actionFirst(list: ActionEntry[] | undefined, ...types: string[]): number | null {
-  if (!list?.length) return null;
-  for (const a of list) {
-    if (types.some((t) => a.action_type === t)) {
-      const v = Number(a.value);
-      if (Number.isFinite(v)) return v;
-    }
-  }
-  return null;
-}
-
-export interface ApiDailyRow extends DailyRow {
-  ad_id: string;
-}
-
-/** Traduce una fila de insights al mismo shape que ya consume la plataforma. */
-export function insightToDailyRow(r: RawInsight): ApiDailyRow {
-  const spend = n(r.spend) ?? 0;
-  const impressions = n(r.impressions) ?? 0;
-
-  const purchases = actionSum(r.actions, 'purchase', 'omni_purchase', 'offsite_conversion.fb_pixel_purchase');
-  const revenue = actionSum(r.action_values, 'purchase', 'omni_purchase', 'offsite_conversion.fb_pixel_purchase');
-  const atc = actionSum(r.actions, 'add_to_cart', 'omni_add_to_cart', 'offsite_conversion.fb_pixel_add_to_cart');
-  const linkClicks = actionSum(r.actions, 'link_click');
-
-  const roas = actionFirst(r.purchase_roas, 'purchase', 'omni_purchase')
-    ?? (revenue != null && spend > 0 ? revenue / spend : null);
-
-  // v3s: Meta ya no expone de forma estable "3 segundos"; video_play_actions es
-  // el equivalente vivo. Se guarda REAL, no derivado de hook_rate.
-  const v3s = actionSum(r.video_play_actions, 'video_view');
-  const v25 = actionSum(r.video_p25_watched_actions, 'video_view');
-  const v50 = actionSum(r.video_p50_watched_actions, 'video_view');
-  const v75 = actionSum(r.video_p75_watched_actions, 'video_view');
-
-  return {
-    ad_id: r.ad_id,
-    ad_name: r.ad_name,
-    date: r.date_start,
-    status: null,
-    created_date: null,
-    spend,
-    revenue,
-    roas,
-    cpa: purchases && purchases > 0 ? spend / purchases : null,
-    cpc: n(r.cpc),
-    cpm: n(r.cpm),
-    v3s,
-    hook_rate: v3s != null && impressions > 0 ? (v3s / impressions) * 100 : null,
-    v25,
-    v50,
-    v75,
-    freq: n(r.frequency),
-    cost_atc: atc && atc > 0 ? spend / atc : null,
-    link_clicks: linkClicks,
-    cvr: linkClicks && linkClicks > 0 && purchases ? (purchases / linkClicks) * 100 : null,
-    result_rate: linkClicks && impressions > 0 ? (linkClicks / impressions) * 100 : null,
-  };
-}
-
-export interface FetchInsightsOpts {
-  since?: string; // YYYY-MM-DD
-  until?: string;
-  datePreset?: string;
-  maxPages?: number;
-}
-
-/** Serie diaria por anuncio. Devuelve también las impresiones reales por fila. */
-export async function fetchDailyInsights(
-  actId: string,
-  opts: FetchInsightsOpts = {}
-): Promise<{ rows: ApiDailyRow[]; impressions: Map<string, number> }> {
-  const query: GraphQuery = {
-    level: 'ad',
-    time_increment: 1,
-    fields: INSIGHT_FIELDS,
-  };
-  if (opts.since && opts.until) {
-    query.time_range = JSON.stringify({ since: opts.since, until: opts.until });
-  } else {
-    query.date_preset = opts.datePreset ?? 'last_30d';
-  }
-  const raw = await graphAll<RawInsight>(`${actId}/insights`, query, {
-    maxPages: opts.maxPages ?? 40, pageSize: INSIGHTS_LIMIT,
-  });
-  const impressions = new Map<string, number>();
-  const rows: ApiDailyRow[] = [];
-  for (const r of raw) {
-    // Meta devuelve una fila por cada día que el anuncio EXISTIÓ, entregara o
-    // no. Guardar los días en cero inflaría `days` en aggregateAds y con eso
-    // el veredicto (un anuncio "de 40 días" que en realidad corrió 6). Los
-    // días sin gasto ni impresiones no aportan información: se descartan.
-    const gasto = Number(r.spend ?? 0);
-    const imps = Number(r.impressions ?? 0);
-    if (gasto === 0 && imps === 0) continue;
-    const row = insightToDailyRow(r);
-    impressions.set(`${row.ad_id}|${row.date}`, imps);
-    rows.push(row);
-  }
-  return { rows, impressions };
 }
 
 // ---------------------------------------------------------------------------

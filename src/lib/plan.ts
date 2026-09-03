@@ -3,12 +3,13 @@
 // Nomenclatura, agregación por concepto/ángulo y veredictos de nivel superior.
 //
 // La cadena: Persona → Ángulo → Concepto → Anuncio.
-// El puente con Meta es el NOMBRE del anuncio: planned_ads.ad_name debe ser
-// idéntico al nombre en Meta. Ese string es lo único que conecta lo que
-// planeaste con lo que pasó.
+// El puente con Meta es planned_ads.meta_ad_id. El nombre generado aquí solo
+// sirve para el PRIMER emparejamiento (src/lib/ad-matching.ts); después el id
+// queda fijo y el nombre deja de importar.
 // =============================================================================
 
-import type { AdAggregate, Economics } from '@/lib/meta';
+import { fmtMoney, type Economics } from '@/lib/meta';
+import type { AdAggregate } from '@/lib/metrics';
 
 // ---------------------------------------------------------------------------
 // Nomenclatura
@@ -143,12 +144,12 @@ export function rollup(ads: AdAggregate[], totalPlanned = 0): RollupMetrics {
   let w75 = 0, spend3 = 0, rev3 = 0;
   for (const a of ads) {
     spend += a.spend;
-    revenue += a.revenue;
-    purchases += a.purchases;
-    impressions += a.impressions;
-    v3s += a.v3s;
-    clicks += a.link_clicks;
-    if (a.ret75 != null && a.v3s > 0) w75 += (a.ret75 / 100) * a.v3s;
+    revenue += a.revenue ?? 0;
+    purchases += a.purchases ?? 0;
+    impressions += a.impressions ?? 0;
+    v3s += a.v3s ?? 0;
+    clicks += a.link_clicks ?? 0;
+    if (a.ret75 != null && (a.v3s ?? 0) > 0) w75 += (a.ret75 / 100) * (a.v3s ?? 0);
     spend3 += a.spend_last3;
     if (a.roas_last3 != null) rev3 += a.roas_last3 * a.spend_last3;
   }
@@ -185,12 +186,13 @@ export interface GroupVerdict {
   action: string;
 }
 
-export function conceptVerdict(m: RollupMetrics, eco: Economics): GroupVerdict {
+export function conceptVerdict(m: RollupMetrics, eco: Economics, currency: string | null = null): GroupVerdict {
+  const money = (n: number) => fmtMoney(n, currency);
   if (m.adsWithData === 0) {
     return { id: 'sin_gasto', label: 'Sin subir', why: 'Todavía no tiene anuncios con datos en Meta.', action: 'Producir y subir.' };
   }
   if (m.spend < eco.kill * 0.5) {
-    return { id: 'sin_datos', label: 'Sin datos', why: `Solo $${Math.round(m.spend)} de gasto: es ruido, no señal.`, action: 'Dejar correr.' };
+    return { id: 'sin_datos', label: 'Sin datos', why: `Solo ${money(m.spend)} de gasto: es ruido, no señal.`, action: 'Dejar correr.' };
   }
   const roas = m.roas ?? 0;
   if (roas >= eco.target) {
@@ -204,7 +206,7 @@ export function conceptVerdict(m: RollupMetrics, eco: Economics): GroupVerdict {
     }
     return {
       id: 'ganador', label: 'Ganador',
-      why: `ROAS ${roas.toFixed(2)} ≥ meta ${eco.target} con $${Math.round(m.spend)} de gasto real.`,
+      why: `ROAS ${roas.toFixed(2)} ≥ meta ${eco.target} con ${money(m.spend)} de gasto real.`,
       action: 'Concepto validado. Haz 3 iteraciones y sube presupuesto máximo 20%.',
     };
   }
@@ -219,7 +221,7 @@ export function conceptVerdict(m: RollupMetrics, eco: Economics): GroupVerdict {
   }
   return {
     id: 'recortar', label: 'Recortar',
-    why: `ROAS ${roas.toFixed(2)} < breakeven ${eco.breakeven} con $${Math.round(m.spend)} de gasto.`,
+    why: `ROAS ${roas.toFixed(2)} < breakeven ${eco.breakeven} con ${money(m.spend)} de gasto.`,
     action: 'El empaque falló. El ángulo puede seguir vivo — prueba otro concepto antes de matarlo.',
   };
 }
@@ -230,8 +232,8 @@ export function conceptVerdict(m: RollupMetrics, eco: Economics): GroupVerdict {
  * está sin probar de verdad. Matar un ángulo por una mala ejecución es el
  * error más caro de la estrategia creativa.
  */
-export function angleVerdict(m: RollupMetrics, conceptsTested: number, eco: Economics): GroupVerdict {
-  const base = conceptVerdict(m, eco);
+export function angleVerdict(m: RollupMetrics, conceptsTested: number, eco: Economics, currency: string | null = null): GroupVerdict {
+  const base = conceptVerdict(m, eco, currency);
   if (base.id === 'recortar' && conceptsTested < 3) {
     return {
       ...base,
@@ -275,4 +277,13 @@ export const NARRATIVE_FORMATS = [
   'Reseña respondida', 'Carta de fundador', 'Educativo', 'Comparativa', 'Unboxing',
 ] as const;
 
-export const OWNERS = ['diseñador', 'editor', 'ia', 'eduardo'] as const;
+/**
+ * Owner roles. Real people live in the `member` table (Phase B); until then a
+ * planned ad is owned by a ROLE, never by a hardcoded first name.
+ */
+export const OWNER_ROLES = ['designer', 'editor', 'ai', 'strategist'] as const;
+/** @deprecated legacy values still stored in concepts.owner / planned_ads.owner */
+export const LEGACY_OWNER_MAP: Record<string, (typeof OWNER_ROLES)[number]> = {
+  'diseñador': 'designer', editor: 'editor', ia: 'ai', eduardo: 'strategist',
+};
+export const OWNERS = OWNER_ROLES;

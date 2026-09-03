@@ -66,7 +66,7 @@ export async function POST(request: NextRequest) {
 
   const context = await buildBrandContext(sb, user.id, brandId);
 
-  const system = `Eres el estratega creativo personal de Eduardo para su marca. Tienes acceso a su contexto completo abajo: el cerebro de la marca, los anuncios que están funcionando AHORA con sus números reales de Meta (hook rate, retención, ROAS), los guiones extraídos de los ganadores, los que fallaron, y sus aprendizajes acumulados.
+  const system = `Eres el estratega creativo del equipo de esta marca. Tienes acceso al contexto completo abajo: el cerebro de la marca, los anuncios que están funcionando AHORA con sus números reales de Meta (hook rate, retención, ROAS), los guiones extraídos de los ganadores, los que fallaron, el motor estructurado (personas, ángulos, conceptos) y los aprendizajes acumulados.
 
 Reglas:
 - Cuando te pida guiones o ideas nuevas, básate en los ángulos y estructuras de los GANADORES actuales; cita los números que lo justifican ("el hook de X detiene al 28%...").

@@ -39,7 +39,7 @@
   },
   "crons": [
     {
-      "path": "/api/meta/sync?phase=todo&days=14&limite=200",
+      "path": "/api/meta/sync?phase=creatives&limit=200",
       "schedule": "0 13 * * *"
     }
   ]

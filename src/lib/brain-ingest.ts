@@ -1,7 +1,7 @@
 // =============================================================================
 // AdDNA — Extractor determinista para alimentar el Cerebro.
 //
-// Cada anuncio que Eduardo sube ya es un GANADOR: su análisis es la materia
+// Cada anuncio subido se trata hoy como GANADOR (sin criterio de rendimiento — se corrige en la Fase B): su análisis es la materia
 // prima más valiosa que tiene la plataforma. El schema de análisis
 // (analysis-schema.ts) ya viene estructurado, así que sacar los candidatos NO
 // necesita un LLM: es un mapeo directo.

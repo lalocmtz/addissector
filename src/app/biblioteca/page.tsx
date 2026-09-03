@@ -30,10 +30,10 @@ export default function BibliotecaPage() {
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
+    if (!activeBrandId) return;
     setLoading(true);
     try {
-      const qs = activeBrandId ? `?brand=${activeBrandId}` : '';
-      const res = await fetch(`/api/creatives${qs}`);
+      const res = await fetch(`/api/creatives?brand=${activeBrandId}`);
       const data = await res.json();
       setConfigured(data.configured !== false);
       setItems(Array.isArray(data.creatives) ? data.creatives : []);

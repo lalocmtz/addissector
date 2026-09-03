@@ -8,10 +8,11 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
-import { anthropic, anthropicApiKey, MODEL } from '@/lib/ai';
+import { anthropic, anthropicApiKey, MODEL, cachedSystem } from '@/lib/ai';
 import { getSupabase } from '@/lib/supabase';
 import { getSessionUser } from '@/lib/supabase-server';
-import { aggregateAds, verdictFor, DEFAULT_ECONOMICS, type DailyRow, type Economics } from '@/lib/meta';
+import { verdictFor, resolveEconomics, fmtMoney } from '@/lib/meta';
+import { aggregateByAd, AD_DAILY_COLUMNS, type AdDailyRow } from '@/lib/metrics';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
@@ -23,19 +24,21 @@ export async function POST(request: NextRequest) {
 
   if (!anthropicApiKey()) return NextResponse.json({ error: 'Anthropic API key is not configured' }, { status: 500 });
 
-  const { brandId, adName } = (await request.json()) as { brandId: string; adName: string };
-  if (!brandId || !adName) return NextResponse.json({ error: 'Faltan datos' }, { status: 400 });
+  // adId is the Meta ad id. adName is accepted only as a legacy fallback.
+  const { brandId, adId: adIdIn, adName: adNameIn } = (await request.json()) as { brandId: string; adId?: string; adName?: string };
+  if (!brandId || (!adIdIn && !adNameIn)) return NextResponse.json({ error: 'Missing brandId or adId' }, { status: 400 });
 
   const sb = getSupabase();
+  const { data: brandRow } = await sb.from('brands').select('id').eq('id', brandId).eq('user_id', user.id).maybeSingle();
+  if (!brandRow) return NextResponse.json({ error: 'Brand not found' }, { status: 404 });
 
-  // Anuncio + creativo vinculado
-  const { data: metaAd } = await sb
-    .from('meta_ads')
-    .select('id,name,creative_id,dossier_meta,dossier_video,created_date')
-    .eq('brand_id', brandId)
-    .eq('name', adName)
-    .maybeSingle();
-  if (!metaAd) return NextResponse.json({ error: 'Anuncio no encontrado en la memoria' }, { status: 404 });
+  // Ad + linked creative, by ad_id
+  let adQ = sb.from('meta_ads').select('id,ad_id,name,creative_id,dossier_meta,dossier_video,created_date').eq('brand_id', brandId);
+  adQ = adIdIn ? adQ.eq('ad_id', adIdIn) : adQ.eq('name', adNameIn!);
+  const { data: metaAd } = await adQ.limit(1).maybeSingle();
+  if (!metaAd) return NextResponse.json({ error: 'Ad not found in memory' }, { status: 404 });
+  const adId = metaAd.ad_id as string;
+  const adName = metaAd.name as string;
 
   let creative: { transcript: string | null; analysis: unknown; duration: number | null; name: string } | null = null;
   if (metaAd.creative_id) {
@@ -49,18 +52,22 @@ export async function POST(request: NextRequest) {
 
   // Datos de Meta: serie diaria del anuncio + benchmarks de la cuenta
   const { data: daily } = await sb
-    .from('meta_daily')
-    .select('ad_name,date,status,spend,revenue,roas,cpa,cpc,cpm,v3s,hook_rate,v25,v50,v75,freq,cost_atc,link_clicks,cvr,result_rate')
+    .from('ad_daily')
+    .select(AD_DAILY_COLUMNS)
     .eq('brand_id', brandId)
-    .limit(20000);
-  const allRows = (daily ?? []) as DailyRow[];
-  const ads = aggregateAds(allRows);
-  const ad = ads.find((a) => a.ad_name === adName);
-  if (!ad) return NextResponse.json({ error: 'Sin métricas para este anuncio' }, { status: 404 });
+    .not('ad_id', 'is', null)
+    .limit(50000);
+  const allRows = (daily ?? []) as unknown as AdDailyRow[];
+  const ads = aggregateByAd(allRows);
+  const ad = ads.find((a) => a.ad_id === adId);
+  if (!ad) return NextResponse.json({ error: 'No metrics for this ad' }, { status: 404 });
 
   const { data: brand } = await sb.from('brands').select('name,product,economics').eq('id', brandId).single();
-  const eco: Economics = { ...DEFAULT_ECONOMICS, ...((brand?.economics as Economics) ?? {}) };
-  const v = verdictFor(ad, eco);
+  const { data: account } = await sb.from('ad_account').select('currency').eq('brand_id', brandId).eq('active', true).limit(1).maybeSingle();
+  const currency: string | null = account?.currency ?? null;
+  const money = (n: number | null | undefined) => (n == null ? 'N/D' : fmtMoney(n, currency));
+  const eco = resolveEconomics(brand?.economics);
+  const v = verdictFor(ad, eco, currency);
 
   // Benchmarks simples de la cuenta (promedios ponderados por gasto)
   const totSpend = ads.reduce((s, a) => s + a.spend, 0) || 1;
@@ -70,17 +77,18 @@ export async function POST(request: NextRequest) {
     return sw > 0 ? w / sw : null;
   };
   const bench = {
-    roas: ads.reduce((s, a) => s + a.revenue, 0) / totSpend,
+    roas: ads.reduce((s, a) => s + (a.revenue ?? 0), 0) / totSpend,
     hook: wavg((a) => a.hook_rate),
+    hold: wavg((a) => a.hold_rate),
     ret50: wavg((a) => a.ret50),
     ret75: wavg((a) => a.ret75),
     cvr: wavg((a) => a.cvr),
   };
 
   const serieDiaria = allRows
-    .filter((r) => r.ad_name === adName)
+    .filter((r) => r.ad_id === adId)
     .sort((a, b) => a.date.localeCompare(b.date))
-    .map((r) => `${r.date}: gasto $${r.spend.toFixed(2)}, ROAS ${r.roas?.toFixed(2) ?? '—'}, hook ${r.hook_rate?.toFixed(1) ?? '—'}%, frec ${r.freq?.toFixed(1) ?? '—'}`)
+    .map((r) => `${r.date}: gasto ${money(r.spend)}, ROAS ${r.roas?.toFixed(2) ?? '—'}, hook ${r.hook_rate?.toFixed(1) ?? '—'}%, frec ${r.freq?.toFixed(1) ?? '—'}`)
     .join('\n');
 
   const dur = creative?.duration ? Math.round(creative.duration) : null;
@@ -113,8 +121,8 @@ Reglas: cita SIEMPRE los números reales al afirmar algo; nada de relleno ni obv
 
   const parts: string[] = [];
   parts.push(`ANUNCIO: "${adName}" · Marca: ${brand?.name ?? ''} (${brand?.product ?? ''})`);
-  parts.push(`\nMÉTRICAS REALES (acumulado ${ad.days} días): gasto $${ad.spend.toFixed(0)}, ingresos $${ad.revenue.toFixed(0)}, ROAS ${ad.roas?.toFixed(2) ?? 'N/D'} (breakeven ${eco.breakeven}, meta ${eco.target}), compras ${Math.round(ad.purchases)}, CPA $${ad.cpa?.toFixed(2) ?? 'N/D'}, hook rate ${ad.hook_rate?.toFixed(1) ?? 'N/D'}%, retención 25% ${ad.ret25?.toFixed(0) ?? 'N/D'}%, 50% ${ad.ret50?.toFixed(0) ?? 'N/D'}%, 75% ${ad.ret75?.toFixed(0) ?? 'N/D'}%, CTR→CVR ${ad.cvr?.toFixed(2) ?? 'N/D'}%, $/ATC $${ad.cost_atc?.toFixed(2) ?? 'N/D'}, CPC $${ad.cpc?.toFixed(2) ?? 'N/D'}, frecuencia ${ad.freq?.toFixed(1) ?? 'N/D'}. Veredicto de la plataforma: ${v.label} — ${v.why}`);
-  parts.push(`\nPROMEDIOS DE LA CUENTA (para comparar): ROAS ${bench.roas.toFixed(2)}, hook ${bench.hook?.toFixed(1) ?? 'N/D'}%, ret50 ${bench.ret50?.toFixed(0) ?? 'N/D'}%, ret75 ${bench.ret75?.toFixed(0) ?? 'N/D'}%, CVR ${bench.cvr?.toFixed(2) ?? 'N/D'}%`);
+  parts.push(`\nMÉTRICAS REALES (acumulado ${ad.days} días, moneda ${currency ?? 'de la cuenta'}): gasto ${money(ad.spend)}, ingresos ${money(ad.revenue)}, ROAS ${ad.roas?.toFixed(2) ?? 'N/D'} (breakeven ${eco.breakeven}, meta ${eco.target}), compras ${Math.round(ad.purchases ?? 0)}, CPA ${money(ad.cpa)}, hook rate ${ad.hook_rate?.toFixed(1) ?? 'N/D'}% (vistas de 3 s / impresiones), hold ${ad.hold_rate?.toFixed(0) ?? 'N/D'}% (ThruPlays / vistas de 3 s), retención 25% ${ad.ret25?.toFixed(0) ?? 'N/D'}%, 50% ${ad.ret50?.toFixed(0) ?? 'N/D'}%, 75% ${ad.ret75?.toFixed(0) ?? 'N/D'}%, 100% ${ad.ret100?.toFixed(0) ?? 'N/D'}%, CVR ${ad.cvr?.toFixed(2) ?? 'N/D'}%, costo/ATC ${money(ad.cost_atc)}, CPC ${money(ad.cpc)}, frecuencia ${ad.freq?.toFixed(1) ?? 'N/D'}. Veredicto de la plataforma: ${v.id} — ${v.why}`);
+  parts.push(`\nPROMEDIOS DE LA CUENTA (para comparar): ROAS ${bench.roas.toFixed(2)}, hook ${bench.hook?.toFixed(1) ?? 'N/D'}%, hold ${bench.hold?.toFixed(0) ?? 'N/D'}%, ret50 ${bench.ret50?.toFixed(0) ?? 'N/D'}%, ret75 ${bench.ret75?.toFixed(0) ?? 'N/D'}%, CVR ${bench.cvr?.toFixed(2) ?? 'N/D'}%`);
   if (serieDiaria) parts.push(`\nSERIE DIARIA:\n${serieDiaria}`);
   if (creative?.transcript) parts.push(`\nTRANSCRIPCIÓN DEL VIDEO:\n${creative.transcript}`);
   if (creative?.analysis) {
@@ -124,14 +132,14 @@ Reglas: cita SIEMPRE los números reales al afirmar algo; nada de relleno ni obv
     parts.push(`\n(No hay video analizado en la Biblioteca para este anuncio: trabaja solo con métricas y expedientes.)`);
   }
   if (metaAd.dossier_meta) parts.push(`\nEXPEDIENTE — RESPUESTA DE LA IA DE META:\n${metaAd.dossier_meta.slice(0, 4000)}`);
-  if (metaAd.dossier_video) parts.push(`\nEXPEDIENTE — NOTAS DE EDUARDO SOBRE EL VIDEO:\n${metaAd.dossier_video.slice(0, 4000)}`);
+  if (metaAd.dossier_video) parts.push(`\nEXPEDIENTE — NOTAS DEL EQUIPO SOBRE EL VIDEO:\n${metaAd.dossier_video.slice(0, 4000)}`);
 
   try {
     const client = anthropic();
     const response = await client.messages.create({
       model: MODEL,
       max_tokens: 6000,
-      system,
+      system: [...cachedSystem(system.split('\n## Línea de tiempo')[0]), { type: 'text', text: '\n## Línea de tiempo' + system.split('\n## Línea de tiempo').slice(1).join('\n## Línea de tiempo') }],
       messages: [{ role: 'user', content: parts.join('\n') }],
     });
     const text = response.content

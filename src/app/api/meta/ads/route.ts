@@ -1,91 +1,98 @@
 // =============================================================================
-// GET /api/meta/ads?brand=&from=&to=[&ad=] — agregados por anuncio en el rango
-// (o serie diaria de un anuncio con ?ad=). Incluye expediente y vínculo con la
-// Biblioteca para saber si el ganador ya fue analizado.
+// GET /api/meta/ads?brand=&from=&to=[&ad=<ad_id>]
+//
+// Per-ad aggregates over a date range (or the daily series of one ad with
+// ?ad=). Everything is keyed by the Meta ad_id; the name is an attribute.
+// Returns the account currency so the client never guesses a symbol.
 // =============================================================================
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabase } from '@/lib/supabase';
 import { getSessionUser } from '@/lib/supabase-server';
-import { aggregateAds, type DailyRow } from '@/lib/meta';
+import { aggregateByAd, AD_DAILY_COLUMNS, type AdDailyRow } from '@/lib/metrics';
 
 export const runtime = 'nodejs';
 export const maxDuration = 30;
 
 export async function GET(request: NextRequest) {
   const user = await getSessionUser();
-  if (!user) return NextResponse.json({ error: 'No autenticado' }, { status: 401 });
+  if (!user) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
 
   const sp = request.nextUrl.searchParams;
   const brandId = sp.get('brand');
-  if (!brandId) return NextResponse.json({ error: 'Falta brand' }, { status: 400 });
+  if (!brandId) return NextResponse.json({ error: 'Missing brand' }, { status: 400 });
   const from = sp.get('from');
   const to = sp.get('to');
-  const adName = sp.get('ad');
+  const adId = sp.get('ad');
 
   const sb = getSupabase();
 
+  // Brand must belong to the user (defense in depth: RLS is bypassed by the service role).
+  const { data: brand } = await sb.from('brands').select('id').eq('id', brandId).eq('user_id', user.id).maybeSingle();
+  if (!brand) return NextResponse.json({ error: 'Brand not found' }, { status: 404 });
+
+  const { data: account } = await sb
+    .from('ad_account').select('ad_account_id,currency,currency_source,timezone,last_synced_at')
+    .eq('brand_id', brandId).eq('active', true).order('created_at').limit(1).maybeSingle();
+
   let q = sb
-    .from('meta_daily')
-    .select('ad_name,date,status,spend,revenue,roas,cpa,cpc,cpm,v3s,hook_rate,v25,v50,v75,freq,cost_atc,link_clicks,cvr,result_rate')
+    .from('ad_daily')
+    .select(AD_DAILY_COLUMNS)
     .eq('brand_id', brandId)
+    .not('ad_id', 'is', null)
     .order('date', { ascending: true })
-    .limit(20000);
+    .limit(50000);
   if (from) q = q.gte('date', from);
   if (to) q = q.lte('date', to);
-  if (adName) q = q.eq('ad_name', adName);
+  if (adId) q = q.eq('ad_id', adId);
 
   const { data: daily, error } = await q;
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  const rows = (daily ?? []) as unknown as AdDailyRow[];
 
-  // Serie diaria de un solo anuncio
-  if (adName) {
-    return NextResponse.json({ daily: daily ?? [] });
+  // Daily series of one ad
+  if (adId) {
+    return NextResponse.json({ daily: rows, currency: account?.currency ?? null });
   }
 
-  const ads = aggregateAds((daily ?? []) as DailyRow[]);
+  const ads = aggregateByAd(rows);
 
-  // Dimensión: expediente + creativo vinculado
+  // Ad dimension: dossier + linked creative, keyed by ad_id
   const { data: dims } = await sb
     .from('meta_ads')
-    .select('id,name,status,created_date,first_seen,last_seen,dossier_meta,dossier_video,creative_id,fusion,fusion_at')
+    .select('id,ad_id,name,status,created_date,first_seen,last_seen,dossier_meta,dossier_video,creative_id,fusion,fusion_at,asset_kind,asset_url,thumbnail_url,media_url,media_type,duration')
     .eq('brand_id', brandId);
-  const dimMap = new Map((dims ?? []).map((d) => [d.name, d]));
+  const dimById = new Map((dims ?? []).map((d) => [d.ad_id as string, d]));
 
-  // Creativos de la biblioteca vinculados por ad_name o por creative_id
+  // Library creatives: linked by meta_ad_id (pinned) → creative_id (dim) → name (legacy fallback)
   const { data: creatives } = await sb
     .from('creatives')
-    .select('id,name,ad_name,type,hook_score,video_url')
+    .select('id,name,ad_name,meta_ad_id,type,hook_score,video_url')
     .eq('user_id', user.id)
     .eq('brand_id', brandId);
-
-  // Match tolerante: mismo nombre con/sin extensión, may/min, espacios
-  const norm = (s: string) =>
-    s.toLowerCase().replace(/\.(mp4|mov|webm|m4v|png|jpg|jpeg)$/i, '').replace(/\s+/g, ' ').trim();
-  const creativeByAd = new Map<string, { id: string; hook_score: number | null; video_url: string | null }>();
+  const norm = (s: string) => s.toLowerCase().replace(/\.(mp4|mov|webm|m4v|png|jpg|jpeg)$/i, '').replace(/\s+/g, ' ').trim();
+  const creativeByMetaId = new Map<string, { id: string; hook_score: number | null; video_url: string | null }>();
+  const creativeByName = new Map<string, { id: string; hook_score: number | null; video_url: string | null }>();
+  const creativeById = new Map<string, { id: string; hook_score: number | null; video_url: string | null }>();
   for (const c of creatives ?? []) {
-    if (c.ad_name) creativeByAd.set(norm(c.ad_name), c);
-    else if (c.name) creativeByAd.set(norm(c.name), c);
+    creativeById.set(c.id, c);
+    if (c.meta_ad_id) creativeByMetaId.set(c.meta_ad_id, c);
+    const key = c.ad_name || c.name;
+    if (key) creativeByName.set(norm(key), c);
   }
-  const creativeById = new Map((creatives ?? []).map((c) => [c.id, c]));
 
-  // Rango total disponible en la memoria
-  const { data: range } = await sb
-    .from('meta_daily')
-    .select('date')
-    .eq('brand_id', brandId)
-    .order('date', { ascending: true })
-    .limit(1);
-  const { data: rangeMax } = await sb
-    .from('meta_daily')
-    .select('date')
-    .eq('brand_id', brandId)
-    .order('date', { ascending: false })
-    .limit(1);
+  // Full memory range
+  const [{ data: rangeMin }, { data: rangeMax }] = await Promise.all([
+    sb.from('ad_daily').select('date').eq('brand_id', brandId).order('date', { ascending: true }).limit(1),
+    sb.from('ad_daily').select('date').eq('brand_id', brandId).order('date', { ascending: false }).limit(1),
+  ]);
 
   const enriched = ads.map((a) => {
-    const dim = dimMap.get(a.ad_name);
-    const linked = (dim?.creative_id ? creativeById.get(dim.creative_id) : undefined) ?? creativeByAd.get(norm(a.ad_name));
+    const dim = dimById.get(a.ad_id);
+    const linked =
+      creativeByMetaId.get(a.ad_id) ??
+      (dim?.creative_id ? creativeById.get(dim.creative_id) : undefined) ??
+      creativeByName.get(norm(a.ad_name));
     return {
       ...a,
       meta_id: dim?.id ?? null,
@@ -97,12 +104,20 @@ export async function GET(request: NextRequest) {
       has_dossier: Boolean(dim?.dossier_meta || dim?.dossier_video),
       fusion: dim?.fusion ?? null,
       fusion_at: dim?.fusion_at ?? null,
+      asset_kind: dim?.asset_kind ?? dim?.media_type ?? null,
+      asset_url: dim?.asset_url ?? dim?.media_url ?? null,
+      thumbnail_url: dim?.thumbnail_url ?? null,
+      duration: dim?.duration ?? null,
     };
   });
 
   return NextResponse.json({
     ads: enriched,
-    memoryFrom: range?.[0]?.date ?? null,
+    currency: account?.currency ?? null,
+    currencySource: account?.currency_source ?? null,
+    timezone: account?.timezone ?? null,
+    lastSyncedAt: account?.last_synced_at ?? null,
+    memoryFrom: rangeMin?.[0]?.date ?? null,
     memoryTo: rangeMax?.[0]?.date ?? null,
   });
 }

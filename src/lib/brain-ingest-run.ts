@@ -17,7 +17,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { anthropicApiKey, MODEL } from '@/lib/ai';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { getSupabase } from './supabase';
-import { aggregateAds, type DailyRow } from './meta';
+import { aggregateByAd, AD_DAILY_COLUMNS, type AdDailyRow } from '@/lib/metrics';
 import { extractCandidates, type IngestCandidates, type IngestMetrics } from './brain-ingest';
 import type { AnalysisResult } from './analysis-schema';
 
@@ -191,9 +191,11 @@ export async function ingestCreative(opts: IngestOptions): Promise<IngestSummary
   try {
     const { data: metaAds } = await sb
       .from('meta_ads')
-      .select('name,fusion,dossier_meta,dossier_video')
+      .select('ad_id,name,fusion,dossier_meta,dossier_video')
       .eq('brand_id', brandId);
-    const hit = (metaAds ?? []).find((m) => norm(String(m.name)) === norm(adName));
+    // Prefer the pinned meta_ad_id of the creative; the name is a fallback.
+    const metaAdId = (creative as { meta_ad_id?: string | null }).meta_ad_id ?? null;
+    const hit = (metaAds ?? []).find((m) => (metaAdId && m.ad_id === metaAdId) || norm(String(m.name)) === norm(adName));
     if (hit) {
       dossier = [
         txt(hit.fusion).slice(0, 3000),
@@ -206,13 +208,14 @@ export async function ingestCreative(opts: IngestOptions): Promise<IngestSummary
 
     const from = new Date(Date.now() - 30 * 864e5).toISOString().slice(0, 10);
     const { data: daily } = await sb
-      .from('meta_daily')
-      .select('ad_name,date,status,spend,revenue,roas,cpa,cpc,cpm,v3s,hook_rate,v25,v50,v75,freq,cost_atc,link_clicks,cvr,result_rate')
+      .from('ad_daily')
+      .select(AD_DAILY_COLUMNS)
       .eq('brand_id', brandId)
+      .not('ad_id', 'is', null)
       .gte('date', from)
-      .limit(20000);
-    const agg = aggregateAds((daily ?? []) as DailyRow[]);
-    const ad = agg.find((a) => norm(a.ad_name) === norm(adName));
+      .limit(50000);
+    const agg = aggregateByAd((daily ?? []) as unknown as AdDailyRow[]);
+    const ad = agg.find((a) => (hit?.ad_id && a.ad_id === hit.ad_id) || norm(a.ad_name) === norm(adName));
     if (ad) {
       metrics.spend = ad.spend;
       metrics.roas = ad.roas;

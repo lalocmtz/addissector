@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabase, PREVIEW_BUCKET, isSupabaseConfigured } from '@/lib/supabase';
-import { getSessionUser, isAuthConfigured } from '@/lib/supabase-server';
+import { getSessionUser } from '@/lib/supabase-server';
 
 export const runtime = 'nodejs';
 export const maxDuration = 30;
@@ -19,14 +19,14 @@ export async function GET(request: NextRequest) {
       .select('id,name,type,preview_url,created_at,product,video_type,hook_score,brand_id,ad_name,video_url')
       .order('created_at', { ascending: false });
 
-    if (isAuthConfigured()) {
-      const user = await getSessionUser();
-      if (!user) return NextResponse.json({ error: 'No autenticado' }, { status: 401 });
-      query = query.eq('user_id', user.id);
-
-      const brandId = request.nextUrl.searchParams.get('brand');
-      if (brandId) query = query.eq('brand_id', brandId);
-    }
+    // Session and brand are mandatory: every other route returns 400 without
+    // a brand, and this one used to leak every creative of the user when the
+    // parameter was missing.
+    const user = await getSessionUser();
+    if (!user) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
+    const brandId = request.nextUrl.searchParams.get('brand');
+    if (!brandId) return NextResponse.json({ error: 'Missing brand' }, { status: 400 });
+    query = query.eq('user_id', user.id).eq('brand_id', brandId);
 
     const { data, error } = await query;
     if (error) throw error;
@@ -77,27 +77,24 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Falta el análisis' }, { status: 400 });
     }
 
-    let userId: string | null = null;
-    if (isAuthConfigured()) {
-      const user = await getSessionUser();
-      if (!user) return NextResponse.json({ error: 'No autenticado' }, { status: 401 });
-      userId = user.id;
-    }
+    const user = await getSessionUser();
+    if (!user) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
+    const userId: string = user.id;
 
     const sb = getSupabase();
     const id = crypto.randomUUID();
 
     // Valida que la marca pertenezca al usuario.
-    let brandId: string | null = null;
-    if (body.brandId && userId) {
-      const { data: brand } = await sb
-        .from('brands')
-        .select('id')
-        .eq('id', body.brandId)
-        .eq('user_id', userId)
-        .maybeSingle();
-      brandId = brand?.id ?? null;
-    }
+    // A creative always belongs to a brand the user owns. No more orphans.
+    if (!body.brandId) return NextResponse.json({ error: 'Missing brandId' }, { status: 400 });
+    const { data: brand } = await sb
+      .from('brands')
+      .select('id')
+      .eq('id', body.brandId)
+      .eq('user_id', userId)
+      .maybeSingle();
+    if (!brand) return NextResponse.json({ error: 'Brand not found' }, { status: 404 });
+    const brandId: string = brand.id;
 
     // Upload preview thumbnail if provided (data URL -> storage object).
     let previewUrl: string | null = null;

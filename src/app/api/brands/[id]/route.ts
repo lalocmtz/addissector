@@ -16,7 +16,7 @@ interface UpdateBrandBody {
   tone?: string | null;
   palette?: string | null;
   product?: string | null;
-  economics?: { currency?: string; breakeven?: number; target?: number; kill?: number } | null;
+  economics?: { breakeven?: number; target?: number; kill?: number } | null;
 }
 
 export async function PATCH(
@@ -40,7 +40,11 @@ export async function PATCH(
     if (body.tone !== undefined) patch.tone = body.tone?.trim() || null;
     if (body.palette !== undefined) patch.palette = body.palette?.trim() || null;
     if (body.product !== undefined) patch.product = body.product?.trim() || null;
-    if (body.economics !== undefined) patch.economics = body.economics;
+    if (body.economics !== undefined) {
+      // Currency is derived from Meta (ad_account.currency) and is not writable here.
+      const e = body.economics ?? {};
+      patch.economics = { breakeven: Number(e.breakeven) || 1.46, target: Number(e.target) || 2, kill: Number(e.kill) || 58 };
+    }
 
     const sb = getSupabase();
     const { data, error } = await sb

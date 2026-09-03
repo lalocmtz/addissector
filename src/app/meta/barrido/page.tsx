@@ -123,51 +123,51 @@ export default function BarridoPage() {
     // Meta limita por RITMO, no por total: con cuentas grandes hay que ir por
     // tandas. Cada vuelta resuelve unas cuantas y guarda; si Meta pide calma,
     // se espera y se retoma donde se quedo.
-    let fase: 'todo' | 'creativos' = 'todo';
-    let totalResueltos = 0;
+    let phase: 'all' | 'creatives' = 'all';
+    let totalResolved = 0;
 
-    for (let vuelta = 0; vuelta < 60 && !detener.current; vuelta++) {
-      let cre: { restantes?: number; limitado?: boolean; resueltos?: number;
-                 encolados?: number; omitidos?: number; bloqueados?: number;
-                 adsVistos?: number; estrategias?: Record<string, number> } | null = null;
-      let esperaMin = 0;
-      let limitado = false;
+    for (let round = 0; round < 60 && !detener.current; round++) {
+      let cre: { remaining?: number; limited?: boolean; resolved?: number;
+                 queued?: number; deduped?: number; blocked?: number; lowSpend?: number;
+                 adsSeen?: number; strategies?: Record<string, number> } | null = null;
+      let waitMin = 0;
+      let limited = false;
       try {
-        // Tandas de 12: una corrida larga se pasa del tiempo del servidor y el
-        // navegador solo ve "Failed to fetch", sin pista de por que.
+        // Batches of 12: one long run exceeds the server time limit and the
+        // browser only sees "Failed to fetch".
         const r = await pedir('/api/meta/sync', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ brandId: activeBrandId, phase: fase, days: 90, limiteCreativos: 12, gastoMinimo: 58 }),
+          body: JSON.stringify({ brandId: activeBrandId, phase, days: 90, creativeLimit: 12, minSpend: 58 }),
         }, 'Sincronización con Meta', { intentos: 3, msLimite: 280000 });
         const j = await r.json();
 
-        for (const m of j.marcas ?? []) {
-          if (m.error) { apunta('err', `${m.marca}: ${m.error}`); continue; }
-          if (m.numeros) apunta('ok', `${m.marca}: ${m.numeros.dias ?? 0} días de métricas guardados`);
-          if (m.limitado) limitado = true;
-          if (m.esperaMin) esperaMin = Math.max(esperaMin, m.esperaMin);
-          cre = m.creativos ?? null;
+        for (const m of j.accounts ?? []) {
+          if (m.error) { apunta('err', `${m.brand}: ${m.error}`); continue; }
+          if (m.numbers) apunta('ok', `${m.brand}: ${m.numbers.rows ?? 0} ad-days saved`);
+          if (m.limited) limited = true;
+          if (m.waitMin) waitMin = Math.max(waitMin, m.waitMin);
+          cre = m.creatives ?? null;
           if (cre) {
-            totalResueltos += cre.resueltos ?? 0;
-            apunta('ok', `Creativos: ${cre.encolados ?? 0} valen la pena · ${(cre as {pocoGasto?:number}).pocoGasto ?? 0} descartados por poco gasto · ${cre.omitidos ?? 0} repetidos · faltan ${cre.restantes ?? 0}`);
-            if (cre.estrategias && Object.keys(cre.estrategias).length) {
-              apunta('info', 'Rutas: ' + Object.entries(cre.estrategias).map(([k, v]) => `${k}:${v}`).join(' · '));
+            totalResolved += cre.resolved ?? 0;
+            apunta('ok', `Creatives: ${cre.queued ?? 0} worth analyzing · ${cre.lowSpend ?? 0} skipped for low spend · ${cre.deduped ?? 0} duplicates · ${cre.remaining ?? 0} remaining`);
+            if (cre.strategies && Object.keys(cre.strategies).length) {
+              apunta('info', 'Routes: ' + Object.entries(cre.strategies).map(([k, v]) => `${k}:${v}`).join(' · '));
             }
           }
         }
       } catch (e) {
-        apunta('err', e instanceof Error ? e.message : 'Error sincronizando');
+        apunta('err', e instanceof Error ? e.message : 'Sync error');
         break;
       }
 
-      fase = 'creativos'; // los números solo hacen falta una vez
+      phase = 'creatives'; // numbers only need one pass
       await cargarResumen();
 
-      if (limitado || cre?.limitado) {
+      if (limited || cre?.limited) {
         // Meta bloquea por app durante una ventana; su propio encabezado dice
         // cuántos minutos faltan. Reintentar antes solo gasta y alarga el bloqueo.
-        const min = esperaMin || cre?.restantes === -1 ? esperaMin : 0;
+        const min = waitMin || cre?.remaining === -1 ? waitMin : 0;
         if (min > 0) {
           apunta('err', `Meta bloqueó las peticiones por ${min} min. Espero y sigo solo — puedes dejar esto abierto.`);
           await esperar(Math.min(min, 60) * 60000 + 15000);
@@ -177,8 +177,8 @@ export default function BarridoPage() {
         }
         continue;
       }
-      if (!cre || (cre.restantes ?? 0) === 0) {
-        apunta('ok', `Sincronización completa. ${totalResueltos} creativos descubiertos.`);
+      if (!cre || (cre.remaining ?? 0) === 0) {
+        apunta('ok', `Sync complete. ${totalResolved} creatives discovered.`);
         break;
       }
       await esperar(1500);
