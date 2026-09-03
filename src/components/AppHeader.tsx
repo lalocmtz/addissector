@@ -11,9 +11,10 @@ import { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
-  Scan, LayoutGrid, ChevronDown, Check, Plus, LogOut, BarChart3, Library, Brain, Film,
+  Scan, LayoutGrid, ChevronDown, Check, Plus, LogOut, BarChart3, Library, Brain, Film, SunMoon,
 } from 'lucide-react';
 import type { MeData, BrandRow } from '@/lib/use-me';
+import { useT, useLocale, setLocaleCookie, type Locale } from '@/lib/i18n';
 
 interface AppHeaderProps {
   me: MeData | null;
@@ -22,16 +23,23 @@ interface AppHeaderProps {
 }
 
 const NAV = [
-  { href: '/meta', label: 'Meta', icon: BarChart3 },
-  { href: '/plan', label: 'Planificación', icon: LayoutGrid },
-  { href: '/biblioteca', label: 'Biblioteca', icon: Library },
-  { href: '/cerebro', label: 'Cerebro', icon: Brain },
-  { href: '/studio', label: 'Analizar video', icon: Film },
+  { href: '/meta', key: 'nav.meta', icon: BarChart3 },
+  { href: '/plan', key: 'nav.plan', icon: LayoutGrid },
+  { href: '/biblioteca', key: 'nav.library', icon: Library },
+  { href: '/cerebro', key: 'nav.brain', icon: Brain },
+  { href: '/studio', key: 'nav.analyze', icon: Film },
 ] as const;
+
+function setTheme(next: 'light' | 'dark') {
+  document.cookie = `theme=${next}; path=/; max-age=31536000; samesite=lax`;
+  document.documentElement.setAttribute('data-theme', next);
+}
 
 export default function AppHeader({ me, activeBrand, onBrandChange }: AppHeaderProps) {
   const router = useRouter();
   const pathname = usePathname();
+  const t = useT();
+  const locale = useLocale();
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -57,7 +65,7 @@ export default function AppHeader({ me, activeBrand, onBrandChange }: AppHeaderP
             <div className="w-8 h-8 rounded-lg gradient-blue flex items-center justify-center">
               <Scan className="w-4 h-4 text-on-accent" />
             </div>
-            <span className="hidden lg:inline text-sm font-bold tracking-tight">AdDNA</span>
+            <span className="hidden lg:inline text-sm font-semibold tracking-tight font-[family-name:var(--font-serif)]">Addissector</span>
           </Link>
 
           {/* Selector de marca */}
@@ -70,14 +78,14 @@ export default function AppHeader({ me, activeBrand, onBrandChange }: AppHeaderP
                 <span className="w-5 h-5 rounded-md gradient-blue flex items-center justify-center text-[10px] font-bold text-on-accent shrink-0">
                   {(activeBrand?.name ?? 'M')[0]?.toUpperCase()}
                 </span>
-                <span className="truncate">{activeBrand?.name ?? 'Mi marca'}</span>
+                <span className="truncate">{activeBrand?.name ?? t('nav.myBrand')}</span>
                 <ChevronDown className="w-3.5 h-3.5 text-ink-4 shrink-0" />
               </button>
 
               {open && (
                 <div className="absolute left-0 top-full mt-2 w-64 rounded-xl border border-line bg-surface shadow-2xl  p-1.5 z-50">
                   <p className="text-[10px] uppercase tracking-wide text-ink-4 px-2.5 py-1.5">
-                    Tus marcas
+                    {t('nav.brands')}
                   </p>
                   {me.brands.map((b) => (
                     <button
@@ -104,7 +112,7 @@ export default function AppHeader({ me, activeBrand, onBrandChange }: AppHeaderP
                     className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-sm text-ink-3 hover:bg-surface-2 hover:text-ink transition-colors"
                   >
                     <Plus className="w-4 h-4" />
-                    Gestionar marcas
+                    {t('nav.manageBrands')}
                   </button>
                 </div>
               )}
@@ -113,7 +121,7 @@ export default function AppHeader({ me, activeBrand, onBrandChange }: AppHeaderP
         </div>
 
         <nav className="flex items-center gap-0.5 sm:gap-1 overflow-x-auto">
-          {NAV.map(({ href, label, icon: Icon }) => (
+          {NAV.map(({ href, key, icon: Icon }) => (
             <Link
               key={href}
               href={href}
@@ -124,20 +132,39 @@ export default function AppHeader({ me, activeBrand, onBrandChange }: AppHeaderP
               }`}
             >
               <Icon className="w-3.5 h-3.5 hidden sm:block" />
-              {label}
+              {t(key)}
             </Link>
           ))}
         </nav>
 
+        <div className="flex items-center gap-1 shrink-0">
+          <select
+            aria-label={t('nav.language')}
+            value={locale}
+            onChange={(e) => { setLocaleCookie(e.target.value as Locale); router.refresh(); }}
+            className="text-xs bg-transparent border border-line rounded-md px-1.5 py-1 text-ink-2 font-[family-name:var(--font-mono)]"
+          >
+            <option value="en">EN</option>
+            <option value="es">ES</option>
+          </select>
+          <button
+            type="button"
+            onClick={() => setTheme(document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark')}
+            className="p-2 rounded-md text-ink-2 hover:text-ink hover:bg-surface-2 transition-colors"
+            title="Theme"
+          >
+            <SunMoon className="w-4 h-4" />
+          </button>
         <form action="/logout" method="POST" className="shrink-0">
           <button
             type="submit"
             className="p-2 rounded-lg text-ink-3 hover:text-danger hover:bg-surface-2 transition-colors"
-            title="Cerrar sesión"
+            title={t('nav.signOut')}
           >
             <LogOut className="w-4 h-4" />
           </button>
         </form>
+        </div>
       </div>
     </header>
   );
