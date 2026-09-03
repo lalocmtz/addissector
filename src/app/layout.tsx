@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import "./globals.css";
-import { LocaleProvider, DEFAULT_LOCALE, LOCALE_COOKIE, isLocale } from "@/lib/i18n";
+import { LocaleProvider } from "@/lib/i18n";
+import { DEFAULT_LOCALE, LOCALE_COOKIE, isLocale } from "@/lib/i18n-core";
 
 export const metadata: Metadata = {
   title: "Addissector",

@@ -1,7 +1,7 @@
 'use client';
 
 // =============================================================================
-// AdDNA — Formulario compartido de login / signup (email+password y Google).
+// Formulario compartido de login / signup (email+password y Google).
 // =============================================================================
 
 import { useState } from 'react';
@@ -143,12 +143,12 @@ export default function AuthForm({ mode }: AuthFormProps) {
 
         <div className="rounded-2xl border border-line bg-surface p-6">
           <h1 className="text-xl font-bold mb-1">
-            {isSignup ? 'Crea tu cuenta' : 'Bienvenido de vuelta'}
+            {isSignup ? 'Create account' : 'Sign in'}
           </h1>
           <p className="text-sm text-ink-3 mb-6">
             {isSignup
-              ? 'Empieza gratis: 3 análisis para entender por qué venden tus anuncios.'
-              : 'Entra para seguir escalando tus creativos ganadores.'}
+              ? 'Set up your workspace.'
+              : 'Creative strategy for Meta Ads.'}
           </p>
 
           <button
@@ -212,7 +212,7 @@ export default function AuthForm({ mode }: AuthFormProps) {
               className="w-full py-2.5 rounded-xl text-sm font-semibold gradient-blue text-on-accent shadow-lg  hover: transition-all disabled:opacity-60 flex items-center justify-center gap-2"
             >
               {loading && <Loader2 className="w-4 h-4 animate-spin" />}
-              {isSignup ? 'Crear cuenta gratis' : 'Entrar'}
+              {isSignup ? 'Create account' : 'Sign in'}
             </button>
           </form>
         </div>

@@ -15,28 +15,10 @@
 // =============================================================================
 
 import { createContext, useCallback, useContext, useMemo } from 'react';
-import { en } from '@/i18n/en';
-import { es } from '@/i18n/es';
+import { translate, DEFAULT_LOCALE, LOCALE_COOKIE, type Locale, type Vars } from '@/lib/i18n-core';
 
-export type Locale = 'en' | 'es';
-export const LOCALES: Locale[] = ['en', 'es'];
-export const DEFAULT_LOCALE: Locale = 'en';
-export const LOCALE_COOKIE = 'locale';
-
-type Dict = Record<string, string>;
-const DICTS: Record<Locale, Dict> = { en, es };
-
-export type Vars = Record<string, string | number | null | undefined>;
-
-export function translate(locale: Locale, key: string, vars?: Vars): string {
-  const raw = DICTS[locale]?.[key] ?? DICTS.en[key] ?? key;
-  if (!vars) return raw;
-  return raw.replace(/\{(\w+)\}/g, (_, k: string) => (vars[k] == null ? '' : String(vars[k])));
-}
-
-export function isLocale(v: unknown): v is Locale {
-  return typeof v === 'string' && (LOCALES as string[]).includes(v);
-}
+export { translate, isLocale, DEFAULT_LOCALE, LOCALES, LOCALE_COOKIE } from '@/lib/i18n-core';
+export type { Locale, Vars } from '@/lib/i18n-core';
 
 const LocaleContext = createContext<Locale>(DEFAULT_LOCALE);
 
