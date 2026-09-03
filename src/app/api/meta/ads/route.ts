@@ -16,6 +16,7 @@ import { getSessionUser } from '@/lib/supabase-server';
 import { aggregateByAd, rollupAggregates, AD_DAILY_COLUMNS, type AdDailyRow } from '@/lib/metrics';
 import { resolveWindow, isWindowId, delta, type WindowId } from '@/lib/windows';
 import { resolveEconomics } from '@/lib/meta';
+import { fetchAll } from '@/lib/fetch-all';
 
 export const runtime = 'nodejs';
 export const maxDuration = 30;
@@ -44,17 +45,15 @@ export async function GET(request: NextRequest) {
     .eq('brand_id', brandId).eq('active', true).order('created_at').limit(1).maybeSingle();
 
   // Full history of the brand (momentum needs it; windows slice it).
-  let q = sb
-    .from('ad_daily')
-    .select(AD_DAILY_COLUMNS)
-    .eq('brand_id', brandId)
-    .not('ad_id', 'is', null)
-    .order('date', { ascending: true })
-    .limit(50000);
-  if (adId) q = q.eq('ad_id', adId);
-  const { data: daily, error } = await q;
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  const all = (daily ?? []) as unknown as AdDailyRow[];
+  let all: AdDailyRow[];
+  try {
+    all = (await fetchAll(() => {
+      const q = sb.from('ad_daily').select(AD_DAILY_COLUMNS).eq('brand_id', brandId).not('ad_id', 'is', null);
+      return (adId ? q.eq('ad_id', adId) : q).order('date', { ascending: true }).order('ad_id');
+    })) as unknown as AdDailyRow[];
+  } catch (e) {
+    return NextResponse.json({ error: e instanceof Error ? e.message : 'Query failed' }, { status: 500 });
+  }
 
   // Daily series of one ad
   if (adId) {
@@ -80,11 +79,11 @@ export async function GET(request: NextRequest) {
   const accountPrev = win.previous ? rollupAggregates(prevAds) : null;
 
   // Ad dimension: dossier + linked creative, keyed by ad_id
-  const { data: dims } = await sb
+  const dims = await fetchAll(() => sb
     .from('meta_ads')
     .select('id,ad_id,name,status,created_date,first_seen,last_seen,dossier_meta,dossier_video,creative_id,fusion,fusion_at,asset_kind,asset_url,thumbnail_url,media_url,media_type,duration,persona_id,angle_id,concept_id')
-    .eq('brand_id', brandId);
-  const dimById = new Map((dims ?? []).map((d) => [d.ad_id as string, d]));
+    .eq('brand_id', brandId).order('id'));
+  const dimById = new Map(dims.map((d) => [d.ad_id as string, d]));
 
   // Library creatives: linked by meta_ad_id (pinned) → creative_id (dim) → name (legacy fallback)
   const { data: creatives } = await sb

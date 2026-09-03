@@ -13,6 +13,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSupabase } from '@/lib/supabase';
 import { getSessionUser } from '@/lib/supabase-server';
 import { mergeDuplicateDays, type DailyRow } from '@/lib/meta';
+import { fetchAll } from '@/lib/fetch-all';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -78,9 +79,9 @@ export async function POST(request: NextRequest) {
   const from = dates[0], to = dates[dates.length - 1];
 
   // API rows for the same (ad, day) win.
-  const { data: apiRows } = await sb
-    .from('ad_daily').select('ad_id,date').eq('brand_id', brandId).eq('source', 'api').gte('date', from).lte('date', to);
-  const apiKeys = new Set((apiRows ?? []).map((r) => `${r.ad_id}|${r.date}`));
+  const apiRows = await fetchAll(() => sb
+    .from('ad_daily').select('ad_id,date').eq('brand_id', brandId).eq('source', 'api').gte('date', from).lte('date', to).order('date').order('ad_id'));
+  const apiKeys = new Set(apiRows.map((r) => `${r.ad_id}|${r.date}`));
 
   const withId: Record<string, unknown>[] = [];
   const legacy: Record<string, unknown>[] = [];

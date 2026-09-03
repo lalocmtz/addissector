@@ -23,6 +23,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSupabase } from '@/lib/supabase';
 import { getSessionUser } from '@/lib/supabase-server';
 import { fetchAds, resolveAsset, videoIdsOf, pageIdOf, sleep, esLimiteDePeticiones, MetaApiError, type RawAd } from '@/lib/meta-api';
+import { fetchAll } from '@/lib/fetch-all';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
@@ -104,8 +105,8 @@ async function syncCreatives(
   // example of "what does not work" poisons the conclusions.
   const spendByAd = new Map<string, number>();
   if (minSpend > 0) {
-    const { data } = await sb.from('ad_daily').select('ad_id,spend').eq('brand_id', brandId).not('ad_id', 'is', null).limit(100000);
-    for (const d of data ?? []) spendByAd.set(d.ad_id as string, (spendByAd.get(d.ad_id as string) ?? 0) + Number(d.spend ?? 0));
+    const data = await fetchAll(() => sb.from('ad_daily').select('ad_id,spend').eq('brand_id', brandId).not('ad_id', 'is', null).order('ad_id').order('date'));
+    for (const d of data) spendByAd.set(d.ad_id as string, (spendByAd.get(d.ad_id as string) ?? 0) + Number(d.spend ?? 0));
   }
 
   const { data: rows } = await sb

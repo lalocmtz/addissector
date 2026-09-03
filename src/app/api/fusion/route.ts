@@ -13,6 +13,7 @@ import { getSupabase } from '@/lib/supabase';
 import { getSessionUser } from '@/lib/supabase-server';
 import { verdictFor, resolveEconomics, fmtMoney } from '@/lib/meta';
 import { aggregateByAd, AD_DAILY_COLUMNS, type AdDailyRow } from '@/lib/metrics';
+import { fetchAll } from '@/lib/fetch-all';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
@@ -51,13 +52,13 @@ export async function POST(request: NextRequest) {
   }
 
   // Datos de Meta: serie diaria del anuncio + benchmarks de la cuenta
-  const { data: daily } = await sb
+  const daily = await fetchAll(() => sb
     .from('ad_daily')
     .select(AD_DAILY_COLUMNS)
     .eq('brand_id', brandId)
     .not('ad_id', 'is', null)
-    .limit(50000);
-  const allRows = (daily ?? []) as unknown as AdDailyRow[];
+    .order('date').order('ad_id'));
+  const allRows = daily as unknown as AdDailyRow[];
   const ads = aggregateByAd(allRows);
   const ad = ads.find((a) => a.ad_id === adId);
   if (!ad) return NextResponse.json({ error: 'No metrics for this ad' }, { status: 404 });

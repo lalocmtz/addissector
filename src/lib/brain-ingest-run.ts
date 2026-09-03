@@ -20,6 +20,7 @@ import { getSupabase } from './supabase';
 import { aggregateByAd, AD_DAILY_COLUMNS, type AdDailyRow } from '@/lib/metrics';
 import { extractCandidates, type IngestCandidates, type IngestMetrics } from './brain-ingest';
 import type { AnalysisResult } from './analysis-schema';
+import { fetchAll } from '@/lib/fetch-all';
 
 
 // ---------------------------------------------------------------------------
@@ -208,14 +209,14 @@ export async function ingestCreative(opts: IngestOptions): Promise<IngestSummary
     }
 
     const from = new Date(Date.now() - 30 * 864e5).toISOString().slice(0, 10);
-    const { data: daily } = await sb
+    const daily = await fetchAll(() => sb
       .from('ad_daily')
       .select(AD_DAILY_COLUMNS)
       .eq('brand_id', brandId)
       .not('ad_id', 'is', null)
       .gte('date', from)
-      .limit(50000);
-    const agg = aggregateByAd((daily ?? []) as unknown as AdDailyRow[]);
+      .order('date').order('ad_id'));
+    const agg = aggregateByAd(daily as unknown as AdDailyRow[]);
     const ad = agg.find((a) => (hit?.ad_id && a.ad_id === hit.ad_id) || norm(a.ad_name) === norm(adName));
     if (ad) {
       metrics.spend = ad.spend;

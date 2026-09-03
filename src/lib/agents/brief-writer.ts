@@ -92,7 +92,7 @@ export async function writeBrief(sb: SupabaseClient, exp: ExperimentRow & { prio
     exp.concept_id ? sb.from('concepts').select('code,name,narrative_format,hypothesis,offer,do_not_change').eq('id', exp.concept_id).maybeSingle() : Promise.resolve({ data: null }),
     sb.from('experiment_variant').select('variant,ad_name,hook,format,script,visual_notes,hook_id').eq('experiment_id', exp.id).order('variant'),
     sb.from('hook').select('id,title,body,hook_type,status').eq('brand_id', exp.brand_id).in('status', ['validated', 'testing']).limit(30),
-    sb.from('learnings').select('text,evidence,status,suspect').eq('brand_id', exp.brand_id).eq('active', true).neq('status', 'rejected')
+    sb.from('learnings').select('text,evidence,status,suspect').eq('brand_id', exp.brand_id).eq('active', true).neq('status', 'rejected').or('suspect.is.null,suspect.eq.false')
       .or([exp.persona_id ? `persona_id.eq.${exp.persona_id}` : null, exp.angle_id ? `angle_id.eq.${exp.angle_id}` : null, exp.concept_id ? `concept_id.eq.${exp.concept_id}` : null, `dimension.eq.${exp.variable}`].filter(Boolean).join(','))
       .limit(30),
     exp.control_ad_id ? sb.from('ad_daily').select(AD_DAILY_COLUMNS).eq('brand_id', exp.brand_id).eq('ad_id', exp.control_ad_id).limit(2000) : Promise.resolve({ data: [] }),

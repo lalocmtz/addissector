@@ -12,6 +12,7 @@ import { aggregateByAd, AD_DAILY_COLUMNS, type AdDailyRow, type AdAggregate } fr
 import { resolveEconomics } from '@/lib/meta';
 import { matchAndPin } from '@/lib/ad-matching';
 import { evaluateExperiment, resolveCriteria, closeExperiment, type Evaluation, type ExperimentRow, type SuccessCriteria } from '@/lib/experiments';
+import { fetchAll } from '@/lib/fetch-all';
 
 export const EXPERIMENT_SELECT = 'id,user_id,brand_id,number,code,name,hypothesis,prior_evidence,variable,persona_id,angle_id,concept_id,control_ad_id,control_note,success_criteria,owner_id,status,result,learning_id,brief,planned_for,started_at,closed_at,close_reason,evaluated_at,idea_id,created_at,updated_at';
 export const VARIANT_SELECT = 'id,experiment_id,concept_id,ad_name,variant,hook_id,hook,format,script,visual_notes,status,owner_id,meta_ad_id,matched_at,uploaded_at,claimed_from,result,created_at';
@@ -48,8 +49,8 @@ export async function loadExperiments(sb: SupabaseClient, userId: string, brandI
   // Variants not yet pinned: look for their name in Meta (exact → parsed). A hit pins the id for good.
   const unpinned = variants.filter((v) => !v.meta_ad_id);
   if (unpinned.length) {
-    const { data: metaAds } = await sb.from('meta_ads').select('ad_id,name').eq('brand_id', brandId).not('ad_id', 'is', null);
-    const matches = await matchAndPin(sb, unpinned, (metaAds ?? []).map((m) => ({ ad_id: m.ad_id as string, ad_name: m.name })));
+    const metaAds = await fetchAll(() => sb.from('meta_ads').select('ad_id,name').eq('brand_id', brandId).not('ad_id', 'is', null).order('ad_id'));
+    const matches = await matchAndPin(sb, unpinned, metaAds.map((m) => ({ ad_id: m.ad_id as string, ad_name: m.name })));
     const now = new Date().toISOString();
     for (const m of matches) {
       if (!m.adId) continue;
@@ -70,8 +71,7 @@ export async function loadExperiments(sb: SupabaseClient, userId: string, brandI
   for (const e of experiments) if (e.control_ad_id) adIds.add(e.control_ad_id);
   let daily: AdDailyRow[] = [];
   if (adIds.size) {
-    const { data } = await sb.from('ad_daily').select(AD_DAILY_COLUMNS).eq('brand_id', brandId).in('ad_id', [...adIds]).order('date').limit(50000);
-    daily = ((data ?? []) as unknown) as AdDailyRow[];
+    daily = (await fetchAll(() => sb.from('ad_daily').select(AD_DAILY_COLUMNS).eq('brand_id', brandId).in('ad_id', [...adIds]).order('date').order('ad_id'))) as unknown as AdDailyRow[];
   }
   const names = new Map<string, string>();
   if (adIds.size) {
@@ -96,12 +96,13 @@ export async function loadExperiments(sb: SupabaseClient, userId: string, brandI
     let status = e.status;
     let result = e.result, learning_id = e.learning_id, close_reason = e.close_reason, closed_at = e.closed_at;
     if (opts.autoClose && evaluation?.decidable && ['live', 'evaluating'].includes(e.status)) {
-      const hookVariant = vs.find((v) => v.hook_id);
+      // The learning names what the best variant did: its hook (bank or free text) or its dimension value.
+      const bestVariant = vs.find((v) => v.id === evaluation.best?.variant_id) ?? vs.find((v) => v.hook_id || v.hook);
       const { learningId } = await closeExperiment(sb, e, evaluation, {
         reason: evaluation.reason === 'criteria_met' ? 'criteria_met' : 'criteria_failed',
-        hookId: hookVariant?.hook_id ?? null,
-        hookTitle: hookVariant?.hook ?? null,
-        dimensionValue: evaluation.best ? vs.find((v) => v.id === evaluation.best?.variant_id)?.format ?? null : null,
+        hookId: bestVariant?.hook_id ?? null,
+        hookTitle: bestVariant?.hook ?? null,
+        dimensionValue: bestVariant?.format ?? null,
       });
       status = 'closed'; learning_id = learningId; close_reason = evaluation.reason; closed_at = new Date().toISOString();
       result = { verdict: evaluation.verdict, reason: evaluation.reason, spend: evaluation.spend, best: evaluation.best, control: evaluation.control, gates: evaluation.gates };

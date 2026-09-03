@@ -69,7 +69,12 @@ export async function POST(request: NextRequest) {
         if (error) return NextResponse.json({ error: error.message }, { status: 500 });
         variant = data;
       }
-      if (['draft', 'planned', 'producing'].includes(exp.status)) await sb.from('experiment').update({ status: 'live', started_at: exp.started_at ?? now, updated_at: now }).eq('id', exp.id);
+      // A claimed ad has history: the experiment clock starts when the ad did, not when it was claimed.
+      const { data: first } = await sb.from('ad_daily').select('date').eq('brand_id', body.brandId).eq('ad_id', meta.ad_id).order('date').limit(1).maybeSingle();
+      const adStart = first?.date ? `${first.date}T00:00:00Z` : now;
+      const startedAt = exp.started_at && exp.started_at < adStart ? exp.started_at : adStart;
+      const statusPatch = ['draft', 'planned', 'producing'].includes(exp.status) ? { status: 'live' } : {};
+      await sb.from('experiment').update({ ...statusPatch, started_at: startedAt, updated_at: now }).eq('id', exp.id);
     }
   }
 

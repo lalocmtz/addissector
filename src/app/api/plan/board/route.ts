@@ -15,6 +15,7 @@ import { resolveEconomics } from '@/lib/meta';
 import { aggregateByAd, AD_DAILY_COLUMNS, type AdDailyRow, type AdAggregate } from '@/lib/metrics';
 import { matchAndPin } from '@/lib/ad-matching';
 import { rollup, conceptVerdict, angleVerdict, type RollupMetrics } from '@/lib/plan';
+import { fetchAll } from '@/lib/fetch-all';
 
 export const runtime = 'nodejs';
 
@@ -37,7 +38,7 @@ export async function GET(request: NextRequest) {
     sb.from('angles').select('id,code,name,persona_id,status,funnel_stage,priority,learnings').eq('brand_id', brandId).eq('user_id', user.id),
     sb.from('concepts').select('id,angle_id,persona_id,number,code,name,narrative_format,hypothesis,status,owner,target_assets,planned_for,origin,origin_ad_name,brief,do_not_change').eq('brand_id', brandId).eq('user_id', user.id).order('number', { ascending: false }),
     sb.from('experiment_variant').select('id,concept_id,experiment_id,ad_name,meta_ad_id,variant,format,hook,status,owner_id,uploaded_at').eq('brand_id', brandId).eq('user_id', user.id),
-    sb.from('ad_daily').select(AD_DAILY_COLUMNS).eq('brand_id', brandId).eq('user_id', user.id).not('ad_id', 'is', null).gte('date', sinceStr).limit(50000),
+    fetchAll(() => sb.from('ad_daily').select(AD_DAILY_COLUMNS).eq('brand_id', brandId).eq('user_id', user.id).not('ad_id', 'is', null).gte('date', sinceStr).order('date').order('ad_id')),
   ]);
 
   if (!brandRes.data) return NextResponse.json({ error: 'Brand not found' }, { status: 404 });
@@ -49,7 +50,7 @@ export async function GET(request: NextRequest) {
   const planned = plannedRes.data ?? [];
 
   // Real Meta data, aggregated by ad_id.
-  const aggregates = aggregateByAd((dailyRes.data ?? []) as unknown as AdDailyRow[]);
+  const aggregates = aggregateByAd(dailyRes as unknown as AdDailyRow[]);
   const byId = new Map<string, AdAggregate>(aggregates.map((a) => [a.ad_id, a]));
 
   // Planned ↔ Meta: pinned id first, then name, then parsed name. New links are pinned.

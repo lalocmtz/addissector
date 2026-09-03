@@ -189,7 +189,7 @@ const ratio = (v: number | null) => (v == null ? '—' : `${v.toFixed(2)}x`);
 
 /** The learning text is written in the base locale; it is data the strategist edits, not UI. */
 export function learningTextFor(exp: ExperimentRow, ev: Evaluation, vars: { dimensionValue?: string | null; hookTitle?: string | null }): { text: string; evidence: string } {
-  const subject = exp.variable === 'hook' && vars.hookTitle ? `hook "${vars.hookTitle}"`
+  const subject = exp.variable === 'hook' && vars.hookTitle ? `hook "${vars.hookTitle.slice(0, 80)}"`
     : DIMENSION_VARIABLES.has(exp.variable) && vars.dimensionValue ? `${exp.variable.replace('_', ' ')} = ${vars.dimensionValue}`
     : exp.variable;
   const outcome = ev.verdict === 'validated' ? 'works' : ev.verdict === 'refuted' ? 'does not work' : 'is inconclusive';

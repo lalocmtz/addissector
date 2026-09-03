@@ -12,6 +12,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { verdictFor, resolveEconomics, fmtMoney, type Economics } from '@/lib/meta';
 import { aggregateByAd, AD_DAILY_COLUMNS, type AdDailyRow, type AdAggregate } from '@/lib/metrics';
+import { fetchAll } from '@/lib/fetch-all';
 
 export interface BrandContextMeta {
   currency: string | null;
@@ -57,15 +58,15 @@ export async function buildBrandContextWithMeta(
   // Last 30 days of Meta data, keyed by ad_id
   const since = new Date();
   since.setDate(since.getDate() - 30);
-  const { data: daily } = await sb
+  const daily = await fetchAll(() => sb
     .from('ad_daily')
     .select(AD_DAILY_COLUMNS)
     .eq('brand_id', brandId)
     .not('ad_id', 'is', null)
     .gte('date', since.toISOString().slice(0, 10))
-    .limit(50000);
+    .order('date').order('ad_id'));
 
-  const ads = aggregateByAd((daily ?? []) as unknown as AdDailyRow[]);
+  const ads = aggregateByAd(daily as unknown as AdDailyRow[]);
   const withVerdict = ads.map((a) => ({ a, v: verdictFor(a, eco, currency) }));
   const winners = withVerdict.filter((x) => x.v.id === 'ganador' || (x.v.id === 'prometedor' && x.a.spend >= eco.kill));
   const losers = withVerdict.filter((x) => (x.v.id === 'apagar' || x.v.id === 'dejar') && x.a.spend >= eco.kill).slice(0, 8);
