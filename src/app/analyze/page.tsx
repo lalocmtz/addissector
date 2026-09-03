@@ -257,24 +257,6 @@ export default function AnalyzePage() {
               ...newVariants.script_variants,
             ];
           }
-          if (newVariants.seedance_variants && Array.isArray(newVariants.seedance_variants)) {
-            const existingSegments = [...(current.seedance_segments ?? [])];
-            for (const sv of newVariants.seedance_variants) {
-              const segIndex = existingSegments.findIndex(
-                s => s.segment_number === sv.segment_number
-              );
-              if (segIndex !== -1) {
-                existingSegments[segIndex] = {
-                  ...existingSegments[segIndex],
-                  variants: [
-                    ...(existingSegments[segIndex].variants ?? []),
-                    ...(sv.variants ?? []),
-                  ],
-                };
-              }
-            }
-            updated.seedance_segments = existingSegments;
-          }
           next.set(videoKey, normalizeResult(updated));
         }
         return next;

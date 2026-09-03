@@ -12,7 +12,6 @@
 //   5. Dónde se pierde         — riesgos de retención + números reales
 //   6. El guion                — colapsado
 //   7. Prompts y briefs        — colapsado
-//   8. Segmentos de video IA   — solo si FEATURE_GENERATION_ENABLED
 //
 // Reemplaza el apilado SimpleResults + AnalysisResults (dashboard, psicología,
 // estructura, guiones, Seedance, plan).
@@ -24,8 +23,6 @@ import {
   Quote, Sparkles, Target, TrendingDown, Users, Wand2, Zap,
 } from 'lucide-react';
 import CopyButton from './CopyButton';
-import SeedancePrompts from './SeedancePrompts';
-import { FEATURE_GENERATION_ENABLED } from '@/lib/feature-flags';
 import type { AnalysisResult, SimpleSignals } from '@/lib/analysis-schema';
 
 // ---------------------------------------------------------------------------
@@ -803,26 +800,6 @@ export default function CreativeOnePager({
         </div>
       </Collapsible>
 
-      {/* ========== 8. SEGMENTOS DE VIDEO IA — solo con el motor encendido ========== */}
-      {FEATURE_GENERATION_ENABLED && (analysis.seedance_segments ?? []).length > 0 && (
-        <Collapsible
-          icon={<Wand2 className="w-4 h-4" />}
-          title="Segmentos para generar el video con IA"
-          hint="Prompts de 15s listos para el generador de video."
-        >
-          <SeedancePrompts
-            segments={analysis.seedance_segments ?? []}
-            onGenerateMore={
-              onGenerateVariants
-                ? async () => {
-                    onGenerateVariants();
-                  }
-                : undefined
-            }
-            isGenerating={isGeneratingVariants}
-          />
-        </Collapsible>
-      )}
     </article>
   );
 }

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
 import { VARIANT_GENERATOR_PROMPT } from '@/lib/prompts';
+import { anthropic, anthropicApiKey, MODEL, cachedSystem } from '@/lib/ai';
+import { getSessionUser } from '@/lib/supabase-server';
 
 export const maxDuration = 300;
 
@@ -47,28 +49,27 @@ function parseJsonFromText(text: string): unknown {
 
 export async function POST(request: NextRequest) {
   try {
-    const apiKey = process.env.MY_ANTHROPIC_KEY || process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) {
+    if (!anthropicApiKey()) {
       return NextResponse.json({ error: 'ANTHROPIC_API_KEY is not configured' }, { status: 500 });
     }
+    const user = await getSessionUser();
+    if (!user) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
 
     const body: VariantsRequestBody = await request.json();
     if (!body.analysisJson) {
       return NextResponse.json({ error: 'No analysis data provided' }, { status: 400 });
     }
 
-    const userMessage = `Genera 3 nuevas variantes de guion Y 2 nuevas variantes de Seedance por segmento basadas en este analisis:
+    const userMessage = `Genera 3 nuevas variantes de guion basadas en este analisis:
 
 ${JSON.stringify(body.analysisJson, null, 2)}
 
 Las variantes deben ser significativamente diferentes del original y entre si.${brandContextBlock(body.brandContext)}`;
 
-    const client = new Anthropic({ apiKey });
-
-    const response = await client.messages.create({
-      model: 'claude-sonnet-4-6',
+    const response = await anthropic().messages.create({
+      model: MODEL,
       max_tokens: 8000,
-      system: VARIANT_GENERATOR_PROMPT,
+      system: cachedSystem(VARIANT_GENERATOR_PROMPT),
       messages: [{ role: 'user', content: userMessage }],
     });
 

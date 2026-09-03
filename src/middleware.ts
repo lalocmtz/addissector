@@ -5,9 +5,8 @@
 
 import { NextResponse, type NextRequest } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
-import { isGenerationRoute } from '@/lib/feature-flags';
 
-const PROTECTED_PREFIXES = ['/studio', '/analyze', '/analyze-image', '/biblioteca', '/app', '/meta', '/cerebro', '/research'];
+const PROTECTED_PREFIXES = ['/studio', '/analyze', '/analyze-image', '/biblioteca', '/app', '/meta', '/cerebro', ];
 
 export async function middleware(request: NextRequest) {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
@@ -39,13 +38,6 @@ export async function middleware(request: NextRequest) {
 
   const path = request.nextUrl.pathname;
 
-  // v1: rutas de generación ocultas -> redirige a /studio.
-  if (isGenerationRoute(path)) {
-    const studioUrl = request.nextUrl.clone();
-    studioUrl.pathname = '/studio';
-    studioUrl.search = '';
-    return NextResponse.redirect(studioUrl);
-  }
   const isProtected = PROTECTED_PREFIXES.some(
     (p) => path === p || path.startsWith(`${p}/`)
   );
@@ -57,8 +49,8 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
-  // Usuario logueado en /login o /signup → directo al motor (Meta).
-  if (user && (path === '/login' || path === '/signup')) {
+  // Logged-in user on /login → straight to the engine.
+  if (user && path === '/login') {
     const metaUrl = request.nextUrl.clone();
     metaUrl.pathname = '/meta';
     metaUrl.search = '';
@@ -81,11 +73,8 @@ export const config = {
     '/biblioteca',
     '/meta/:path*',
     '/cerebro/:path*',
-    '/research/:path*',
     '/meta',
     '/cerebro',
-    '/research',
     '/login',
-    '/signup',
   ],
 };

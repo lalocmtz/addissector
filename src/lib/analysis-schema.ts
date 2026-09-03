@@ -1,6 +1,6 @@
 // =============================================================================
 // AdDissector - Analysis Schema Types (v2)
-// Restructured for Seedance + ElevenLabs replication workflow
+// Creative analysis types. (Generation engine removed — no Seedance types.)
 // =============================================================================
 
 // ---------------------------------------------------------------------------
@@ -41,7 +41,6 @@ export interface StructuralAnalysis {
   visual_context: string;
   product: string;
   total_duration_seconds: number;
-  seedance_segments_count: number;
   transcription: TranscriptionEntry[];
   content_summary: string;
   winning_structure: WinningStructure;
@@ -62,37 +61,10 @@ export interface ScriptVariant {
 }
 
 // ---------------------------------------------------------------------------
-// Block 3 — Seedance Prompts (15s segments)
-// ---------------------------------------------------------------------------
-
-export interface SeedanceSegmentVariant {
-  variant_number: number;
-  prompt: string;
-}
-
-export interface SeedanceSegment {
-  segment_number: number;
-  total_segments: number;
-  time_start: string;
-  time_end: string;
-  prompt: string;
-  variants: SeedanceSegmentVariant[];
-}
-
-// ---------------------------------------------------------------------------
 // Block 4 — Replication Plan
 // ---------------------------------------------------------------------------
 
-export interface SegmentSummary {
-  segment: number;
-  summary: string;
-}
-
 export interface ReplicationPlan {
-  seedance_count: number;
-  segments_summary: SegmentSummary[];
-  elevenlabs_script: string;
-  audio_duration_estimate: number;
   voice_tone: string;
   editing_notes: string;
 }
@@ -246,7 +218,6 @@ export interface AnalysisResult extends Partial<SimpleInterpretation> {
   psychological_analysis: PsychologicalAnalysis;
   original_script: string;
   script_variants: ScriptVariant[];
-  seedance_segments: SeedanceSegment[];
   replication_plan: ReplicationPlan;
 }
 
@@ -278,7 +249,6 @@ export interface CrossAnalysisResult {
   master_formula: MasterFormula;
   master_script: string;
   master_script_variants: ScriptVariant[];
-  master_seedance_segments: SeedanceSegment[];
 }
 
 // ---------------------------------------------------------------------------
@@ -347,8 +317,4 @@ export interface ImageAnalysisResult extends Partial<SimpleInterpretation> {
 
 export interface VariantsResult {
   script_variants: ScriptVariant[];
-  seedance_variants?: {
-    segment_number: number;
-    variants: SeedanceSegmentVariant[];
-  }[];
 }

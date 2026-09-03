@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
 import { CROSS_ANALYSIS_PROMPT } from '@/lib/prompts';
+import { anthropic, anthropicApiKey, MODEL, cachedSystem } from '@/lib/ai';
+import { getSessionUser } from '@/lib/supabase-server';
 
 export const maxDuration = 300;
 
@@ -27,10 +29,11 @@ function parseJsonFromText(text: string): unknown {
 
 export async function POST(request: NextRequest) {
   try {
-    const apiKey = process.env.MY_ANTHROPIC_KEY || process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) {
+    if (!anthropicApiKey()) {
       return NextResponse.json({ error: 'ANTHROPIC_API_KEY is not configured' }, { status: 500 });
     }
+    const user = await getSessionUser();
+    if (!user) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
 
     const body: CrossAnalyzeRequestBody = await request.json();
     if (!body.analyses || !Array.isArray(body.analyses) || body.analyses.length < 2) {
@@ -41,14 +44,12 @@ export async function POST(request: NextRequest) {
 
 ${JSON.stringify(body.analyses, null, 2)}
 
-Identifica patrones, crea la formula maestra, un guion maestro con 3 variantes, y prompts de Seedance maestros.`;
+Identifica patrones, crea la formula maestra y un guion maestro con 3 variantes.`;
 
-    const client = new Anthropic({ apiKey });
-
-    const response = await client.messages.create({
-      model: 'claude-sonnet-4-6',
+    const response = await anthropic().messages.create({
+      model: MODEL,
       max_tokens: 12000,
-      system: CROSS_ANALYSIS_PROMPT,
+      system: cachedSystem(CROSS_ANALYSIS_PROMPT),
       messages: [{ role: 'user', content: userMessage }],
     });
 

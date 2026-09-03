@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getSessionUser } from '@/lib/supabase-server';
 
 export const maxDuration = 60;
 
@@ -6,6 +7,10 @@ const MAX_FILE_SIZE = 25 * 1024 * 1024; // 25MB
 
 export async function POST(request: NextRequest) {
   try {
+    // Session required: this endpoint spends a third-party API key.
+    const user = await getSessionUser();
+    if (!user) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
+
     const groqApiKey = process.env.GROQ_API_KEY;
     if (!groqApiKey) {
       return NextResponse.json(

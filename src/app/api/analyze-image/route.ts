@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
 import { IMAGE_DISSECTOR_SYSTEM_PROMPT } from '@/lib/prompts';
-import { gateAnalysis, recordAnalysisUsage } from '@/lib/usage';
+import { anthropic, anthropicApiKey, MODEL, cachedSystem } from '@/lib/ai';
+import { getSessionUser } from '@/lib/supabase-server';
 import { ensureImageInterpretation } from '@/lib/interpretation';
 
 export const maxDuration = 300;
@@ -171,14 +172,11 @@ function normalizeImageAnalysis(raw: Record<string, unknown>): Record<string, un
 
 export async function POST(request: NextRequest) {
   try {
-    const apiKey = process.env.MY_ANTHROPIC_KEY || process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) {
+    if (!anthropicApiKey()) {
       return NextResponse.json({ error: 'ANTHROPIC_API_KEY is not configured' }, { status: 500 });
     }
-
-    // Gating por plan: sesión + límite mensual de análisis.
-    const gate = await gateAnalysis();
-    if (!gate.ok) return gate.response;
+    const user = await getSessionUser();
+    if (!user) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
 
     const body: AnalyzeImageRequestBody = await request.json();
     if (!body.image || typeof body.image !== 'string') {
@@ -206,12 +204,10 @@ Analiza el siguiente anuncio estático (imagen). Devuelve tu análisis como un o
       },
     ];
 
-    const client = new Anthropic({ apiKey });
-
-    const response = await client.messages.create({
-      model: 'claude-sonnet-4-6',
+    const response = await anthropic().messages.create({
+      model: MODEL,
       max_tokens: 12000,
-      system: IMAGE_DISSECTOR_SYSTEM_PROMPT,
+      system: cachedSystem(IMAGE_DISSECTOR_SYSTEM_PROMPT),
       messages: [{ role: 'user', content: contentArray }],
     });
 
@@ -227,9 +223,6 @@ Analiza el siguiente anuncio estático (imagen). Devuelve tu análisis como un o
     console.log('[AdDissector:image] Response keys:', Object.keys(rawAnalysis));
 
     const analysis = ensureImageInterpretation(normalizeImageAnalysis(rawAnalysis));
-
-    // Cuenta el análisis solo cuando fue exitoso.
-    await recordAnalysisUsage(gate.userId);
 
     return NextResponse.json(analysis);
   } catch (error) {

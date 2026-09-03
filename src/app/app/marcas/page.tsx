@@ -7,9 +7,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import {
-  Loader2, Plus, Pencil, Trash2, Check, X, ArrowRight, Store, Camera, ImagePlus, FileText,
+  Loader2, Plus, Pencil, Trash2, Check, X, Store, Camera, ImagePlus, FileText,
 } from 'lucide-react';
-import Link from 'next/link';
 import AppHeader from '@/components/AppHeader';
 import { useMe, type BrandRow } from '@/lib/use-me';
 
@@ -282,7 +281,6 @@ export default function MarcasPage() {
   const [form, setForm] = useState<BrandFormState>(emptyForm);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [upgradeNeeded, setUpgradeNeeded] = useState(false);
 
   const startCreate = () => {
     setCreating(true);
@@ -308,7 +306,6 @@ export default function MarcasPage() {
     setEditingId(null);
     setForm(emptyForm);
     setError(null);
-    setUpgradeNeeded(false);
   };
 
   const save = async () => {
@@ -318,7 +315,6 @@ export default function MarcasPage() {
     }
     setSaving(true);
     setError(null);
-    setUpgradeNeeded(false);
     try {
       const res = creating
         ? await fetch('/api/brands', {
@@ -333,7 +329,6 @@ export default function MarcasPage() {
           });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        if (res.status === 402) setUpgradeNeeded(true);
         throw new Error(data.error || 'No se pudo guardar la marca');
       }
       if (creating && data.brand?.id) setActiveBrandId(data.brand.id);
@@ -389,15 +384,6 @@ export default function MarcasPage() {
         className="w-full px-3 py-2.5 rounded-xl bg-[#0a0a0f] border border-[#1e1e2e] text-sm text-[#f1f5f9] placeholder:text-[#475569] focus:border-[#3b82f6]/60 focus:outline-none"
       />
       {error && <p className="text-xs text-[#f43f5e]">{error}</p>}
-      {upgradeNeeded && (
-        <Link
-          href="/#precios"
-          className="inline-flex items-center gap-2 text-sm text-[#3b82f6] hover:underline"
-        >
-          Ver planes con más marcas
-          <ArrowRight className="w-4 h-4" />
-        </Link>
-      )}
       <div className="flex gap-2 pt-1">
         <button
           onClick={save}
@@ -429,9 +415,6 @@ export default function MarcasPage() {
               <h1 className="text-2xl font-bold tracking-tight">Tus marcas</h1>
               <p className="text-sm text-[#64748b] mt-1">
                 Cada marca es un espacio: su biblioteca, su contexto y sus variantes.
-                {me?.plan?.max_brands
-                  ? ` Tu plan incluye ${me.plan.max_brands} marca${me.plan.max_brands === 1 ? '' : 's'}.`
-                  : ''}
               </p>
             </div>
             {!creating && (

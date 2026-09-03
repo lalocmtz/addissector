@@ -4,7 +4,6 @@ import { motion } from 'framer-motion';
 import { GitMerge, Zap, Target } from 'lucide-react';
 import CopyButton from './CopyButton';
 import ScriptBlock from './ScriptBlock';
-import SeedancePrompts from './SeedancePrompts';
 import type { CrossAnalysisResult } from '@/lib/analysis-schema';
 
 interface CrossAnalysisProps {
@@ -111,9 +110,6 @@ export default function CrossAnalysis({ data }: CrossAnalysisProps) {
         originalScript={data.master_script ?? ''}
         variants={data.master_script_variants ?? []}
       />
-
-      {/* Master Seedance */}
-      <SeedancePrompts segments={data.master_seedance_segments ?? []} />
     </motion.div>
   );
 }

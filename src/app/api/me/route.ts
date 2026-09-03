@@ -31,10 +31,7 @@ export async function GET() {
         id: user.id,
         email: profile?.email ?? user.email,
         full_name: profile?.full_name ?? '',
-        has_stripe_customer: false,
       },
-      plan: null,
-      usage: null,
       brands: brands ?? [],
     });
   } catch (err) {

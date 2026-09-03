@@ -217,17 +217,6 @@ export default function AuthForm({ mode }: AuthFormProps) {
           </form>
         </div>
 
-        <p className="text-center text-sm text-[#94a3b8] mt-5">
-          {isSignup ? (
-            <>¿Ya tienes cuenta?{' '}
-              <Link href="/login" className="text-[#3b82f6] hover:underline">Inicia sesión</Link>
-            </>
-          ) : (
-            <>¿No tienes cuenta?{' '}
-              <Link href="/signup" className="text-[#3b82f6] hover:underline">Créala gratis</Link>
-            </>
-          )}
-        </p>
       </motion.div>
     </main>
   );

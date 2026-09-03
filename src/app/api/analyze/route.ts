@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
 import { DISSECTOR_SYSTEM_PROMPT } from '@/lib/prompts';
-import { gateAnalysis, recordAnalysisUsage } from '@/lib/usage';
+import { anthropic, anthropicApiKey, MODEL, cachedSystem } from '@/lib/ai';
+import { getSessionUser } from '@/lib/supabase-server';
 import { ensureVideoInterpretation } from '@/lib/interpretation';
 
 export const maxDuration = 300;
@@ -132,10 +133,6 @@ function normalizeAnalysis(raw: Record<string, unknown>): Record<string, unknown
     variants: 'script_variants',
     scriptVariants: 'script_variants',
     variantes: 'script_variants',
-    seedance: 'seedance_segments',
-    seedanceSegments: 'seedance_segments',
-    segments: 'seedance_segments',
-    prompts_seedance: 'seedance_segments',
     plan: 'replication_plan',
     replicationPlan: 'replication_plan',
     plan_replicacion: 'replication_plan',
@@ -161,7 +158,7 @@ function normalizeAnalysis(raw: Record<string, unknown>): Record<string, unknown
   if (!result.structural_analysis) {
     result.structural_analysis = {
       video_type: '', visual_context: '', product: '',
-      total_duration_seconds: 0, seedance_segments_count: 0,
+      total_duration_seconds: 0,
       transcription: [], content_summary: '',
       winning_structure: { hook: '', development: '', cta: '', persuasion_elements: [], tone: '', format: '' },
     };
@@ -201,11 +198,10 @@ function normalizeAnalysis(raw: Record<string, unknown>): Record<string, unknown
   }
   if (!result.original_script) result.original_script = '';
   if (!result.script_variants) result.script_variants = [];
-  if (!result.seedance_segments) result.seedance_segments = [];
+  // Legacy field from the removed generation engine: never persisted again.
+  delete result.seedance_segments;
   if (!result.replication_plan) {
     result.replication_plan = {
-      seedance_count: 0, segments_summary: [],
-      elevenlabs_script: '', audio_duration_estimate: 0,
       voice_tone: '', editing_notes: '',
     };
   }
@@ -215,14 +211,12 @@ function normalizeAnalysis(raw: Record<string, unknown>): Record<string, unknown
 
 export async function POST(request: NextRequest) {
   try {
-    const apiKey = process.env.MY_ANTHROPIC_KEY || process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) {
+    if (!anthropicApiKey()) {
       return NextResponse.json({ error: 'ANTHROPIC_API_KEY is not configured' }, { status: 500 });
     }
-
-    // Gating por plan: sesión + límite mensual de análisis.
-    const gate = await gateAnalysis();
-    if (!gate.ok) return gate.response;
+    // Session required, always. There is no unauthenticated path to the model.
+    const user = await getSessionUser();
+    if (!user) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
 
     const body: AnalyzeRequestBody = await request.json();
 
@@ -255,11 +249,10 @@ Segments:
 ${segmentsText}
 
 ## INSTRUCTIONS
-Analyze the following video frames along with the transcript above. Return your analysis as a JSON object matching the exact schema specified in your system prompt. Include ALL 6 blocks: structural_analysis, dashboard, psychological_analysis (el más profundo y accionable), original_script + script_variants, seedance_segments, replication_plan.
+Analyze the following video frames along with the transcript above. Return your analysis as a JSON object matching the exact schema specified in your system prompt. Include ALL 5 blocks: structural_analysis, dashboard, psychological_analysis (el más profundo y accionable), original_script + script_variants, replication_plan.
 
 ## LÍMITE DE TAMAÑO (crítico — la respuesta completa debe caber en ~13000 tokens)
 - structural_analysis.transcription: máximo 12 filas (agrupa frases cercanas en una fila).
-- seedance_segments: máximo 3 segmentos (agrupa el video en 3 bloques si es más largo) y UNA sola variante por segmento. Dentro de cada prompt Seedance usa un resumen del diálogo (3-4 filas), NO la tabla completa.
 - dashboard.visual_frames: máximo 5 frames.
 - Sé conciso en todos los strings largos. CIERRA SIEMPRE el JSON completo.
 - No sacrifiques psychological_analysis, la interpretación simple (verdict/recipe/signals) ni script_variants: esos son prioridad.`;
@@ -283,12 +276,10 @@ Analyze the following video frames along with the transcript above. Return your 
       });
     }
 
-    const client = new Anthropic({ apiKey });
-
-    const response = await client.messages.create({
-      model: 'claude-sonnet-4-6',
+    const response = await anthropic().messages.create({
+      model: MODEL,
       max_tokens: 14000,
-      system: DISSECTOR_SYSTEM_PROMPT,
+      system: cachedSystem(DISSECTOR_SYSTEM_PROMPT),
       messages: [{ role: 'user', content: contentArray }],
     });
 
@@ -304,9 +295,6 @@ Analyze the following video frames along with the transcript above. Return your 
     console.log('[AdDissector] Response keys:', Object.keys(rawAnalysis));
 
     const analysis = ensureVideoInterpretation(normalizeAnalysis(rawAnalysis));
-
-    // Cuenta el análisis solo cuando fue exitoso.
-    await recordAnalysisUsage(gate.userId);
 
     return NextResponse.json(analysis);
   } catch (error) {

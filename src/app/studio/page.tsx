@@ -1,10 +1,9 @@
 'use client';
 
 import { useState, useCallback, useEffect, Suspense } from 'react';
-import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { motion } from 'framer-motion';
-import { Film, Image as ImageIcon, Sparkles, ArrowRight, Loader2, PartyPopper } from 'lucide-react';
+import { Film, Image as ImageIcon, Sparkles, Loader2 } from 'lucide-react';
 import VideoUploader from '@/components/VideoUploader';
 import ImageUploader from '@/components/ImageUploader';
 import AppHeader from '@/components/AppHeader';
@@ -38,7 +37,6 @@ function StudioContent() {
   const [showWizard, setShowWizard] = useState(false);
   const [wizardName, setWizardName] = useState('');
   const [wizardSaving, setWizardSaving] = useState(false);
-  const isWelcome = searchParams.get('welcome') === '1';
   // Viene desde Meta: analizar un ganador específico (vincula el análisis al anuncio)
   const adParam = searchParams.get('ad');
 
@@ -281,13 +279,6 @@ function StudioContent() {
     }
   }, [router, updateProgress, activeBrandId, refresh, handleApiError]);
 
-  const steps = [
-    { n: '1', t: 'Sube tu anuncio ganador', d: 'El video o imagen que ya te está vendiendo.' },
-    { n: '2', t: 'Entiende por qué vende', d: 'Veredicto claro + la receta que lo hace funcionar.' },
-    { n: '3', t: 'Haz más como ese', d: 'Prompts para IA o brief para tu equipo creativo.' },
-  ];
-
-  const remaining = me?.usage?.remaining;
 
   return (
     <main className="flex-1">
@@ -344,16 +335,6 @@ function StudioContent() {
       {/* Hero */}
       <section className="px-6 pt-10 pb-6">
         <div className="max-w-4xl mx-auto text-center">
-          {isWelcome && (
-            <motion.div
-              initial={{ opacity: 0, y: -8 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="inline-flex items-center gap-2 text-sm px-4 py-2 rounded-full border border-[#22c55e]/30 bg-[#22c55e]/10 text-[#4ade80] mb-6"
-            >
-              <PartyPopper className="w-4 h-4" />
-              ¡Tu plan está activo! Sube tu primer creativo ganador.
-            </motion.div>
-          )}
           {adParam && (
             <motion.div
               initial={{ opacity: 0, y: -8 }}
@@ -371,20 +352,10 @@ function StudioContent() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6 }}
           >
-            <h2 className="text-4xl sm:text-5xl font-bold mb-4 leading-tight">
-              <span className="text-[#f1f5f9]">Entiende.</span>{' '}
-              <span className="gradient-text">Replica.</span>{' '}
-              <span className="text-[#f1f5f9]">Escala.</span>
-            </h2>
-            <p className="text-lg text-[#94a3b8] max-w-2xl mx-auto mb-2">
-              Sube el anuncio que ya te funciona{activeBrand ? ` para ${activeBrand.name}` : ''} y
-              recibe: por qué vende, la receta ganadora y las indicaciones para hacer más como ese.
+            <h2 className="text-2xl font-semibold mb-2 tracking-tight">Analyze a creative</h2>
+            <p className="text-sm text-[#94a3b8] max-w-2xl mx-auto mb-2">
+              Upload a video or image{activeBrand ? ` for ${activeBrand.name}` : ''}. It gets transcribed, analyzed and stored with its Meta metrics.
             </p>
-            {typeof remaining === 'number' && Number.isFinite(remaining) && (
-              <p className="text-sm text-[#64748b] mb-6 font-[family-name:var(--font-mono)]">
-                Te quedan <span className="text-[#3b82f6] font-bold">{remaining}</span> análisis este mes
-              </p>
-            )}
           </motion.div>
         </div>
       </section>
@@ -451,39 +422,6 @@ function StudioContent() {
         </div>
       </section>
 
-      {/* Cómo funciona (3 pasos, mismo lenguaje que la landing) */}
-      <section className="px-6 pb-20">
-        <div className="max-w-4xl mx-auto">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            {steps.map((s, i) => (
-              <motion.div
-                key={s.n}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.4, delay: 0.1 * i }}
-                className="card card-hover"
-              >
-                <div className="w-8 h-8 rounded-lg gradient-blue flex items-center justify-center text-white text-sm font-bold mb-3">
-                  {s.n}
-                </div>
-                <h3 className="font-semibold text-sm mb-1.5">{s.t}</h3>
-                <p className="text-xs text-[#94a3b8] leading-relaxed">{s.d}</p>
-              </motion.div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Footer */}
-      <footer className="border-t border-[#1e1e2e] px-6 py-6 mt-auto">
-        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-[#64748b] font-[family-name:var(--font-mono)]">
-          <span>AdDNA — La inteligencia detrás de tus anuncios ganadores</span>
-          <span className="flex items-center gap-1">
-            <ArrowRight className="w-3 h-3" />
-            Sube un creativo para comenzar
-          </span>
-        </div>
-      </footer>
     </main>
   );
 }

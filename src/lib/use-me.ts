@@ -25,16 +25,7 @@ export interface BrandRow {
 
 export interface MeData {
   configured: boolean;
-  user: { id: string; email: string | null; full_name: string; has_stripe_customer: boolean } | null;
-  plan: {
-    id: string;
-    label: string;
-    status: string;
-    expired: boolean;
-    current_period_end: string | null;
-    max_brands: number | null;
-  } | null;
-  usage: { used: number; limit: number; remaining: number; period_start: string } | null;
+  user: { id: string; email: string | null; full_name: string } | null;
   brands: BrandRow[];
 }
 
