@@ -80,11 +80,14 @@ export async function linkLearnings(
     if (l.target_type === 'dimension' && l.dimension) {
       const vocab = (DIMENSION_VALUES as Record<string, readonly string[]>)[l.dimension];
       const value = l.dimension_value && (!vocab || vocab.includes(l.dimension_value)) ? l.dimension_value : null;
-      if (!value) { none++; continue; }
+      if (!value) { none++; await sb.from('learnings').update({ linked_at: now }).eq('id', l.learning_id); continue; }
       patch.dimension = l.dimension as Dimension; patch.dimension_value = value;
     } else if (l.target_type !== 'none' && l.target_id && ids[l.target_type as keyof typeof ids]?.has(l.target_id)) {
       patch[`${l.target_type}_id`] = l.target_id;
-    } else { none++; continue; }
+    } else {
+      // Explains nothing in the taxonomy: mark as reviewed so it is not retried forever.
+      none++; await sb.from('learnings').update({ linked_at: now }).eq('id', l.learning_id); continue;
+    }
     await sb.from('learnings').update(patch).eq('id', l.learning_id);
     linked++;
   }
