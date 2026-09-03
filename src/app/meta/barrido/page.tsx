@@ -363,15 +363,15 @@ export default function BarridoPage() {
     ? Math.round(((resumen.listo + resumen.omitido) / resumen.total) * 100) : 0;
 
   return (
-    <div className="min-h-screen bg-[#0b1120] text-[#e2e8f0]">
+    <div className="min-h-screen bg-surface text-ink">
       <AppHeader me={me} activeBrand={activeBrand} onBrandChange={setActiveBrandId} />
       <main className="mx-auto max-w-4xl px-5 py-8">
-        <Link href="/meta" className="inline-flex items-center gap-2 text-sm text-[#94a3b8] hover:text-[#e2e8f0]">
+        <Link href="/meta" className="inline-flex items-center gap-2 text-sm text-ink-3 hover:text-ink">
           <ArrowLeft className="h-4 w-4" /> Volver a Meta
         </Link>
 
-        <h1 className="mt-4 text-2xl font-semibold text-[#f1f5f9]">Barrido automático</h1>
-        <p className="mt-1 text-sm text-[#94a3b8]">
+        <h1 className="mt-4 text-2xl font-semibold text-ink">Barrido automático</h1>
+        <p className="mt-1 text-sm text-ink-3">
           Lee todos los anuncios de {activeBrand?.name ?? 'la marca'} directo de Meta, los analiza uno por uno
           y alimenta el Cerebro solo. Deja esta pestaña abierta mientras corre.
         </p>
@@ -380,7 +380,7 @@ export default function BarridoPage() {
           <button
             onClick={sincronizar}
             disabled={sincronizando || corriendo || !activeBrandId}
-            className="inline-flex items-center gap-2 rounded-lg bg-[#1e293b] px-4 py-2.5 text-sm font-medium hover:bg-[#334155] disabled:opacity-40"
+            className="inline-flex items-center gap-2 rounded-lg bg-surface-2 px-4 py-2.5 text-sm font-medium hover:bg-surface-2 disabled:opacity-40"
           >
             {sincronizando ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
             1 · Traer de Meta
@@ -389,14 +389,14 @@ export default function BarridoPage() {
             <button
               onClick={barrer}
               disabled={!activeBrandId}
-              className="inline-flex items-center gap-2 rounded-lg bg-[#2563eb] px-4 py-2.5 text-sm font-medium text-white hover:bg-[#1d4ed8] disabled:opacity-40"
+              className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-on-accent hover:bg-accent-strong disabled:opacity-40"
             >
               <Play className="h-4 w-4" /> 2 · Iniciar barrido
             </button>
           ) : (
             <button
               onClick={() => { detener.current = true; apunta('info', 'Deteniendo al terminar el actual...'); }}
-              className="inline-flex items-center gap-2 rounded-lg bg-[#7f1d1d] px-4 py-2.5 text-sm font-medium text-white hover:bg-[#991b1b]"
+              className="inline-flex items-center gap-2 rounded-lg bg-danger-soft px-4 py-2.5 text-sm font-medium text-on-accent hover:bg-danger-soft"
             >
               <Square className="h-4 w-4" /> Detener
             </button>
@@ -404,25 +404,25 @@ export default function BarridoPage() {
         </div>
 
         {resumen && (
-          <div className="mt-6 rounded-xl border border-[#1e293b] bg-[#0f172a] p-5">
+          <div className="mt-6 rounded-xl border border-surface-2 bg-surface-2 p-5">
             <div className="flex items-baseline justify-between">
-              <span className="text-sm text-[#94a3b8]">Progreso de la cuenta</span>
-              <span className="text-2xl font-semibold text-[#f1f5f9]">{pct}%</span>
+              <span className="text-sm text-ink-3">Progreso de la cuenta</span>
+              <span className="text-2xl font-semibold text-ink">{pct}%</span>
             </div>
-            <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-[#1e293b]">
-              <div className="h-full rounded-full bg-[#2563eb] transition-all" style={{ width: `${pct}%` }} />
+            <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-surface-2">
+              <div className="h-full rounded-full bg-accent transition-all" style={{ width: `${pct}%` }} />
             </div>
             <div className="mt-4 grid grid-cols-2 gap-3 text-sm sm:grid-cols-6">
               {([
-                ['Total', resumen.total, '#e2e8f0'],
-                ['Analizados', resumen.listo, '#4ade80'],
-                ['Pendientes', resumen.pendiente, '#facc15'],
-                ['Con error', resumen.error, '#f87171'],
-                ['Sin video', resumen.omitido, '#94a3b8'],
-                ['Sin descubrir', resumen.sinResolver, '#a78bfa'],
+                ['Total', resumen.total, 'var(--color-ink)'],
+                ['Analizados', resumen.listo, 'var(--color-ok)'],
+                ['Pendientes', resumen.pendiente, 'var(--color-warn)'],
+                ['Con error', resumen.error, 'var(--color-danger)'],
+                ['Sin video', resumen.omitido, 'var(--color-ink-3)'],
+                ['Sin descubrir', resumen.sinResolver, 'var(--color-accent)'],
               ] as const).map(([label, v, color]) => (
                 <div key={label}>
-                  <div className="text-xs text-[#64748b]">{label}</div>
+                  <div className="text-xs text-ink-4">{label}</div>
                   <div className="text-lg font-semibold" style={{ color }}>{v}</div>
                 </div>
               ))}
@@ -431,27 +431,27 @@ export default function BarridoPage() {
         )}
 
         {corriendo && actual && (
-          <div className="mt-4 flex items-center gap-3 rounded-xl border border-[#1e40af] bg-[#172554] p-4">
-            <Loader2 className="h-5 w-5 shrink-0 animate-spin text-[#60a5fa]" />
+          <div className="mt-4 flex items-center gap-3 rounded-xl border border-accent-strong bg-accent-soft p-4">
+            <Loader2 className="h-5 w-5 shrink-0 animate-spin text-accent" />
             <div className="min-w-0">
-              <div className="truncate text-sm font-medium text-[#f1f5f9]">{actual}</div>
-              <div className="text-xs text-[#93c5fd]">{paso}</div>
+              <div className="truncate text-sm font-medium text-ink">{actual}</div>
+              <div className="text-xs text-accent">{paso}</div>
             </div>
           </div>
         )}
 
         {log.length > 0 && (
           <div className="mt-6">
-            <h2 className="flex items-center gap-2 text-sm font-medium text-[#94a3b8]">
+            <h2 className="flex items-center gap-2 text-sm font-medium text-ink-3">
               <Brain className="h-4 w-4" /> Bitácora
             </h2>
-            <div className="mt-2 max-h-96 overflow-y-auto rounded-xl border border-[#1e293b] bg-[#0f172a] p-3 font-mono text-xs">
+            <div className="mt-2 max-h-96 overflow-y-auto rounded-xl border border-surface-2 bg-surface-2 p-3 font-mono text-xs">
               {log.map((l, i) => (
                 <div key={i} className="flex gap-2 py-0.5">
-                  <span className="shrink-0 text-[#475569]">{l.t}</span>
-                  {l.kind === 'ok' && <CheckCircle2 className="mt-0.5 h-3 w-3 shrink-0 text-[#4ade80]" />}
-                  {l.kind === 'err' && <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-[#f87171]" />}
-                  <span className={l.kind === 'err' ? 'text-[#fca5a5]' : l.kind === 'ok' ? 'text-[#cbd5e1]' : 'text-[#94a3b8]'}>
+                  <span className="shrink-0 text-ink-4">{l.t}</span>
+                  {l.kind === 'ok' && <CheckCircle2 className="mt-0.5 h-3 w-3 shrink-0 text-ok" />}
+                  {l.kind === 'err' && <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-danger" />}
+                  <span className={l.kind === 'err' ? 'text-danger' : l.kind === 'ok' ? 'text-ink-2' : 'text-ink-3'}>
                     {l.msg}
                   </span>
                 </div>

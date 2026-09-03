@@ -256,20 +256,20 @@ export function angleVerdict(m: RollupMetrics, conceptsTested: number, eco: Econ
 // ---------------------------------------------------------------------------
 
 export const CONCEPT_STATUS = [
-  { id: 'idea', label: 'Idea', cls: 'border-[#334155] text-[#94a3b8]' },
-  { id: 'brief', label: 'Brief listo', cls: 'border-[#f59e0b]/40 text-[#fbbf24]' },
-  { id: 'produccion', label: 'En producción', cls: 'border-[#3b82f6]/40 text-[#60a5fa]' },
-  { id: 'listo', label: 'Listo para subir', cls: 'border-[#a855f7]/40 text-[#c084fc]' },
-  { id: 'subido', label: 'Subido', cls: 'border-[#22c55e]/40 text-[#4ade80]' },
-  { id: 'evaluado', label: 'Evaluado', cls: 'border-[#78716c]/40 text-[#a8a29e]' },
+  { id: 'idea', label: 'Idea', cls: 'border-line-strong text-ink-3' },
+  { id: 'brief', label: 'Brief listo', cls: 'border-warn/40 text-warn' },
+  { id: 'produccion', label: 'En producción', cls: 'border-accent/40 text-accent' },
+  { id: 'listo', label: 'Listo para subir', cls: 'border-accent/40 text-accent' },
+  { id: 'subido', label: 'Subido', cls: 'border-ok/40 text-ok' },
+  { id: 'evaluado', label: 'Evaluado', cls: 'border-ink-4/40 text-ink-3' },
 ] as const;
 
 export const ANGLE_STATUS = [
-  { id: 'sin_probar', label: 'Sin probar', cls: 'border-[#334155] text-[#94a3b8]' },
-  { id: 'probando', label: 'Probando', cls: 'border-[#eab308]/40 text-[#facc15]' },
-  { id: 'ganador', label: 'Ganador', cls: 'border-[#22c55e]/40 text-[#4ade80]' },
-  { id: 'descansando', label: 'Descansando', cls: 'border-[#78716c]/40 text-[#a8a29e]' },
-  { id: 'muerto', label: 'Muerto', cls: 'border-[#ef4444]/40 text-[#f87171]' },
+  { id: 'sin_probar', label: 'Sin probar', cls: 'border-line-strong text-ink-3' },
+  { id: 'probando', label: 'Probando', cls: 'border-warn/40 text-warn' },
+  { id: 'ganador', label: 'Ganador', cls: 'border-ok/40 text-ok' },
+  { id: 'descansando', label: 'Descansando', cls: 'border-ink-4/40 text-ink-3' },
+  { id: 'muerto', label: 'Muerto', cls: 'border-danger/40 text-danger' },
 ] as const;
 
 export const NARRATIVE_FORMATS = [

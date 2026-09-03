@@ -107,22 +107,22 @@ export default function ImageUploader({ onAnalyze, isProcessing, progress }: Ima
           relative cursor-pointer rounded-xl border-2 border-dashed p-8
           transition-all duration-300 flex flex-col items-center justify-center gap-4
           ${isDragging
-            ? 'border-[#8b5cf6] bg-[#8b5cf6]/10 scale-[1.02]'
-            : 'border-[#1e1e2e] bg-[#111118] hover:border-[#8b5cf6]/50 hover:bg-[#111118]/80'
+            ? 'border-accent bg-accent/10 scale-[1.02]'
+            : 'border-line bg-surface hover:border-accent/50 hover:bg-surface/80'
           }
           ${isProcessing ? 'pointer-events-none opacity-60' : ''}
-        `}
+ `}
       >
         <motion.div
           animate={isDragging ? { scale: 1.2, rotate: 5 } : { scale: 1, rotate: 0 }}
           transition={{ type: 'spring', stiffness: 300 }}
         >
-          <Upload className="w-12 h-12 text-[#8b5cf6]" />
+          <Upload className="w-12 h-12 text-accent" />
         </motion.div>
         <div className="text-center">
-          <p className="text-[#f1f5f9] text-lg font-medium">Arrastra imagenes de anuncios aqui</p>
-          <p className="text-[#94a3b8] text-sm mt-1">o haz clic para seleccionar archivos</p>
-          <p className="text-[#64748b] text-xs mt-2">PNG, JPG o WEBP · Maximo {MAX_FILES} imagenes</p>
+          <p className="text-ink text-lg font-medium">Arrastra imagenes de anuncios aqui</p>
+          <p className="text-ink-3 text-sm mt-1">o haz clic para seleccionar archivos</p>
+          <p className="text-ink-4 text-xs mt-2">PNG, JPG o WEBP · Maximo {MAX_FILES} imagenes</p>
         </div>
         <input
           ref={fileInputRef}
@@ -144,7 +144,7 @@ export default function ImageUploader({ onAnalyze, isProcessing, progress }: Ima
             className="space-y-1"
           >
             {errors.map((error, i) => (
-              <div key={i} className="flex items-center gap-2 text-sm text-[#f43f5e]">
+              <div key={i} className="flex items-center gap-2 text-sm text-danger">
                 <AlertCircle className="w-4 h-4 shrink-0" />
                 <span>{error}</span>
               </div>
@@ -169,33 +169,33 @@ export default function ImageUploader({ onAnalyze, isProcessing, progress }: Ima
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: 20, height: 0 }}
               transition={{ duration: 0.3 }}
-              className="bg-[#111118] border border-[#1e1e2e] rounded-xl p-4"
+              className="bg-surface border border-line rounded-xl p-4"
             >
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-3 min-w-0">
                   {preview ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={preview} alt={file.name} className="w-10 h-10 rounded-lg object-cover border border-[#1e1e2e] shrink-0" />
+                    <img src={preview} alt={file.name} className="w-10 h-10 rounded-lg object-cover border border-line shrink-0" />
                   ) : (
-                    <ImageIcon className="w-5 h-5 text-[#8b5cf6] shrink-0" />
+                    <ImageIcon className="w-5 h-5 text-accent shrink-0" />
                   )}
                   <div className="min-w-0">
-                    <p className="text-[#f1f5f9] text-sm font-medium truncate">{file.name}</p>
-                    <p className="text-[#64748b] text-xs">{formatFileSize(file.size)}</p>
+                    <p className="text-ink text-sm font-medium truncate">{file.name}</p>
+                    <p className="text-ink-4 text-xs">{formatFileSize(file.size)}</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
                   <span className={`text-xs font-mono ${
-                    stage === 'Completado' ? 'text-[#10b981]' :
-                    stage.startsWith('Error') ? 'text-[#f43f5e]' :
-                    'text-[#94a3b8]'
+                    stage === 'Completado' ? 'text-ok' :
+                    stage.startsWith('Error') ? 'text-danger' :
+                    'text-ink-3'
                   }`}>
                     {stage === 'idle' ? 'Listo' : stage}
                   </span>
                   {!isProcessing && (
                     <button
                       onClick={(e) => { e.stopPropagation(); removeFile(index); }}
-                      className="text-[#64748b] hover:text-[#f43f5e] transition-colors"
+                      className="text-ink-4 hover:text-danger transition-colors"
                     >
                       <X className="w-4 h-4" />
                     </button>
@@ -204,9 +204,9 @@ export default function ImageUploader({ onAnalyze, isProcessing, progress }: Ima
               </div>
 
               {stage !== 'idle' && stage !== 'Completado' && !stage.startsWith('Error') && percent >= 0 && (
-                <div className="h-1.5 bg-[#1e1e2e] rounded-full overflow-hidden">
+                <div className="h-1.5 bg-surface-2 rounded-full overflow-hidden">
                   <motion.div
-                    className="h-full rounded-full bg-gradient-to-r from-[#8b5cf6] to-[#3b82f6]"
+                    className="h-full rounded-full bg-accent"
                     initial={{ width: 0 }}
                     animate={{ width: `${percent}%` }}
                     transition={{ duration: 0.5, ease: 'easeOut' }}
@@ -214,13 +214,13 @@ export default function ImageUploader({ onAnalyze, isProcessing, progress }: Ima
                 </div>
               )}
               {stage === 'Completado' && (
-                <div className="h-1.5 bg-[#1e1e2e] rounded-full overflow-hidden">
-                  <div className="h-full w-full rounded-full bg-gradient-to-r from-emerald-500 to-emerald-400" />
+                <div className="h-1.5 bg-surface-2 rounded-full overflow-hidden">
+                  <div className="h-full w-full rounded-full bg-ok" />
                 </div>
               )}
               {stage.startsWith('Error') && (
-                <div className="h-1.5 bg-[#1e1e2e] rounded-full overflow-hidden">
-                  <div className="h-full w-full rounded-full bg-gradient-to-r from-rose-500 to-rose-400" />
+                <div className="h-1.5 bg-surface-2 rounded-full overflow-hidden">
+                  <div className="h-full w-full rounded-full bg-danger" />
                 </div>
               )}
             </motion.div>
@@ -237,22 +237,22 @@ export default function ImageUploader({ onAnalyze, isProcessing, progress }: Ima
         className={`
           w-full py-4 px-8 rounded-xl text-lg font-semibold transition-all duration-300
           ${files.length > 0 && !isProcessing
-            ? 'bg-gradient-to-r from-[#8b5cf6] to-[#7c3aed] text-white shadow-lg shadow-purple-500/25 hover:shadow-purple-500/40'
-            : 'bg-[#1e1e2e] text-[#64748b] cursor-not-allowed'
+            ? 'bg-accent text-on-accent shadow-lg  hover:'
+            : 'bg-surface-2 text-ink-4 cursor-not-allowed'
           }
-        `}
+ `}
       >
         {isProcessing ? (
           <span className="flex items-center justify-center gap-3">
             <motion.div
               animate={{ rotate: 360 }}
               transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
-              className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full"
+              className="w-5 h-5 border-2 border-on-accent/30 border-t-white rounded-full"
             />
             Diseccionando...
           </span>
         ) : (
-          `Diseccionar ${files.length > 0 ? `(${files.length} imagen${files.length > 1 ? 'es' : ''})` : ''}`
+ `Diseccionar ${files.length > 0 ? `(${files.length} imagen${files.length > 1 ? 'es' : ''})` : ''}`
         )}
       </motion.button>
     </div>

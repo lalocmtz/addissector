@@ -75,7 +75,7 @@ function renderToDataUrl(
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('Canvas no disponible');
   // White backdrop so transparent PNGs don't turn black when flattened to JPEG.
-  ctx.fillStyle = '#ffffff';
+  ctx.fillStyle = 'var(--color-surface)';
   ctx.fillRect(0, 0, targetW, targetH);
   ctx.drawImage(img, 0, 0, targetW, targetH);
   return canvas.toDataURL('image/jpeg', quality);

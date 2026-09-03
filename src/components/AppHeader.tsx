@@ -50,12 +50,12 @@ export default function AppHeader({ me, activeBrand, onBrandChange }: AppHeaderP
     (href === '/studio' && pathname.startsWith('/studio'));
 
   return (
-    <header className="border-b border-[#1e1e2e] px-4 sm:px-6 py-3 sticky top-0 z-50 bg-[#0a0a0f]/90 backdrop-blur-xl">
+    <header className="border-b border-line px-4 sm:px-6 py-3 sticky top-0 z-50 bg-canvas/90 ">
       <div className="max-w-[1400px] mx-auto flex items-center justify-between gap-3">
         <div className="flex items-center gap-3 min-w-0">
           <Link href="/meta" className="flex items-center gap-2 shrink-0">
             <div className="w-8 h-8 rounded-lg gradient-blue flex items-center justify-center">
-              <Scan className="w-4 h-4 text-white" />
+              <Scan className="w-4 h-4 text-on-accent" />
             </div>
             <span className="hidden lg:inline text-sm font-bold tracking-tight">AdDNA</span>
           </Link>
@@ -65,18 +65,18 @@ export default function AppHeader({ me, activeBrand, onBrandChange }: AppHeaderP
             <div className="relative" ref={menuRef}>
               <button
                 onClick={() => setOpen((v) => !v)}
-                className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-[#1e1e2e] bg-[#111118] text-sm text-[#f1f5f9] hover:border-[#3b82f6]/50 transition-colors max-w-[160px]"
+                className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-line bg-surface text-sm text-ink hover:border-accent/50 transition-colors max-w-[160px]"
               >
-                <span className="w-5 h-5 rounded-md gradient-blue flex items-center justify-center text-[10px] font-bold text-white shrink-0">
+                <span className="w-5 h-5 rounded-md gradient-blue flex items-center justify-center text-[10px] font-bold text-on-accent shrink-0">
                   {(activeBrand?.name ?? 'M')[0]?.toUpperCase()}
                 </span>
                 <span className="truncate">{activeBrand?.name ?? 'Mi marca'}</span>
-                <ChevronDown className="w-3.5 h-3.5 text-[#64748b] shrink-0" />
+                <ChevronDown className="w-3.5 h-3.5 text-ink-4 shrink-0" />
               </button>
 
               {open && (
-                <div className="absolute left-0 top-full mt-2 w-64 rounded-xl border border-[#1e1e2e] bg-[#111118] shadow-2xl shadow-black/50 p-1.5 z-50">
-                  <p className="text-[10px] uppercase tracking-wide text-[#64748b] px-2.5 py-1.5">
+                <div className="absolute left-0 top-full mt-2 w-64 rounded-xl border border-line bg-surface shadow-2xl  p-1.5 z-50">
+                  <p className="text-[10px] uppercase tracking-wide text-ink-4 px-2.5 py-1.5">
                     Tus marcas
                   </p>
                   {me.brands.map((b) => (
@@ -86,22 +86,22 @@ export default function AppHeader({ me, activeBrand, onBrandChange }: AppHeaderP
                         onBrandChange(b.id);
                         setOpen(false);
                       }}
-                      className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-sm text-[#f1f5f9] hover:bg-[#1e1e2e] transition-colors"
+                      className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-sm text-ink hover:bg-surface-2 transition-colors"
                     >
-                      <span className="w-5 h-5 rounded-md gradient-blue flex items-center justify-center text-[10px] font-bold text-white">
+                      <span className="w-5 h-5 rounded-md gradient-blue flex items-center justify-center text-[10px] font-bold text-on-accent">
                         {b.name[0]?.toUpperCase()}
                       </span>
                       <span className="truncate flex-1 text-left">{b.name}</span>
-                      {activeBrand?.id === b.id && <Check className="w-4 h-4 text-[#22c55e]" />}
+                      {activeBrand?.id === b.id && <Check className="w-4 h-4 text-ok" />}
                     </button>
                   ))}
-                  <div className="h-px bg-[#1e1e2e] my-1.5" />
+                  <div className="h-px bg-surface-2 my-1.5" />
                   <button
                     onClick={() => {
                       setOpen(false);
                       router.push('/app/marcas');
                     }}
-                    className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-sm text-[#94a3b8] hover:bg-[#1e1e2e] hover:text-[#f1f5f9] transition-colors"
+                    className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-sm text-ink-3 hover:bg-surface-2 hover:text-ink transition-colors"
                   >
                     <Plus className="w-4 h-4" />
                     Gestionar marcas
@@ -119,8 +119,8 @@ export default function AppHeader({ me, activeBrand, onBrandChange }: AppHeaderP
               href={href}
               className={`flex items-center gap-1.5 text-xs sm:text-sm px-2.5 sm:px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap ${
                 isActive(href)
-                  ? 'text-[#f1f5f9] bg-[#1e1e2e]'
-                  : 'text-[#94a3b8] hover:text-[#f1f5f9]'
+                  ? 'text-ink bg-surface-2'
+                  : 'text-ink-3 hover:text-ink'
               }`}
             >
               <Icon className="w-3.5 h-3.5 hidden sm:block" />
@@ -132,7 +132,7 @@ export default function AppHeader({ me, activeBrand, onBrandChange }: AppHeaderP
         <form action="/logout" method="POST" className="shrink-0">
           <button
             type="submit"
-            className="p-2 rounded-lg text-[#94a3b8] hover:text-[#f43f5e] hover:bg-[#1e1e2e] transition-colors"
+            className="p-2 rounded-lg text-ink-3 hover:text-danger hover:bg-surface-2 transition-colors"
             title="Cerrar sesión"
           >
             <LogOut className="w-4 h-4" />

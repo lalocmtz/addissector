@@ -32,7 +32,7 @@ function fileToDataUrl(file: File): Promise<string> {
       canvas.height = Math.round(img.naturalHeight * scale);
       const ctx = canvas.getContext('2d');
       if (!ctx) return reject(new Error('Canvas no disponible'));
-      ctx.fillStyle = '#ffffff';
+      ctx.fillStyle = 'var(--color-surface)';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
       resolve(canvas.toDataURL('image/jpeg', 0.88));
@@ -103,12 +103,12 @@ function BrandDocsSection({ brand }: { brand: BrandRow }) {
   };
 
   return (
-    <div className="mt-6 rounded-2xl border border-[#1e1e2e] bg-[#111118] p-5">
+    <div className="mt-6 rounded-2xl border border-line bg-surface p-5">
       <div className="flex items-center gap-2 mb-1">
-        <FileText className="w-4 h-4 text-[#8b5cf6]" />
+        <FileText className="w-4 h-4 text-accent" />
         <h2 className="text-sm font-semibold">Documentos de contexto · {brand.name}</h2>
       </div>
-      <p className="text-xs text-[#94a3b8] mb-4 leading-relaxed">
+      <p className="text-xs text-ink-3 mb-4 leading-relaxed">
         Sube PDFs o textos con el contexto de tu marca (brief, avatar, dolores, ofertas, tono).
         La IA los destila y ese contexto alimenta TODO lo creativo: clonaciones, b-roll y planes.
       </p>
@@ -117,16 +117,16 @@ function BrandDocsSection({ brand }: { brand: BrandRow }) {
         {docs.map((d) => (
           <div
             key={d.id}
-            className="flex items-center gap-3 rounded-lg bg-[#0a0a0f] border border-[#1e1e2e] px-3 py-2"
+            className="flex items-center gap-3 rounded-lg bg-canvas border border-line px-3 py-2"
           >
-            <FileText className="w-4 h-4 text-[#64748b] shrink-0" />
-            <span className="flex-1 text-xs text-[#e2e8f0] truncate">{d.filename}</span>
-            <span className="text-[10px] text-[#475569]">
+            <FileText className="w-4 h-4 text-ink-4 shrink-0" />
+            <span className="flex-1 text-xs text-ink truncate">{d.filename}</span>
+            <span className="text-[10px] text-ink-4">
               {new Date(d.created_at).toLocaleDateString('es-MX')}
             </span>
             <button
               onClick={() => remove(d.id)}
-              className="text-[#475569] hover:text-[#f43f5e]"
+              className="text-ink-4 hover:text-danger"
               aria-label="Eliminar"
             >
               <X className="w-3.5 h-3.5" />
@@ -138,7 +138,7 @@ function BrandDocsSection({ brand }: { brand: BrandRow }) {
       <button
         onClick={() => inputRef.current?.click()}
         disabled={uploading}
-        className="mt-3 flex items-center gap-2 text-xs px-3 py-2 rounded-lg border border-dashed border-[#2e2e42] text-[#94a3b8] hover:text-[#8b5cf6] hover:border-[#8b5cf6]/50 disabled:opacity-50"
+        className="mt-3 flex items-center gap-2 text-xs px-3 py-2 rounded-lg border border-dashed border-line-strong text-ink-3 hover:text-accent hover:border-accent/50 disabled:opacity-50"
       >
         {uploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
         {uploading ? 'Destilando con IA…' : 'Subir documento (PDF, TXT, MD)'}
@@ -150,7 +150,7 @@ function BrandDocsSection({ brand }: { brand: BrandRow }) {
         className="hidden"
         onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])}
       />
-      {error && <p className="text-xs text-[#f43f5e] mt-2">{error}</p>}
+      {error && <p className="text-xs text-danger mt-2">{error}</p>}
     </div>
   );
 }
@@ -204,12 +204,12 @@ function BrandAssetsSection({ brand }: { brand: BrandRow }) {
   };
 
   return (
-    <div className="mt-8 rounded-2xl border border-[#1e1e2e] bg-[#111118] p-5">
+    <div className="mt-8 rounded-2xl border border-line bg-surface p-5">
       <div className="flex items-center gap-2 mb-1">
-        <Camera className="w-4 h-4 text-[#f59e0b]" />
+        <Camera className="w-4 h-4 text-warn" />
         <h2 className="text-sm font-semibold">Fotos de producto · {brand.name}</h2>
       </div>
-      <p className="text-xs text-[#94a3b8] mb-4 leading-relaxed">
+      <p className="text-xs text-ink-3 mb-4 leading-relaxed">
         Sube 1-3 fotos claras de tu producto (fondo simple, empaque legible). El estudio de
         clonación las usa para que en las imágenes y videos generados salga TU producto exacto,
         no uno inventado.
@@ -222,11 +222,11 @@ function BrandAssetsSection({ brand }: { brand: BrandRow }) {
             <img
               src={a.url}
               alt="Producto"
-              className="w-24 h-24 object-cover rounded-xl border border-[#1e1e2e]"
+              className="w-24 h-24 object-cover rounded-xl border border-line"
             />
             <button
               onClick={() => remove(a)}
-              className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-[#0a0a0f] border border-[#1e1e2e] text-[#94a3b8] hover:text-[#f43f5e] opacity-0 group-hover:opacity-100 transition flex items-center justify-center"
+              className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-canvas border border-line text-ink-3 hover:text-danger opacity-0 group-hover:opacity-100 transition flex items-center justify-center"
               aria-label="Eliminar foto"
             >
               <X className="w-3.5 h-3.5" />
@@ -238,7 +238,7 @@ function BrandAssetsSection({ brand }: { brand: BrandRow }) {
           <button
             onClick={() => inputRef.current?.click()}
             disabled={uploading}
-            className="w-24 h-24 rounded-xl border border-dashed border-[#2e2e42] text-[#64748b] hover:border-[#f59e0b]/50 hover:text-[#f59e0b] transition flex flex-col items-center justify-center gap-1 disabled:opacity-50"
+            className="w-24 h-24 rounded-xl border border-dashed border-line-strong text-ink-4 hover:border-warn/50 hover:text-warn transition flex flex-col items-center justify-center gap-1 disabled:opacity-50"
           >
             {uploading ? (
               <Loader2 className="w-5 h-5 animate-spin" />
@@ -260,7 +260,7 @@ function BrandAssetsSection({ brand }: { brand: BrandRow }) {
           if (f) upload(f);
         }}
       />
-      {error && <p className="text-xs text-[#f43f5e] mt-2">{error}</p>}
+      {error && <p className="text-xs text-danger mt-2">{error}</p>}
     </div>
   );
 }
@@ -360,42 +360,42 @@ export default function MarcasPage() {
         value={form.name}
         onChange={(e) => setForm({ ...form, name: e.target.value })}
         placeholder="Nombre de la marca *"
-        className="w-full px-3 py-2.5 rounded-xl bg-[#0a0a0f] border border-[#1e1e2e] text-sm text-[#f1f5f9] placeholder:text-[#475569] focus:border-[#3b82f6]/60 focus:outline-none"
+        className="w-full px-3 py-2.5 rounded-xl bg-canvas border border-line text-sm text-ink placeholder:text-ink-4 focus:border-accent/60 focus:outline-none"
       />
       <input
         type="text"
         value={form.product}
         onChange={(e) => setForm({ ...form, product: e.target.value })}
         placeholder="Producto / oferta (ej. sérum facial de vitamina C, $399 MXN)"
-        className="w-full px-3 py-2.5 rounded-xl bg-[#0a0a0f] border border-[#1e1e2e] text-sm text-[#f1f5f9] placeholder:text-[#475569] focus:border-[#3b82f6]/60 focus:outline-none"
+        className="w-full px-3 py-2.5 rounded-xl bg-canvas border border-line text-sm text-ink placeholder:text-ink-4 focus:border-accent/60 focus:outline-none"
       />
       <input
         type="text"
         value={form.tone}
         onChange={(e) => setForm({ ...form, tone: e.target.value })}
         placeholder="Tono (ej. cercano y directo, tuteo, sin tecnicismos)"
-        className="w-full px-3 py-2.5 rounded-xl bg-[#0a0a0f] border border-[#1e1e2e] text-sm text-[#f1f5f9] placeholder:text-[#475569] focus:border-[#3b82f6]/60 focus:outline-none"
+        className="w-full px-3 py-2.5 rounded-xl bg-canvas border border-line text-sm text-ink placeholder:text-ink-4 focus:border-accent/60 focus:outline-none"
       />
       <input
         type="text"
         value={form.palette}
         onChange={(e) => setForm({ ...form, palette: e.target.value })}
         placeholder="Paleta / estética (ej. rosa pastel + crema, luz natural, UGC casero)"
-        className="w-full px-3 py-2.5 rounded-xl bg-[#0a0a0f] border border-[#1e1e2e] text-sm text-[#f1f5f9] placeholder:text-[#475569] focus:border-[#3b82f6]/60 focus:outline-none"
+        className="w-full px-3 py-2.5 rounded-xl bg-canvas border border-line text-sm text-ink placeholder:text-ink-4 focus:border-accent/60 focus:outline-none"
       />
-      {error && <p className="text-xs text-[#f43f5e]">{error}</p>}
+      {error && <p className="text-xs text-danger">{error}</p>}
       <div className="flex gap-2 pt-1">
         <button
           onClick={save}
           disabled={saving}
-          className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold gradient-blue text-white disabled:opacity-60"
+          className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold gradient-blue text-on-accent disabled:opacity-60"
         >
           {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
           Guardar
         </button>
         <button
           onClick={cancel}
-          className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm text-[#94a3b8] border border-[#1e1e2e] hover:text-[#f1f5f9]"
+          className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm text-ink-3 border border-line hover:text-ink"
         >
           <X className="w-4 h-4" />
           Cancelar
@@ -413,14 +413,14 @@ export default function MarcasPage() {
           <div className="flex items-end justify-between mb-6">
             <div>
               <h1 className="text-2xl font-bold tracking-tight">Tus marcas</h1>
-              <p className="text-sm text-[#64748b] mt-1">
+              <p className="text-sm text-ink-4 mt-1">
                 Cada marca es un espacio: su biblioteca, su contexto y sus variantes.
               </p>
             </div>
             {!creating && (
               <button
                 onClick={startCreate}
-                className="flex items-center gap-2 text-sm px-4 py-2 rounded-lg gradient-blue text-white font-medium shrink-0"
+                className="flex items-center gap-2 text-sm px-4 py-2 rounded-lg gradient-blue text-on-accent font-medium shrink-0"
               >
                 <Plus className="w-4 h-4" />
                 Nueva marca
@@ -430,7 +430,7 @@ export default function MarcasPage() {
 
           {loading ? (
             <div className="flex items-center justify-center py-24">
-              <Loader2 className="w-8 h-8 text-[#3b82f6] animate-spin" />
+              <Loader2 className="w-8 h-8 text-accent animate-spin" />
             </div>
           ) : (
             <div className="space-y-3">
@@ -438,7 +438,7 @@ export default function MarcasPage() {
                 <motion.div
                   initial={{ opacity: 0, y: -8 }}
                   animate={{ opacity: 1, y: 0 }}
-                  className="rounded-2xl border border-[#3b82f6]/40 bg-[#111118] p-5"
+                  className="rounded-2xl border border-accent/40 bg-surface p-5"
                 >
                   <h3 className="text-sm font-semibold mb-3">Nueva marca</h3>
                   {formFields}
@@ -448,8 +448,8 @@ export default function MarcasPage() {
               {(me?.brands ?? []).map((b) => (
                 <div
                   key={b.id}
-                  className={`rounded-2xl border bg-[#111118] p-5 ${
-                    activeBrandId === b.id ? 'border-[#3b82f6]/40' : 'border-[#1e1e2e]'
+                  className={`rounded-2xl border bg-surface p-5 ${
+                    activeBrandId === b.id ? 'border-accent/40' : 'border-line'
                   }`}
                 >
                   {editingId === b.id ? (
@@ -459,19 +459,19 @@ export default function MarcasPage() {
                     </>
                   ) : (
                     <div className="flex items-start gap-4">
-                      <div className="w-10 h-10 rounded-xl gradient-blue flex items-center justify-center text-sm font-bold text-white shrink-0">
+                      <div className="w-10 h-10 rounded-xl gradient-blue flex items-center justify-center text-sm font-bold text-on-accent shrink-0">
                         {b.name[0]?.toUpperCase()}
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
                           <h3 className="font-semibold truncate">{b.name}</h3>
                           {activeBrandId === b.id && (
-                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#3b82f6]/15 text-[#60a5fa] font-medium shrink-0">
+                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-accent/15 text-accent font-medium shrink-0">
                               Activa
                             </span>
                           )}
                         </div>
-                        <p className="text-xs text-[#94a3b8] mt-1 truncate">
+                        <p className="text-xs text-ink-3 mt-1 truncate">
                           {b.product || 'Sin producto definido'}
                           {b.tone ? ` · ${b.tone}` : ''}
                         </p>
@@ -480,21 +480,21 @@ export default function MarcasPage() {
                         {activeBrandId !== b.id && (
                           <button
                             onClick={() => setActiveBrandId(b.id)}
-                            className="text-xs px-3 py-1.5 rounded-lg border border-[#1e1e2e] text-[#94a3b8] hover:text-[#f1f5f9] hover:border-[#3b82f6]/50 transition-colors"
+                            className="text-xs px-3 py-1.5 rounded-lg border border-line text-ink-3 hover:text-ink hover:border-accent/50 transition-colors"
                           >
                             Usar
                           </button>
                         )}
                         <button
                           onClick={() => startEdit(b)}
-                          className="p-2 rounded-lg text-[#94a3b8] hover:text-[#f1f5f9] hover:bg-[#1e1e2e]"
+                          className="p-2 rounded-lg text-ink-3 hover:text-ink hover:bg-surface-2"
                           title="Editar"
                         >
                           <Pencil className="w-4 h-4" />
                         </button>
                         <button
                           onClick={() => remove(b)}
-                          className="p-2 rounded-lg text-[#94a3b8] hover:text-[#f43f5e] hover:bg-[#1e1e2e]"
+                          className="p-2 rounded-lg text-ink-3 hover:text-danger hover:bg-surface-2"
                           title="Borrar"
                         >
                           <Trash2 className="w-4 h-4" />
@@ -506,12 +506,12 @@ export default function MarcasPage() {
               ))}
 
               {(me?.brands ?? []).length === 0 && !creating && (
-                <div className="rounded-xl border border-dashed border-[#1e1e2e] bg-[#0d0d14] p-12 text-center">
-                  <Store className="w-10 h-10 text-[#334155] mx-auto mb-4" />
-                  <p className="text-[#f1f5f9] font-medium">Aún no tienes marcas</p>
+                <div className="rounded-xl border border-dashed border-line bg-surface p-12 text-center">
+                  <Store className="w-10 h-10 text-line-strong mx-auto mb-4" />
+                  <p className="text-ink font-medium">Aún no tienes marcas</p>
                   <button
                     onClick={startCreate}
-                    className="mt-4 inline-flex items-center gap-2 text-sm px-4 py-2 rounded-lg gradient-blue text-white font-medium"
+                    className="mt-4 inline-flex items-center gap-2 text-sm px-4 py-2 rounded-lg gradient-blue text-on-accent font-medium"
                   >
                     <Plus className="w-4 h-4" />
                     Crear mi primera marca
@@ -520,7 +520,7 @@ export default function MarcasPage() {
               )}
 
               {error && !creating && !editingId && (
-                <p className="text-xs text-[#f43f5e]">{error}</p>
+                <p className="text-xs text-danger">{error}</p>
               )}
             </div>
           )}
@@ -528,9 +528,9 @@ export default function MarcasPage() {
           {activeBrand && <BrandAssetsSection brand={activeBrand} />}
           {activeBrand && <BrandDocsSection brand={activeBrand} />}
 
-          <div className="mt-8 rounded-xl border border-[#1e1e2e] bg-[#0d0d14] p-4">
-            <p className="text-xs text-[#94a3b8] leading-relaxed">
-              💡 El <span className="text-[#f1f5f9]">producto, tono y paleta</span> de la marca se
+          <div className="mt-8 rounded-xl border border-line bg-surface p-4">
+            <p className="text-xs text-ink-3 leading-relaxed">
+              💡 El <span className="text-ink">producto, tono y paleta</span> de la marca se
               usan para que las variantes que genera AdDNA suenen y se vean como tu marca — no
               genéricas.
             </p>

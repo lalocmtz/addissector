@@ -26,9 +26,9 @@ function toReplicaVariants(analysis: AnalysisResult): ReplicaVariant[] {
     prompt:
       v.prompt ||
       [
-        `Genera un video anuncio estilo UGC vertical (9:16).`,
+ `Genera un video anuncio estilo UGC vertical (9:16).`,
         v.scenario ? `Escenario/persona: ${v.scenario}.` : '',
-        `Guion (voz en off, respétalo tal cual):\n"${v.script}"`,
+ `Guion (voz en off, respétalo tal cual):\n"${v.script}"`,
         keep ? `Elementos que NO deben cambiar: ${keep}.` : '',
       ]
         .filter(Boolean)
@@ -297,7 +297,7 @@ export default function AnalyzePage() {
   if (loading) {
     return (
       <div className="flex-1 flex items-center justify-center">
-        <Loader2 className="w-8 h-8 text-[#3b82f6] animate-spin" />
+        <Loader2 className="w-8 h-8 text-accent animate-spin" />
       </div>
     );
   }
@@ -307,27 +307,27 @@ export default function AnalyzePage() {
   return (
     <main className="flex-1">
       {/* Header */}
-      <header className="border-b border-[#1e1e2e] px-6 py-4 sticky top-0 z-50 bg-[#0a0a0f]/90 backdrop-blur-xl">
+      <header className="border-b border-line px-6 py-4 sticky top-0 z-50 bg-canvas/90 ">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-4">
             <button
               onClick={() => router.push(creativeId ? '/biblioteca' : '/studio')}
-              className="flex items-center gap-2 text-sm text-[#94a3b8] hover:text-[#f1f5f9] transition-colors"
+              className="flex items-center gap-2 text-sm text-ink-3 hover:text-ink transition-colors"
             >
               <ArrowLeft className="w-4 h-4" />
               {creativeId ? 'Biblioteca' : 'Nuevo análisis'}
             </button>
-            <div className="w-px h-6 bg-[#1e1e2e]" />
+            <div className="w-px h-6 bg-surface-2" />
             <div className="flex items-center gap-2">
               <div className="w-8 h-8 rounded-lg gradient-blue flex items-center justify-center">
-                <Scan className="w-4 h-4 text-white" />
+                <Scan className="w-4 h-4 text-on-accent" />
               </div>
               <span className="text-sm font-semibold font-[family-name:var(--font-mono)]">
                 AdDNA
               </span>
             </div>
           </div>
-          <div className="text-xs text-[#64748b] font-[family-name:var(--font-mono)]">
+          <div className="text-xs text-ink-4 font-[family-name:var(--font-mono)]">
             {results.size} video{results.size > 1 ? 's' : ''} analizado{results.size > 1 ? 's' : ''}
           </div>
         </div>
@@ -339,15 +339,15 @@ export default function AnalyzePage() {
           {/* Selector de video (si hay varios) */}
           {keys.length > 1 && (
             <div className="overflow-x-auto mb-6">
-              <div className="flex gap-1 bg-[#111118] border border-[#1e1e2e] rounded-xl p-1 min-w-min">
+              <div className="flex gap-1 bg-surface border border-line rounded-xl p-1 min-w-min">
                 {keys.map((key) => (
                   <button
                     key={key}
                     onClick={() => setActiveKey(key)}
                     className={`px-4 py-2 rounded-lg text-xs font-medium transition-all whitespace-nowrap ${
                       (activeKey || keys[0]) === key
-                        ? 'bg-[#3b82f6] text-white shadow-lg shadow-blue-500/20'
-                        : 'text-[#94a3b8] hover:text-[#f1f5f9] hover:bg-[#1e1e2e]'
+                        ? 'bg-accent text-on-accent shadow-lg '
+                        : 'text-ink-3 hover:text-ink hover:bg-surface-2'
                     }`}
                   >
                     {key}
@@ -372,11 +372,11 @@ export default function AnalyzePage() {
                       src={videoUrl}
                       controls
                       playsInline
-                      className="w-full max-h-[440px] rounded-xl bg-black object-contain border border-[#1e1e2e]"
+                      className="w-full max-h-[440px] rounded-xl bg-overlay object-contain border border-line"
                     />
                   )}
-                  <div className="rounded-xl border border-[#1e1e2e] bg-[#0d0d14] p-3">
-                    <p className="text-[10px] uppercase tracking-wide text-[#64748b] mb-2 truncate" title={adName ?? undefined}>
+                  <div className="rounded-xl border border-line bg-surface p-3">
+                    <p className="text-[10px] uppercase tracking-wide text-ink-4 mb-2 truncate" title={adName ?? undefined}>
                       {adName ? `Meta: ${adName}` : 'Creativo'}
                     </p>
                     {metaStats ? (
@@ -391,14 +391,14 @@ export default function AnalyzePage() {
                           ['CVR', metaStats.cvr != null ? `${metaStats.cvr.toFixed(2)}%` : '—'],
                           ['Frec', metaStats.freq != null ? metaStats.freq.toFixed(1) : '—'],
                         ] as const).map(([l, v]) => (
-                          <div key={l} className="rounded-lg bg-[#0a0a0f] border border-[#15151f] px-2 py-1.5">
-                            <p className="text-[8px] uppercase tracking-wide text-[#64748b]">{l}</p>
-                            <p className="text-xs font-bold font-[family-name:var(--font-mono)] text-[#f1f5f9]">{v}</p>
+                          <div key={l} className="rounded-lg bg-canvas border border-surface-2 px-2 py-1.5">
+                            <p className="text-[8px] uppercase tracking-wide text-ink-4">{l}</p>
+                            <p className="text-xs font-bold font-[family-name:var(--font-mono)] text-ink">{v}</p>
                           </div>
                         ))}
                       </div>
                     ) : (
-                      <p className="text-xs text-[#64748b]">
+                      <p className="text-xs text-ink-4">
                         Aún no cruza con la memoria de Meta (nombres distintos). Sube el export en Meta
                         o usa el nombre exacto del anuncio.
                       </p>
@@ -410,27 +410,27 @@ export default function AnalyzePage() {
               <div className="min-w-0">
                 {/* Análisis fusionado: video × Meta */}
                 {metaStats && (
-                  <div className="mb-5 rounded-xl border border-[#8b5cf6]/25 bg-[#8b5cf6]/5 p-4">
+                  <div className="mb-5 rounded-xl border border-accent/25 bg-accent/5 p-4">
                     <div className="flex items-center justify-between gap-2 flex-wrap mb-1.5">
-                      <p className="text-[10px] uppercase tracking-wide text-[#c4b5fd]">
+                      <p className="text-[10px] uppercase tracking-wide text-accent">
                         ✦ Análisis fusionado · video × Meta
                       </p>
                       <button
                         onClick={generateFusion}
                         disabled={fusing}
-                        className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-[#8b5cf6] text-white font-medium disabled:opacity-60"
+                        className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-accent text-on-accent font-medium disabled:opacity-60"
                       >
                         {fusing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
                         {fusing ? 'Desmenuzando… (~1 min)' : metaStats.fusion ? 'Regenerar' : 'Desmenuzar con los números de Meta'}
                       </button>
                     </div>
-                    {fusionError && <p className="text-xs text-[#f87171] mb-2">{fusionError}</p>}
+                    {fusionError && <p className="text-xs text-danger mb-2">{fusionError}</p>}
                     {metaStats.fusion ? (
-                      <div className="text-xs text-[#d1d5e8] whitespace-pre-wrap leading-relaxed max-h-[440px] overflow-y-auto rounded-lg bg-[#0a0a0f]/60 p-3">
+                      <div className="text-xs text-ink-2 whitespace-pre-wrap leading-relaxed max-h-[440px] overflow-y-auto rounded-lg bg-canvas/60 p-3">
                         {metaStats.fusion}
                       </div>
                     ) : (
-                      <p className="text-xs text-[#94a3b8]">
+                      <p className="text-xs text-ink-3">
                         Psicólogo + creative strategist + analista: línea de tiempo segundo a segundo,
                         guion, dolores, psicología, dónde se pierde la atención y cómo mejorarlo — todo
                         cruzado con la retención y conversión reales.
@@ -475,7 +475,7 @@ export default function AnalyzePage() {
                       <button
                         onClick={handleGenerateCrossAnalysis}
                         disabled={isGeneratingCross}
-                        className="w-full py-3 rounded-xl border border-dashed border-[#2e2e42] text-sm text-[#94a3b8] hover:text-[#f1f5f9] hover:border-[#3b82f6]/50 transition-colors disabled:opacity-50"
+                        className="w-full py-3 rounded-xl border border-dashed border-line-strong text-sm text-ink-3 hover:text-ink hover:border-accent/50 transition-colors disabled:opacity-50"
                       >
                         {isGeneratingCross
                           ? 'Buscando patrones…'

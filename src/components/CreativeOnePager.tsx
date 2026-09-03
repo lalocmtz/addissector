@@ -95,15 +95,15 @@ function nearest<T>(items: T[], getSec: (t: T) => number | null, target: number)
 }
 
 function scoreTone(score0to100: number): { hex: string; text: string } {
-  if (score0to100 >= 75) return { hex: '#22c55e', text: 'text-[#4ade80]' };
-  if (score0to100 >= 50) return { hex: '#f59e0b', text: 'text-[#fbbf24]' };
-  return { hex: '#f43f5e', text: 'text-[#f87171]' };
+  if (score0to100 >= 75) return { hex: 'var(--color-ok)', text: 'text-ok' };
+  if (score0to100 >= 50) return { hex: 'var(--color-warn)', text: 'text-warn' };
+  return { hex: 'var(--color-danger)', text: 'text-danger' };
 }
 
 function levelTone(level: string): { dot: string; text: string } {
-  if (level === 'alto') return { dot: 'bg-[#22c55e]', text: 'text-[#4ade80]' };
-  if (level === 'medio') return { dot: 'bg-[#f59e0b]', text: 'text-[#fbbf24]' };
-  return { dot: 'bg-[#f43f5e]', text: 'text-[#f87171]' };
+  if (level === 'alto') return { dot: 'bg-ok', text: 'text-ok' };
+  if (level === 'medio') return { dot: 'bg-warn', text: 'text-warn' };
+  return { dot: 'bg-danger', text: 'text-danger' };
 }
 
 // ---------------------------------------------------------------------------
@@ -115,17 +115,17 @@ function SectionHeading({
 }: { step: string; icon: React.ReactNode; title: string; hint?: string }) {
   return (
     <div className="flex items-start gap-3 mb-4">
-      <div className="w-8 h-8 rounded-lg bg-[#1e1e2e] flex items-center justify-center text-[#3b82f6] shrink-0">
+      <div className="w-8 h-8 rounded-lg bg-surface-2 flex items-center justify-center text-accent shrink-0">
         {icon}
       </div>
       <div className="min-w-0">
         <div className="flex items-baseline gap-2 flex-wrap">
-          <span className="text-[10px] font-bold text-[#475569] font-[family-name:var(--font-mono)]">
+          <span className="text-[10px] font-bold text-ink-4 font-[family-name:var(--font-mono)]">
             {step}
           </span>
-          <h2 className="text-lg font-bold text-[#f1f5f9] leading-tight">{title}</h2>
+          <h2 className="text-lg font-bold text-ink leading-tight">{title}</h2>
         </div>
-        {hint && <p className="text-xs text-[#64748b] mt-0.5 leading-relaxed">{hint}</p>}
+        {hint && <p className="text-xs text-ink-4 mt-0.5 leading-relaxed">{hint}</p>}
       </div>
     </div>
   );
@@ -133,17 +133,17 @@ function SectionHeading({
 
 function SubHeading({ icon, children }: { icon: React.ReactNode; children: React.ReactNode }) {
   return (
-    <h3 className="flex items-center gap-2 text-sm font-semibold text-[#f1f5f9] mb-1.5">
-      <span className="text-[#8b5cf6]">{icon}</span>
+    <h3 className="flex items-center gap-2 text-sm font-semibold text-ink mb-1.5">
+      <span className="text-accent">{icon}</span>
       {children}
     </h3>
   );
 }
 
-function Chip({ label, value, tone = 'text-[#f1f5f9]' }: { label: string; value: string; tone?: string }) {
+function Chip({ label, value, tone = 'text-ink' }: { label: string; value: string; tone?: string }) {
   return (
-    <div className="rounded-lg bg-[#0a0a0f] border border-[#1e1e2e] px-2.5 py-1.5 min-w-0">
-      <p className="text-[9px] uppercase tracking-wide text-[#64748b] truncate">{label}</p>
+    <div className="rounded-lg bg-canvas border border-line px-2.5 py-1.5 min-w-0">
+      <p className="text-[9px] uppercase tracking-wide text-ink-4 truncate">{label}</p>
       <p className={`text-xs font-bold font-[family-name:var(--font-mono)] truncate ${tone}`}>{value}</p>
     </div>
   );
@@ -154,7 +154,7 @@ function Tags({ items, tone }: { items: string[]; tone: string }) {
   return (
     <div className="flex flex-wrap gap-1.5">
       {items.map((t, i) => (
-        <span key={i} className={`text-[11px] px-2 py-0.5 rounded-md bg-[#0a0a0f] border border-[#1e1e2e] ${tone}`}>
+        <span key={i} className={`text-[11px] px-2 py-0.5 rounded-md bg-canvas border border-line ${tone}`}>
           {t}
         </span>
       ))}
@@ -166,16 +166,16 @@ function Collapsible({
   icon, title, hint, children,
 }: { icon: React.ReactNode; title: string; hint: string; children: React.ReactNode }) {
   return (
-    <details className="group rounded-2xl border border-[#1e1e2e] bg-[#0d0d14] overflow-hidden">
-      <summary className="cursor-pointer list-none px-5 py-4 flex items-center gap-3 hover:bg-[#111118] transition-colors [&::-webkit-details-marker]:hidden">
-        <span className="text-[#64748b] group-open:text-[#3b82f6] transition-colors">{icon}</span>
+    <details className="group rounded-2xl border border-line bg-surface overflow-hidden">
+      <summary className="cursor-pointer list-none px-5 py-4 flex items-center gap-3 hover:bg-surface transition-colors [&::-webkit-details-marker]:hidden">
+        <span className="text-ink-4 group-open:text-accent transition-colors">{icon}</span>
         <span className="min-w-0 flex-1">
-          <span className="block text-sm font-semibold text-[#f1f5f9]">{title}</span>
-          <span className="block text-xs text-[#64748b]">{hint}</span>
+          <span className="block text-sm font-semibold text-ink">{title}</span>
+          <span className="block text-xs text-ink-4">{hint}</span>
         </span>
-        <ChevronDown className="w-4 h-4 text-[#64748b] shrink-0 transition-transform group-open:rotate-180" />
+        <ChevronDown className="w-4 h-4 text-ink-4 shrink-0 transition-transform group-open:rotate-180" />
       </summary>
-      <div className="px-5 pb-5 pt-1 border-t border-[#1e1e2e]">{children}</div>
+      <div className="px-5 pb-5 pt-1 border-t border-line">{children}</div>
     </details>
   );
 }
@@ -272,14 +272,14 @@ export default function CreativeOnePager({
   return (
     <article className="space-y-8">
       {/* ==================== 1. EL VEREDICTO ==================== */}
-      <section className="rounded-2xl border border-[#3b82f6]/25 bg-gradient-to-br from-[#12203a] to-[#0d0d14] p-5 sm:p-6">
+      <section className="rounded-2xl border border-accent/25 bg-accent-soft p-5 sm:p-6">
         <div className="flex items-start justify-between gap-3 mb-4 flex-wrap">
-          <p className="text-[10px] uppercase tracking-wider text-[#60a5fa] font-[family-name:var(--font-mono)] truncate max-w-full">
+          <p className="text-[10px] uppercase tracking-wider text-accent font-[family-name:var(--font-mono)] truncate max-w-full">
             Veredicto · {name}
           </p>
           <div className="flex items-center gap-2 flex-wrap">
             {brainChip && (
-              <span className="flex items-center gap-1.5 text-[10px] px-2.5 py-1.5 rounded-lg border border-[#22c55e]/30 bg-[#22c55e]/5 text-[#4ade80]">
+              <span className="flex items-center gap-1.5 text-[10px] px-2.5 py-1.5 rounded-lg border border-ok/30 bg-ok/5 text-ok">
                 <Brain className="w-3 h-3" /> {brainChip}
               </span>
             )}
@@ -288,7 +288,7 @@ export default function CreativeOnePager({
                 onClick={onFeedBrain}
                 disabled={feedingBrain}
                 title="Extrae la persona, el ángulo, los hooks y los aprendizajes de este análisis y los guarda en el Cerebro"
-                className="flex items-center gap-1.5 text-[11px] px-2.5 py-1.5 rounded-lg border border-[#1e1e2e] text-[#94a3b8] hover:text-[#f1f5f9] hover:border-[#3b82f6]/50 transition-colors disabled:opacity-50"
+                className="flex items-center gap-1.5 text-[11px] px-2.5 py-1.5 rounded-lg border border-line text-ink-3 hover:text-ink hover:border-accent/50 transition-colors disabled:opacity-50"
               >
                 {feedingBrain ? (
                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -307,7 +307,7 @@ export default function CreativeOnePager({
           <div className="flex items-center gap-4 shrink-0">
             <div className="relative w-[86px] h-[86px]">
               <svg viewBox="0 0 80 80" className="w-[86px] h-[86px] -rotate-90">
-                <circle cx="40" cy="40" r="34" fill="none" stroke="#1e1e2e" strokeWidth="7" />
+                <circle cx="40" cy="40" r="34" fill="none" stroke="var(--color-surface-2)" strokeWidth="7" />
                 <circle
                   cx="40" cy="40" r="34" fill="none" stroke={tone.hex} strokeWidth="7"
                   strokeLinecap="round"
@@ -316,7 +316,7 @@ export default function CreativeOnePager({
                 />
               </svg>
               <div className="absolute inset-0 flex flex-col items-center justify-center">
-                <span className="text-2xl font-bold text-[#f1f5f9]">{score}</span>
+                <span className="text-2xl font-bold text-ink">{score}</span>
                 <span className={`text-[9px] font-bold uppercase tracking-wide ${tone.text}`}>
                   {analysis.score_label || '—'}
                 </span>
@@ -326,11 +326,11 @@ export default function CreativeOnePager({
 
           {/* Frase de conclusión */}
           <div className="min-w-0 flex-1">
-            <h1 className="text-xl sm:text-2xl font-bold leading-snug text-[#f1f5f9]">
+            <h1 className="text-xl sm:text-2xl font-bold leading-snug text-ink">
               {analysis.verdict || 'Sin veredicto disponible.'}
             </h1>
             {ficha.length > 0 && (
-              <p className="text-xs text-[#94a3b8] mt-2 font-[family-name:var(--font-mono)]">
+              <p className="text-xs text-ink-3 mt-2 font-[family-name:var(--font-mono)]">
                 {ficha.join(' · ')}
               </p>
             )}
@@ -344,13 +344,13 @@ export default function CreativeOnePager({
             if (!sig) return null;
             const t = levelTone(sig.level);
             return (
-              <div key={key} className="rounded-xl border border-[#1e1e2e] bg-[#0a0a0f]/70 px-3 py-2.5">
+              <div key={key} className="rounded-xl border border-line bg-canvas/70 px-3 py-2.5">
                 <div className="flex items-center gap-2 mb-1">
                   <span className={`w-2 h-2 rounded-full ${t.dot}`} />
-                  <span className="text-xs font-semibold text-[#f1f5f9]">{label}</span>
+                  <span className="text-xs font-semibold text-ink">{label}</span>
                   <span className={`ml-auto text-[10px] font-bold uppercase ${t.text}`}>{sig.level}</span>
                 </div>
-                <p className="text-[11px] text-[#94a3b8] leading-relaxed">{sig.note}</p>
+                <p className="text-[11px] text-ink-3 leading-relaxed">{sig.note}</p>
               </div>
             );
           })}
@@ -378,26 +378,26 @@ export default function CreativeOnePager({
             {actions.map((a, i) => (
               <li
                 key={i}
-                className="flex gap-3 rounded-xl border border-[#1e1e2e] bg-[#111118] px-4 py-3"
+                className="flex gap-3 rounded-xl border border-line bg-surface px-4 py-3"
               >
-                <span className="text-sm font-bold text-[#3b82f6] font-[family-name:var(--font-mono)] shrink-0">
+                <span className="text-sm font-bold text-accent font-[family-name:var(--font-mono)] shrink-0">
                   {i + 1}
                 </span>
                 <div className="min-w-0">
                   <span
                     className={`inline-block text-[9px] font-bold uppercase tracking-wide mb-1 ${
-                      a.kind === 'probar' ? 'text-[#fbbf24]' : 'text-[#4ade80]'
+                      a.kind === 'probar' ? 'text-warn' : 'text-ok'
                     }`}
                   >
                     {a.kind === 'probar' ? 'Prueba esto' : 'No lo toques'}
                   </span>
-                  <p className="text-sm text-[#cbd5e1] leading-relaxed">{a.text}</p>
+                  <p className="text-sm text-ink-2 leading-relaxed">{a.text}</p>
                 </div>
               </li>
             ))}
           </ol>
         ) : (
-          <p className="text-sm text-[#64748b]">Este análisis no arrojó acciones concretas.</p>
+          <p className="text-sm text-ink-4">Este análisis no arrojó acciones concretas.</p>
         )}
       </section>
 
@@ -413,25 +413,25 @@ export default function CreativeOnePager({
         {winning && (
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-3">
             {([
-              ['Hook', winning.hook, '#3b82f6'],
-              ['Cuerpo', winning.development, '#8b5cf6'],
-              ['Cierre / CTA', winning.cta, '#4ade80'],
+              ['Hook', winning.hook, 'var(--color-accent)'],
+              ['Cuerpo', winning.development, 'var(--color-accent)'],
+              ['Cierre / CTA', winning.cta, 'var(--color-ok)'],
             ] as const).map(([label, text, color]) => (
-              <div key={label} className="rounded-xl border border-[#1e1e2e] bg-[#111118] p-3">
+              <div key={label} className="rounded-xl border border-line bg-surface p-3">
                 <p className="text-[10px] uppercase tracking-wide font-bold mb-1" style={{ color }}>
                   {label}
                 </p>
-                <p className="text-xs text-[#cbd5e1] leading-relaxed">{text || '—'}</p>
+                <p className="text-xs text-ink-2 leading-relaxed">{text || '—'}</p>
               </div>
             ))}
           </div>
         )}
 
         {timeline.length > 0 && (
-          <div className="rounded-xl border border-[#1e1e2e] bg-[#0d0d14] overflow-x-auto">
+          <div className="rounded-xl border border-line bg-surface overflow-x-auto">
             <table className="w-full text-left border-collapse min-w-[640px]">
               <thead>
-                <tr className="text-[10px] uppercase tracking-wide text-[#64748b]">
+                <tr className="text-[10px] uppercase tracking-wide text-ink-4">
                   <th className="px-3 py-2 font-medium w-16">Seg.</th>
                   <th className="px-3 py-2 font-medium">Qué se dice</th>
                   <th className="px-3 py-2 font-medium">Qué se ve</th>
@@ -440,27 +440,27 @@ export default function CreativeOnePager({
               </thead>
               <tbody>
                 {timeline.map((row, i) => (
-                  <tr key={i} className="border-t border-[#15151f] align-top">
-                    <td className="px-3 py-2.5 text-[11px] font-bold text-[#3b82f6] font-[family-name:var(--font-mono)] whitespace-nowrap">
+                  <tr key={i} className="border-t border-surface-2 align-top">
+                    <td className="px-3 py-2.5 text-[11px] font-bold text-accent font-[family-name:var(--font-mono)] whitespace-nowrap">
                       {row.label}
                     </td>
-                    <td className="px-3 py-2.5 text-xs text-[#e2e8f0] leading-relaxed">
+                    <td className="px-3 py-2.5 text-xs text-ink leading-relaxed">
                       {row.said || '—'}
                       {row.overlay && (
-                        <span className="block mt-1 text-[10px] text-[#fbbf24]">
+                        <span className="block mt-1 text-[10px] text-warn">
                           En pantalla: {row.overlay}
                         </span>
                       )}
                     </td>
-                    <td className="px-3 py-2.5 text-xs text-[#94a3b8] leading-relaxed">{row.seen || '—'}</td>
+                    <td className="px-3 py-2.5 text-xs text-ink-3 leading-relaxed">{row.seen || '—'}</td>
                     <td className="px-3 py-2.5 text-xs leading-relaxed">
                       {row.emotion ? (
                         <>
-                          <span className="text-[#a78bfa] font-medium">{row.emotion}</span>
-                          {row.purpose && <span className="block text-[#64748b] mt-0.5">{row.purpose}</span>}
+                          <span className="text-accent font-medium">{row.emotion}</span>
+                          {row.purpose && <span className="block text-ink-4 mt-0.5">{row.purpose}</span>}
                         </>
                       ) : (
-                        <span className="text-[#475569]">—</span>
+                        <span className="text-ink-4">—</span>
                       )}
                     </td>
                   </tr>
@@ -480,9 +480,9 @@ export default function CreativeOnePager({
           hint="La lectura psicológica: qué te frena, a quién le habla y qué resortes jala."
         />
 
-        <div className="rounded-2xl border border-[#1e1e2e] bg-[#111118] p-5 space-y-6">
+        <div className="rounded-2xl border border-line bg-surface p-5 space-y-6">
           {psych?.why_it_converts && (
-            <p className="text-[15px] text-[#e2e8f0] leading-relaxed">{psych.why_it_converts}</p>
+            <p className="text-[15px] text-ink leading-relaxed">{psych.why_it_converts}</p>
           )}
 
           {(analysis.winning_recipe ?? []).length > 0 && (
@@ -490,8 +490,8 @@ export default function CreativeOnePager({
               <SubHeading icon={<Sparkles className="w-4 h-4" />}>La receta, en corto</SubHeading>
               <ul className="space-y-1.5">
                 {(analysis.winning_recipe ?? []).map((r, i) => (
-                  <li key={i} className="flex gap-2 text-sm text-[#cbd5e1] leading-relaxed">
-                    <span className="text-[#8b5cf6] font-bold font-[family-name:var(--font-mono)] shrink-0">
+                  <li key={i} className="flex gap-2 text-sm text-ink-2 leading-relaxed">
+                    <span className="text-accent font-bold font-[family-name:var(--font-mono)] shrink-0">
                       {i + 1}.
                     </span>
                     {r}
@@ -502,19 +502,19 @@ export default function CreativeOnePager({
           )}
 
           {scrollStop && (
-            <div className="pt-5 border-t border-[#1e1e2e]">
+            <div className="pt-5 border-t border-line">
               <SubHeading icon={<Zap className="w-4 h-4" />}>Qué frena el dedo</SubHeading>
-              <p className="text-sm text-[#cbd5e1] leading-relaxed">
+              <p className="text-sm text-ink-2 leading-relaxed">
                 {scrollStop.mechanism || '—'}
                 {scrollStop.primary_trigger && (
-                  <> El gatillo principal es <b className="text-[#a78bfa]">{scrollStop.primary_trigger}</b>.</>
+                  <> El gatillo principal es <b className="text-accent">{scrollStop.primary_trigger}</b>.</>
                 )}
               </p>
               {scrollStop.reasoning && (
-                <p className="text-sm text-[#94a3b8] leading-relaxed mt-1.5">{scrollStop.reasoning}</p>
+                <p className="text-sm text-ink-3 leading-relaxed mt-1.5">{scrollStop.reasoning}</p>
               )}
               {hook?.effectiveness_reasoning && hook.effectiveness_reasoning !== scrollStop.reasoning && (
-                <p className="text-sm text-[#94a3b8] leading-relaxed mt-1.5">{hook.effectiveness_reasoning}</p>
+                <p className="text-sm text-ink-3 leading-relaxed mt-1.5">{hook.effectiveness_reasoning}</p>
               )}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-3">
                 <Chip label="Fuerza del freno" value={`${scrollStop.strength_score ?? 0}/10`} />
@@ -526,16 +526,16 @@ export default function CreativeOnePager({
           )}
 
           {(avatar || psych?.awareness_level || psych?.market_sophistication) && (
-            <div className="pt-5 border-t border-[#1e1e2e]">
+            <div className="pt-5 border-t border-line">
               <SubHeading icon={<Users className="w-4 h-4" />}>A quién le habla</SubHeading>
               {avatar && (
-                <p className="text-sm text-[#cbd5e1] leading-relaxed">
-                  <b className="text-[#f1f5f9]">{avatar.who}</b>
+                <p className="text-sm text-ink-2 leading-relaxed">
+                  <b className="text-ink">{avatar.who}</b>
                   {avatar.mindset && <> — {avatar.mindset}</>}
                 </p>
               )}
               {avatar?.resonance_reason && (
-                <p className="text-sm text-[#94a3b8] leading-relaxed mt-1.5">{avatar.resonance_reason}</p>
+                <p className="text-sm text-ink-3 leading-relaxed mt-1.5">{avatar.resonance_reason}</p>
               )}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-3">
                 <Chip label="Qué tanto te conoce" value={psych?.awareness_level || '—'} />
@@ -545,61 +545,61 @@ export default function CreativeOnePager({
           )}
 
           {buyer && (
-            <div className="pt-5 border-t border-[#1e1e2e]">
+            <div className="pt-5 border-t border-line">
               <SubHeading icon={<Heart className="w-4 h-4" />}>Qué desea y qué le duele</SubHeading>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                 {([
-                  ['Lo que quiere', buyer.core_desire, 'text-[#4ade80]'],
-                  ['Lo que le duele', buyer.core_pain, 'text-[#f87171]'],
-                  ['En quién se convierte', buyer.identity_shift, 'text-[#60a5fa]'],
+                  ['Lo que quiere', buyer.core_desire, 'text-ok'],
+                  ['Lo que le duele', buyer.core_pain, 'text-danger'],
+                  ['En quién se convierte', buyer.identity_shift, 'text-accent'],
                 ] as const).map(([label, text, color]) => (
-                  <div key={label} className="rounded-xl bg-[#0d0d14] border border-[#1e1e2e] p-3">
+                  <div key={label} className="rounded-xl bg-surface border border-line p-3">
                     <p className={`text-[10px] uppercase tracking-wide font-bold mb-1 ${color}`}>{label}</p>
-                    <p className="text-xs text-[#e2e8f0] leading-relaxed">{text || '—'}</p>
+                    <p className="text-xs text-ink leading-relaxed">{text || '—'}</p>
                   </div>
                 ))}
               </div>
               {(buyer.objections_handled ?? []).length > 0 && (
                 <div className="mt-3">
-                  <p className="text-[10px] uppercase tracking-wide text-[#64748b] mb-1.5">
+                  <p className="text-[10px] uppercase tracking-wide text-ink-4 mb-1.5">
                     Objeciones que el anuncio ya desarma
                   </p>
-                  <Tags items={buyer.objections_handled} tone="text-[#cbd5e1]" />
+                  <Tags items={buyer.objections_handled} tone="text-ink-2" />
                 </div>
               )}
             </div>
           )}
 
           {(triggers.length > 0 || biases.length > 0) && (
-            <div className="pt-5 border-t border-[#1e1e2e]">
+            <div className="pt-5 border-t border-line">
               <SubHeading icon={<Target className="w-4 h-4" />}>Los resortes que jala</SubHeading>
               {triggers.length > 0 && (
                 <ul className="space-y-2">
                   {triggers.map((t, i) => (
                     <li key={i} className="text-sm leading-relaxed">
-                      <span className="text-[#f1f5f9] font-semibold">{t.trigger}</span>
+                      <span className="text-ink font-semibold">{t.trigger}</span>
                       {t.timestamp && (
-                        <span className="text-[10px] text-[#3b82f6] font-[family-name:var(--font-mono)] ml-2">
+                        <span className="text-[10px] text-accent font-[family-name:var(--font-mono)] ml-2">
                           {t.timestamp}
                         </span>
                       )}
                       {typeof t.strength === 'number' && (
-                        <span className="text-[10px] text-[#64748b] ml-2">fuerza {t.strength}/10</span>
+                        <span className="text-[10px] text-ink-4 ml-2">fuerza {t.strength}/10</span>
                       )}
-                      <span className="block text-[#94a3b8]">{t.how_used}</span>
+                      <span className="block text-ink-3">{t.how_used}</span>
                     </li>
                   ))}
                 </ul>
               )}
               {biases.length > 0 && (
-                <div className="mt-3 pt-3 border-t border-[#15151f]">
-                  <p className="text-[10px] uppercase tracking-wide text-[#64748b] mb-1.5">
+                <div className="mt-3 pt-3 border-t border-surface-2">
+                  <p className="text-[10px] uppercase tracking-wide text-ink-4 mb-1.5">
                     Atajos mentales que aprovecha
                   </p>
                   <ul className="space-y-1.5">
                     {biases.map((b, i) => (
-                      <li key={i} className="text-xs text-[#94a3b8] leading-relaxed">
-                        <b className="text-[#cbd5e1]">{b.bias}:</b> {b.how_exploited}
+                      <li key={i} className="text-xs text-ink-3 leading-relaxed">
+                        <b className="text-ink-2">{b.bias}:</b> {b.how_exploited}
                       </li>
                     ))}
                   </ul>
@@ -609,7 +609,7 @@ export default function CreativeOnePager({
           )}
 
           {patterns && (
-            <div className="pt-5 border-t border-[#1e1e2e]">
+            <div className="pt-5 border-t border-line">
               <SubHeading icon={<Sparkles className="w-4 h-4" />}>Recursos del formato</SubHeading>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3">
                 <Chip label="Estructura de persuasión" value={patterns.persuasion_framework || '—'} />
@@ -620,20 +620,20 @@ export default function CreativeOnePager({
               <div className="space-y-2">
                 {(patterns.retention_techniques ?? []).length > 0 && (
                   <div>
-                    <p className="text-[10px] uppercase tracking-wide text-[#64748b] mb-1.5">Qué usa para retener</p>
-                    <Tags items={patterns.retention_techniques} tone="text-[#cbd5e1]" />
+                    <p className="text-[10px] uppercase tracking-wide text-ink-4 mb-1.5">Qué usa para retener</p>
+                    <Tags items={patterns.retention_techniques} tone="text-ink-2" />
                   </div>
                 )}
                 {(patterns.power_words ?? []).length > 0 && (
                   <div>
-                    <p className="text-[10px] uppercase tracking-wide text-[#64748b] mb-1.5">Palabras que pegan</p>
-                    <Tags items={patterns.power_words} tone="text-[#fbbf24]" />
+                    <p className="text-[10px] uppercase tracking-wide text-ink-4 mb-1.5">Palabras que pegan</p>
+                    <Tags items={patterns.power_words} tone="text-warn" />
                   </div>
                 )}
                 {(patterns.ugc_markers ?? []).length > 0 && (
                   <div>
-                    <p className="text-[10px] uppercase tracking-wide text-[#64748b] mb-1.5">Señales de que se siente real</p>
-                    <Tags items={patterns.ugc_markers} tone="text-[#4ade80]" />
+                    <p className="text-[10px] uppercase tracking-wide text-ink-4 mb-1.5">Señales de que se siente real</p>
+                    <Tags items={patterns.ugc_markers} tone="text-ok" />
                   </div>
                 )}
               </div>
@@ -651,7 +651,7 @@ export default function CreativeOnePager({
             title="Dónde se pierde la atención"
             hint="Los momentos donde la gente se va — y qué revisar antes de escalarlo."
           />
-          <div className="rounded-2xl border border-[#1e1e2e] bg-[#111118] p-5 space-y-4">
+          <div className="rounded-2xl border border-line bg-surface p-5 space-y-4">
             {math && (
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 <Chip label="El hook dura" value={`${math.hook_duration_seconds ?? 0}s`} />
@@ -661,26 +661,26 @@ export default function CreativeOnePager({
               </div>
             )}
             {math?.thumbstop_estimate && (
-              <p className="text-sm text-[#94a3b8] leading-relaxed">
-                Freno estimado en el feed: <b className="text-[#f1f5f9]">{math.thumbstop_estimate}</b>
+              <p className="text-sm text-ink-3 leading-relaxed">
+                Freno estimado en el feed: <b className="text-ink">{math.thumbstop_estimate}</b>
               </p>
             )}
             {riskPoints.length > 0 ? (
               <ul className="space-y-2">
                 {riskPoints.map((r, i) => (
-                  <li key={i} className="flex gap-3 rounded-xl bg-[#0d0d14] border border-[#f59e0b]/20 px-3 py-2.5">
-                    <AlertTriangle className="w-4 h-4 text-[#fbbf24] shrink-0 mt-0.5" />
+                  <li key={i} className="flex gap-3 rounded-xl bg-surface border border-warn/20 px-3 py-2.5">
+                    <AlertTriangle className="w-4 h-4 text-warn shrink-0 mt-0.5" />
                     <div className="min-w-0">
-                      <span className="text-[11px] font-bold text-[#fbbf24] font-[family-name:var(--font-mono)]">
+                      <span className="text-[11px] font-bold text-warn font-[family-name:var(--font-mono)]">
                         {r.timestamp}
                       </span>
-                      <p className="text-sm text-[#cbd5e1] leading-relaxed">{r.risk}</p>
+                      <p className="text-sm text-ink-2 leading-relaxed">{r.risk}</p>
                     </div>
                   </li>
                 ))}
               </ul>
             ) : (
-              <p className="text-sm text-[#64748b]">No se detectaron caídas claras de atención.</p>
+              <p className="text-sm text-ink-4">No se detectaron caídas claras de atención.</p>
             )}
           </div>
         </section>
@@ -697,29 +697,29 @@ export default function CreativeOnePager({
             <div className="flex justify-end mb-2">
               <CopyButton text={analysis.original_script} label="Copiar guion" />
             </div>
-            <div className="rounded-xl bg-[#0a0a0f] border border-[#1e1e2e] p-4">
-              <Quote className="w-4 h-4 text-[#334155] mb-2" />
-              <p className="text-sm text-[#e2e8f0] leading-relaxed whitespace-pre-wrap">
+            <div className="rounded-xl bg-canvas border border-line p-4">
+              <Quote className="w-4 h-4 text-line-strong mb-2" />
+              <p className="text-sm text-ink leading-relaxed whitespace-pre-wrap">
                 {analysis.original_script}
               </p>
             </div>
           </>
         ) : (
-          <p className="text-sm text-[#64748b]">Este análisis no incluyó el guion.</p>
+          <p className="text-sm text-ink-4">Este análisis no incluyó el guion.</p>
         )}
 
         {plan && (plan.voice_tone || plan.editing_notes) && (
           <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
             {plan.voice_tone && (
-              <div className="rounded-xl bg-[#0a0a0f] border border-[#1e1e2e] p-3">
-                <p className="text-[10px] uppercase tracking-wide text-[#64748b] mb-1">Cómo suena la voz</p>
-                <p className="text-xs text-[#cbd5e1] leading-relaxed">{plan.voice_tone}</p>
+              <div className="rounded-xl bg-canvas border border-line p-3">
+                <p className="text-[10px] uppercase tracking-wide text-ink-4 mb-1">Cómo suena la voz</p>
+                <p className="text-xs text-ink-2 leading-relaxed">{plan.voice_tone}</p>
               </div>
             )}
             {plan.editing_notes && (
-              <div className="rounded-xl bg-[#0a0a0f] border border-[#1e1e2e] p-3">
-                <p className="text-[10px] uppercase tracking-wide text-[#64748b] mb-1">Notas de edición</p>
-                <p className="text-xs text-[#cbd5e1] leading-relaxed">{plan.editing_notes}</p>
+              <div className="rounded-xl bg-canvas border border-line p-3">
+                <p className="text-[10px] uppercase tracking-wide text-ink-4 mb-1">Notas de edición</p>
+                <p className="text-xs text-ink-2 leading-relaxed">{plan.editing_notes}</p>
               </div>
             )}
           </div>
@@ -733,11 +733,11 @@ export default function CreativeOnePager({
         hint={`${variants.length} variante${variants.length === 1 ? '' : 's'} — prompt para IA o brief para tu equipo.`}
       >
         <div className="flex items-center justify-between gap-3 flex-wrap mb-4">
-          <div className="inline-flex gap-1 bg-[#0a0a0f] border border-[#1e1e2e] rounded-xl p-1">
+          <div className="inline-flex gap-1 bg-canvas border border-line rounded-xl p-1">
             <button
               onClick={() => setMode('ia')}
               className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                mode === 'ia' ? 'bg-[#3b82f6] text-white' : 'text-[#94a3b8] hover:text-[#f1f5f9]'
+                mode === 'ia' ? 'bg-accent text-on-accent' : 'text-ink-3 hover:text-ink'
               }`}
             >
               Para IA
@@ -745,7 +745,7 @@ export default function CreativeOnePager({
             <button
               onClick={() => setMode('equipo')}
               className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                mode === 'equipo' ? 'bg-[#8b5cf6] text-white' : 'text-[#94a3b8] hover:text-[#f1f5f9]'
+                mode === 'equipo' ? 'bg-accent text-on-accent' : 'text-ink-3 hover:text-ink'
               }`}
             >
               Para mi equipo
@@ -755,7 +755,7 @@ export default function CreativeOnePager({
             <button
               onClick={onGenerateVariants}
               disabled={isGeneratingVariants}
-              className="text-xs px-4 py-2 rounded-lg border border-[#1e1e2e] text-[#94a3b8] hover:text-[#f1f5f9] hover:border-[#3b82f6]/40 transition-colors disabled:opacity-50"
+              className="text-xs px-4 py-2 rounded-lg border border-line text-ink-3 hover:text-ink hover:border-accent/40 transition-colors disabled:opacity-50"
             >
               {isGeneratingVariants ? 'Generando…' : 'Generar más variantes'}
             </button>
@@ -763,37 +763,37 @@ export default function CreativeOnePager({
         </div>
 
         {(analysis.keep ?? []).length > 0 && (
-          <div className="rounded-xl bg-[#0a0a0f] border border-[#22c55e]/20 p-3 mb-4">
-            <p className="flex items-center gap-2 text-[10px] uppercase tracking-wide text-[#4ade80] mb-1.5">
+          <div className="rounded-xl bg-canvas border border-ok/20 p-3 mb-4">
+            <p className="flex items-center gap-2 text-[10px] uppercase tracking-wide text-ok mb-1.5">
               <Lock className="w-3 h-3" />
               Esto no debe cambiar en ninguna variante
             </p>
-            <Tags items={analysis.keep ?? []} tone="text-[#cbd5e1]" />
+            <Tags items={analysis.keep ?? []} tone="text-ink-2" />
           </div>
         )}
 
         <div className="space-y-3">
           {variants.length === 0 && (
-            <p className="text-sm text-[#64748b]">Este análisis no incluyó variantes.</p>
+            <p className="text-sm text-ink-4">Este análisis no incluyó variantes.</p>
           )}
           {variants.map((v) => {
             const text = mode === 'ia' ? v.prompt : v.teamBrief;
             return (
-              <div key={v.id} className="rounded-xl border border-[#1e1e2e] bg-[#0a0a0f] p-4">
+              <div key={v.id} className="rounded-xl border border-line bg-canvas p-4">
                 <div className="flex items-center justify-between gap-3 mb-2">
                   <div className="flex items-center gap-2 min-w-0">
                     <span
                       className={`text-xs font-bold px-2 py-0.5 rounded-md shrink-0 ${
-                        mode === 'ia' ? 'bg-[#3b82f6]/15 text-[#60a5fa]' : 'bg-[#8b5cf6]/15 text-[#a78bfa]'
+                        mode === 'ia' ? 'bg-accent/15 text-accent' : 'bg-accent/15 text-accent'
                       }`}
                     >
                       {v.title}
                     </span>
-                    {v.subtitle && <span className="text-xs text-[#94a3b8] truncate">{v.subtitle}</span>}
+                    {v.subtitle && <span className="text-xs text-ink-3 truncate">{v.subtitle}</span>}
                   </div>
                   <CopyButton text={text} label={mode === 'ia' ? 'Copiar prompt' : 'Copiar brief'} />
                 </div>
-                <p className="text-sm text-[#cbd5e1] leading-relaxed whitespace-pre-wrap">{text || '—'}</p>
+                <p className="text-sm text-ink-2 leading-relaxed whitespace-pre-wrap">{text || '—'}</p>
               </div>
             );
           })}

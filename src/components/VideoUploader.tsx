@@ -99,9 +99,9 @@ export default function VideoUploader({ onAnalyze, isProcessing, progress }: Vid
 
   const getProgressColor = (stage: string) => {
     switch (stage) {
-      case 'complete': return 'from-emerald-500 to-emerald-400';
-      case 'error': return 'from-rose-500 to-rose-400';
-      default: return 'from-blue-500 to-cyan-400';
+      case 'complete': return 'bg-ok';
+      case 'error': return 'bg-danger';
+      default: return 'bg-accent';
     }
   };
 
@@ -120,26 +120,26 @@ export default function VideoUploader({ onAnalyze, isProcessing, progress }: Vid
           relative cursor-pointer rounded-xl border-2 border-dashed p-8
           transition-all duration-300 flex flex-col items-center justify-center gap-4
           ${isDragging
-            ? 'border-blue-500 bg-blue-500/10 scale-[1.02]'
-            : 'border-[#1e1e2e] bg-[#111118] hover:border-[#3b82f6]/50 hover:bg-[#111118]/80'
+            ? 'border-accent bg-accent/10 scale-[1.02]'
+            : 'border-line bg-surface hover:border-accent/50 hover:bg-surface/80'
           }
           ${isProcessing ? 'pointer-events-none opacity-60' : ''}
-        `}
+ `}
       >
         <motion.div
           animate={isDragging ? { scale: 1.2, rotate: 5 } : { scale: 1, rotate: 0 }}
           transition={{ type: 'spring', stiffness: 300 }}
         >
-          <Upload className="w-12 h-12 text-[#3b82f6]" />
+          <Upload className="w-12 h-12 text-accent" />
         </motion.div>
         <div className="text-center">
-          <p className="text-[#f1f5f9] text-lg font-medium">
+          <p className="text-ink text-lg font-medium">
             Arrastra y suelta videos MP4 aqui
           </p>
-          <p className="text-[#94a3b8] text-sm mt-1">
+          <p className="text-ink-3 text-sm mt-1">
             o haz clic para seleccionar archivos
           </p>
-          <p className="text-[#64748b] text-xs mt-2">
+          <p className="text-ink-4 text-xs mt-2">
             Maximo {MAX_FILES} archivos, 100MB cada uno
           </p>
         </div>
@@ -163,7 +163,7 @@ export default function VideoUploader({ onAnalyze, isProcessing, progress }: Vid
             className="space-y-1"
           >
             {errors.map((error, i) => (
-              <div key={i} className="flex items-center gap-2 text-sm text-[#f43f5e]">
+              <div key={i} className="flex items-center gap-2 text-sm text-danger">
                 <AlertCircle className="w-4 h-4 shrink-0" />
                 <span>{error}</span>
               </div>
@@ -186,32 +186,32 @@ export default function VideoUploader({ onAnalyze, isProcessing, progress }: Vid
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: 20, height: 0 }}
               transition={{ duration: 0.3 }}
-              className="bg-[#111118] border border-[#1e1e2e] rounded-xl p-4"
+              className="bg-surface border border-line rounded-xl p-4"
             >
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-3 min-w-0">
-                  <FileVideo className="w-5 h-5 text-[#3b82f6] shrink-0" />
+                  <FileVideo className="w-5 h-5 text-accent shrink-0" />
                   <div className="min-w-0">
-                    <p className="text-[#f1f5f9] text-sm font-medium truncate">
+                    <p className="text-ink text-sm font-medium truncate">
                       {file.name}
                     </p>
-                    <p className="text-[#64748b] text-xs">
+                    <p className="text-ink-4 text-xs">
                       {formatFileSize(file.size)}
                     </p>
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
                   <span className={`text-xs font-mono ${
-                    stage === 'complete' ? 'text-[#10b981]' :
-                    stage === 'error' ? 'text-[#f43f5e]' :
-                    'text-[#94a3b8]'
+                    stage === 'complete' ? 'text-ok' :
+                    stage === 'error' ? 'text-danger' :
+                    'text-ink-3'
                   }`}>
                     {stageLabels[stage] ?? stage}
                   </span>
                   {!isProcessing && (
                     <button
                       onClick={(e) => { e.stopPropagation(); removeFile(index); }}
-                      className="text-[#64748b] hover:text-[#f43f5e] transition-colors"
+                      className="text-ink-4 hover:text-danger transition-colors"
                     >
                       <X className="w-4 h-4" />
                     </button>
@@ -221,27 +221,27 @@ export default function VideoUploader({ onAnalyze, isProcessing, progress }: Vid
 
               {/* Progress Bar */}
               {stage !== 'idle' && stage !== 'complete' && stage !== 'error' && (
-                <div className="h-1.5 bg-[#1e1e2e] rounded-full overflow-hidden">
+                <div className="h-1.5 bg-surface-2 rounded-full overflow-hidden">
                   <motion.div
-                    className={`h-full rounded-full bg-gradient-to-r ${getProgressColor(stage)}`}
+                    className={`h-full rounded-full ${getProgressColor(stage)}`}
                     initial={{ width: 0 }}
                     animate={{ width: `${percent}%` }}
                     transition={{ duration: 0.5, ease: 'easeOut' }}
                   >
-                    <div className="w-full h-full bg-gradient-to-r from-transparent via-white/20 to-transparent animate-[shimmer_2s_infinite]" />
+                    <div className="w-full h-full bg-transparent animate-[shimmer_2s_infinite]" />
                   </motion.div>
                 </div>
               )}
 
               {stage === 'complete' && (
-                <div className="h-1.5 bg-[#1e1e2e] rounded-full overflow-hidden">
-                  <div className="h-full w-full rounded-full bg-gradient-to-r from-emerald-500 to-emerald-400" />
+                <div className="h-1.5 bg-surface-2 rounded-full overflow-hidden">
+                  <div className="h-full w-full rounded-full bg-ok" />
                 </div>
               )}
 
               {stage === 'error' && (
-                <div className="h-1.5 bg-[#1e1e2e] rounded-full overflow-hidden">
-                  <div className="h-full w-full rounded-full bg-gradient-to-r from-rose-500 to-rose-400" />
+                <div className="h-1.5 bg-surface-2 rounded-full overflow-hidden">
+                  <div className="h-full w-full rounded-full bg-danger" />
                 </div>
               )}
             </motion.div>
@@ -251,7 +251,7 @@ export default function VideoUploader({ onAnalyze, isProcessing, progress }: Vid
 
       {/* URL Input */}
       <div className="space-y-2">
-        <div className="flex items-center gap-2 text-[#94a3b8] text-sm">
+        <div className="flex items-center gap-2 text-ink-3 text-sm">
           <LinkIcon className="w-4 h-4" />
           <span>URLs de referencia (opcional)</span>
         </div>
@@ -261,11 +261,11 @@ export default function VideoUploader({ onAnalyze, isProcessing, progress }: Vid
           placeholder="Pega URLs de TikTok, Instagram, Facebook..."
           disabled={isProcessing}
           rows={3}
-          className="w-full bg-[#111118] border border-[#1e1e2e] rounded-xl p-4 text-[#f1f5f9] text-sm
-            placeholder:text-[#64748b] resize-none focus:outline-none focus:border-[#3b82f6]/50
+          className="w-full bg-surface border border-line rounded-xl p-4 text-ink text-sm
+            placeholder:text-ink-4 resize-none focus:outline-none focus:border-accent/50
             transition-colors disabled:opacity-50"
         />
-        <div className="flex items-center gap-2 text-[#64748b] text-xs">
+        <div className="flex items-center gap-2 text-ink-4 text-xs">
           <AlertCircle className="w-3 h-3" />
           <span>Para URLs, descarga el video primero y subelo como MP4</span>
         </div>
@@ -280,22 +280,22 @@ export default function VideoUploader({ onAnalyze, isProcessing, progress }: Vid
         className={`
           w-full py-4 px-8 rounded-xl text-lg font-semibold transition-all duration-300
           ${files.length > 0 && !isProcessing
-            ? 'bg-gradient-to-r from-[#3b82f6] to-[#2563eb] text-white shadow-lg shadow-blue-500/25 hover:shadow-blue-500/40'
-            : 'bg-[#1e1e2e] text-[#64748b] cursor-not-allowed'
+            ? 'bg-accent text-on-accent shadow-lg  hover:'
+            : 'bg-surface-2 text-ink-4 cursor-not-allowed'
           }
-        `}
+ `}
       >
         {isProcessing ? (
           <span className="flex items-center justify-center gap-3">
             <motion.div
               animate={{ rotate: 360 }}
               transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
-              className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full"
+              className="w-5 h-5 border-2 border-on-accent/30 border-t-white rounded-full"
             />
             Diseccionando...
           </span>
         ) : (
-          `Diseccionar ${files.length > 0 ? `(${files.length} video${files.length > 1 ? 's' : ''})` : ''}`
+ `Diseccionar ${files.length > 0 ? `(${files.length} video${files.length > 1 ? 's' : ''})` : ''}`
         )}
       </motion.button>
     </div>

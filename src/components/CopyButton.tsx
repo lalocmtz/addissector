@@ -39,11 +39,11 @@ export default function CopyButton({ text, label = 'Copiar', className = '' }: C
         inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-medium
         transition-all duration-200
         ${copied
-          ? 'bg-[#10b981]/15 text-[#10b981] border border-[#10b981]/25'
-          : 'bg-[#1e1e2e] text-[#94a3b8] border border-[#1e1e2e] hover:border-[#3b82f6]/40 hover:text-[#f1f5f9]'
+          ? 'bg-ok/15 text-ok border border-ok/25'
+          : 'bg-surface-2 text-ink-3 border border-line hover:border-accent/40 hover:text-ink'
         }
         ${className}
-      `}
+ `}
     >
       {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
       {copied ? 'Copiado' : label}

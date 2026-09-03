@@ -535,9 +535,9 @@ function AdDetail({ ad, brandId, eco, currency, onClose, onSaved, onAnalyze }: {
   const copyAllData = async () => {
     const m = (n: number | null | undefined) => f.money(n, currency);
     const lines = [
-      `AD: ${ad.ad_name} (meta ad_id ${ad.ad_id})`,
-      `Verdict: ${t(v.labelKey)} — ${v.why}`,
-      `Metrics (${ad.days} days, ${currency ?? '?'}): spend ${m(ad.spend)} · revenue ${m(ad.revenue)} · ROAS ${f.ratio(ad.roas)} · purchases ${f.num(ad.purchases)} · CPA ${m(ad.cpa)} · hook ${f.pct(ad.hook_rate)} · hold ${f.pct(ad.hold_rate, 0)} · ret25 ${f.pct(ad.ret25, 0)} · ret50 ${f.pct(ad.ret50, 0)} · ret75 ${f.pct(ad.ret75, 0)} · ret100 ${f.pct(ad.ret100, 0)} · CVR ${f.pct(ad.cvr, 2)} · CPM ${m(ad.cpm)} · CPC ${m(ad.cpc)} · cost/ATC ${m(ad.cost_atc)} · freq ${f.ratio(ad.freq, 1)} · clicks ${f.num(ad.link_clicks)}`,
+ `AD: ${ad.ad_name} (meta ad_id ${ad.ad_id})`,
+ `Verdict: ${t(v.labelKey)} — ${v.why}`,
+ `Metrics (${ad.days} days, ${currency ?? '?'}): spend ${m(ad.spend)} · revenue ${m(ad.revenue)} · ROAS ${f.ratio(ad.roas)} · purchases ${f.num(ad.purchases)} · CPA ${m(ad.cpa)} · hook ${f.pct(ad.hook_rate)} · hold ${f.pct(ad.hold_rate, 0)} · ret25 ${f.pct(ad.ret25, 0)} · ret50 ${f.pct(ad.ret50, 0)} · ret75 ${f.pct(ad.ret75, 0)} · ret100 ${f.pct(ad.ret100, 0)} · CVR ${f.pct(ad.cvr, 2)} · CPM ${m(ad.cpm)} · CPC ${m(ad.cpc)} · cost/ATC ${m(ad.cost_atc)} · freq ${f.ratio(ad.freq, 1)} · clicks ${f.num(ad.link_clicks)}`,
       '',
       'DAILY SERIES:',
       ...daily.map((d) => `${d.date}: spend ${m(d.spend)}, ROAS ${f.ratio(d.roas)}, hook ${f.pct(d.hook_rate)}, freq ${f.ratio(d.freq, 1)}`),

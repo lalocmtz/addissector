@@ -29,34 +29,34 @@ export default function ScriptBlock({
       className="space-y-6"
     >
       {/* Original Script */}
-      <div className="bg-[#0a0a0f] border border-[#1e1e2e] rounded-xl overflow-hidden">
-        <div className="px-5 py-3 border-b border-[#1e1e2e] flex items-center justify-between">
+      <div className="bg-canvas border border-line rounded-xl overflow-hidden">
+        <div className="px-5 py-3 border-b border-line flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <FileText className="w-4 h-4 text-[#10b981]" />
-            <h4 className="text-[#f1f5f9] text-sm font-semibold">Guion Original</h4>
+            <FileText className="w-4 h-4 text-ok" />
+            <h4 className="text-ink text-sm font-semibold">Guion Original</h4>
           </div>
           <CopyButton text={originalScript ?? ''} label="Copiar Guion Original" />
         </div>
         <div className="p-5">
-          <p className="text-[#f1f5f9] text-sm leading-relaxed whitespace-pre-wrap">
+          <p className="text-ink text-sm leading-relaxed whitespace-pre-wrap">
             {originalScript ?? ''}
           </p>
         </div>
       </div>
 
       {/* Variants Section */}
-      <div className="bg-[#0a0a0f] border border-[#1e1e2e] rounded-xl overflow-hidden">
+      <div className="bg-canvas border border-line rounded-xl overflow-hidden">
         <button
           onClick={() => setShowVariants(!showVariants)}
-          className="w-full px-5 py-3 border-b border-[#1e1e2e] flex items-center justify-between hover:bg-[#111118] transition-colors"
+          className="w-full px-5 py-3 border-b border-line flex items-center justify-between hover:bg-surface transition-colors"
         >
           <div className="flex items-center gap-2">
-            <FileText className="w-4 h-4 text-[#8b5cf6]" />
-            <h4 className="text-[#f1f5f9] text-sm font-semibold">
+            <FileText className="w-4 h-4 text-accent" />
+            <h4 className="text-ink text-sm font-semibold">
               Variantes del Guion ({(variants ?? []).length})
             </h4>
           </div>
-          {showVariants ? <ChevronUp className="w-4 h-4 text-[#64748b]" /> : <ChevronDown className="w-4 h-4 text-[#64748b]" />}
+          {showVariants ? <ChevronUp className="w-4 h-4 text-ink-4" /> : <ChevronDown className="w-4 h-4 text-ink-4" />}
         </button>
 
         <AnimatePresence>
@@ -70,16 +70,16 @@ export default function ScriptBlock({
             >
               <div className="p-5 space-y-4">
                 {(variants ?? []).map((variant, i) => (
-                  <div key={i} className="border border-[#1e1e2e] rounded-xl overflow-hidden">
-                    <div className="px-4 py-2.5 bg-[#111118] flex items-center justify-between">
+                  <div key={i} className="border border-line rounded-xl overflow-hidden">
+                    <div className="px-4 py-2.5 bg-surface flex items-center justify-between">
                       <div>
-                        <span className="text-[#8b5cf6] text-xs font-semibold">Variante {variant.variant_number ?? i + 1}</span>
-                        <span className="text-[#64748b] text-xs ml-2">— {variant.scenario ?? ''}</span>
+                        <span className="text-accent text-xs font-semibold">Variante {variant.variant_number ?? i + 1}</span>
+                        <span className="text-ink-4 text-xs ml-2">— {variant.scenario ?? ''}</span>
                       </div>
                       <CopyButton text={variant.script ?? ''} label={`Copiar Variante ${variant.variant_number ?? i + 1}`} />
                     </div>
                     <div className="p-4">
-                      <p className="text-[#f1f5f9] text-sm leading-relaxed whitespace-pre-wrap">
+                      <p className="text-ink text-sm leading-relaxed whitespace-pre-wrap">
                         {variant.script ?? ''}
                       </p>
                     </div>
@@ -91,7 +91,7 @@ export default function ScriptBlock({
                     onClick={onGenerateMore}
                     disabled={isGenerating}
                     className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium
-                      bg-[#1e1e2e] text-[#94a3b8] hover:text-[#f1f5f9] hover:bg-[#2a2a3e]
+                      bg-surface-2 text-ink-3 hover:text-ink hover:bg-surface-2
                       transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {isGenerating ? (

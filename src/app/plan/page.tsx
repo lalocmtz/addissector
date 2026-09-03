@@ -67,20 +67,20 @@ const roasFmt = (n: number | null | undefined) => (n == null ? '—' : n.toFixed
 
 function verdictCls(id: string): string {
   switch (id) {
-    case 'ganador': return 'border-[#22c55e]/40 text-[#4ade80] bg-[#22c55e]/5';
-    case 'fatiga': return 'border-[#f59e0b]/40 text-[#fbbf24] bg-[#f59e0b]/5';
-    case 'prometedor': return 'border-[#3b82f6]/40 text-[#60a5fa] bg-[#3b82f6]/5';
-    case 'recortar': return 'border-[#ef4444]/40 text-[#f87171] bg-[#ef4444]/5';
-    case 'sin_gasto': return 'border-[#334155] text-[#64748b]';
-    default: return 'border-[#334155] text-[#94a3b8]';
+    case 'ganador': return 'border-ok/40 text-ok bg-ok/5';
+    case 'fatiga': return 'border-warn/40 text-warn bg-warn/5';
+    case 'prometedor': return 'border-accent/40 text-accent bg-accent/5';
+    case 'recortar': return 'border-danger/40 text-danger bg-danger/5';
+    case 'sin_gasto': return 'border-line-strong text-ink-4';
+    default: return 'border-line-strong text-ink-3';
   }
 }
 
 function roasCls(roas: number | null, eco: Economics): string {
-  if (roas == null) return 'text-[#64748b]';
-  if (roas >= eco.target) return 'text-[#4ade80]';
-  if (roas >= eco.breakeven) return 'text-[#facc15]';
-  return 'text-[#f87171]';
+  if (roas == null) return 'text-ink-4';
+  if (roas >= eco.target) return 'text-ok';
+  if (roas >= eco.breakeven) return 'text-warn';
+  return 'text-danger';
 }
 
 function CopyChip({ text }: { text: string }) {
@@ -88,10 +88,10 @@ function CopyChip({ text }: { text: string }) {
   return (
     <button
       onClick={() => { navigator.clipboard.writeText(text); setDone(true); setTimeout(() => setDone(false), 1200); }}
-      className="inline-flex items-center gap-1.5 text-[10px] font-[family-name:var(--font-mono)] px-2 py-1 rounded border border-[#1e1e2e] text-[#94a3b8] hover:text-[#f1f5f9] hover:border-[#3b82f6]/50 transition-colors"
+      className="inline-flex items-center gap-1.5 text-[10px] font-[family-name:var(--font-mono)] px-2 py-1 rounded border border-line text-ink-3 hover:text-ink hover:border-accent/50 transition-colors"
       title="Copiar para pegar en Meta"
     >
-      {done ? <Check className="w-3 h-3 text-[#4ade80]" /> : <Copy className="w-3 h-3" />}
+      {done ? <Check className="w-3 h-3 text-ok" /> : <Copy className="w-3 h-3" />}
       {text}
     </button>
   );
@@ -100,8 +100,8 @@ function CopyChip({ text }: { text: string }) {
 function Metric({ label, value, cls }: { label: string; value: string; cls?: string }) {
   return (
     <div>
-      <p className="text-[9px] uppercase tracking-wide text-[#64748b]">{label}</p>
-      <p className={`text-sm font-[family-name:var(--font-mono)] ${cls ?? 'text-[#e2e8f0]'}`}>{value}</p>
+      <p className="text-[9px] uppercase tracking-wide text-ink-4">{label}</p>
+      <p className={`text-sm font-[family-name:var(--font-mono)] ${cls ?? 'text-ink'}`}>{value}</p>
     </div>
   );
 }
@@ -168,18 +168,18 @@ export default function PlanPage() {
               <h1 className="text-xl font-bold font-[family-name:var(--font-mono)] tracking-tight">
                 Planificación · {activeBrand?.name ?? ''}
               </h1>
-              <p className="text-xs text-[#64748b] mt-0.5">
+              <p className="text-xs text-ink-4 mt-0.5">
                 Persona → Ángulo → Concepto → Anuncio. Planeas aquí, se valida con tu export de Meta.
               </p>
             </div>
             <div className="flex items-center gap-2">
-              <div className="flex rounded-lg border border-[#1e1e2e] overflow-hidden">
+              <div className="flex rounded-lg border border-line overflow-hidden">
                 {[7, 14, 30, 90].map((d) => (
                   <button
                     key={d}
                     onClick={() => setDays(d)}
                     className={`text-xs px-2.5 py-1.5 transition-colors ${
-                      days === d ? 'bg-[#1e1e2e] text-[#f1f5f9]' : 'text-[#64748b] hover:text-[#94a3b8]'
+                      days === d ? 'bg-surface-2 text-ink' : 'text-ink-4 hover:text-ink-3'
                     }`}
                   >
                     {d}d
@@ -188,7 +188,7 @@ export default function PlanPage() {
               </div>
               <button
                 onClick={() => setNewOpen(true)}
-                className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg gradient-blue text-white font-medium"
+                className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg gradient-blue text-on-accent font-medium"
               >
                 <Plus className="w-4 h-4" /> Nuevo concepto
               </button>
@@ -203,18 +203,18 @@ export default function PlanPage() {
               { l: 'Subidos', v: String(counts.subido), i: <ChevronRight className="w-3.5 h-3.5" /> },
               { l: 'Validados', v: String(counts.ganadores), i: <Trophy className="w-3.5 h-3.5" /> },
             ].map((k) => (
-              <div key={k.l} className="rounded-xl border border-[#1e1e2e] bg-[#0d0d14] px-4 py-3">
-                <p className="text-[10px] uppercase tracking-wide text-[#64748b] flex items-center gap-1.5">{k.i}{k.l}</p>
-                <p className="text-2xl font-[family-name:var(--font-mono)] text-[#f1f5f9] mt-0.5">{k.v}</p>
+              <div key={k.l} className="rounded-xl border border-line bg-surface px-4 py-3">
+                <p className="text-[10px] uppercase tracking-wide text-ink-4 flex items-center gap-1.5">{k.i}{k.l}</p>
+                <p className="text-2xl font-[family-name:var(--font-mono)] text-ink mt-0.5">{k.v}</p>
               </div>
             ))}
           </div>
 
           {/* Aviso de anuncios sin planear */}
           {board && unplannedShare > 0.3 && (
-            <div className="rounded-xl border border-[#f59e0b]/30 bg-[#f59e0b]/5 px-4 py-3 mb-5 flex items-start gap-3">
-              <AlertTriangle className="w-4 h-4 text-[#fbbf24] mt-0.5 shrink-0" />
-              <div className="text-xs text-[#fbbf24]">
+            <div className="rounded-xl border border-warn/30 bg-warn/5 px-4 py-3 mb-5 flex items-start gap-3">
+              <AlertTriangle className="w-4 h-4 text-warn mt-0.5 shrink-0" />
+              <div className="text-xs text-warn">
                 <span className="font-semibold">
                   El {Math.round(unplannedShare * 100)}% de tu gasto está en anuncios que no existen en la planificación
                 </span>{' '}
@@ -225,7 +225,7 @@ export default function PlanPage() {
           )}
 
           {/* Pestañas */}
-          <div className="flex gap-1 mb-4 border-b border-[#1e1e2e]">
+          <div className="flex gap-1 mb-4 border-b border-line">
             {([
               ['tablero', 'Tablero', <LayoutGrid key="a" className="w-3.5 h-3.5" />],
               ['conceptos', 'Conceptos', <Layers key="b" className="w-3.5 h-3.5" />],
@@ -237,8 +237,8 @@ export default function PlanPage() {
                 onClick={() => setTab(id)}
                 className={`flex items-center gap-1.5 text-sm px-3 py-2 border-b-2 -mb-px transition-colors ${
                   tab === id
-                    ? 'border-[#3b82f6] text-[#f1f5f9]'
-                    : 'border-transparent text-[#64748b] hover:text-[#94a3b8]'
+                    ? 'border-accent text-ink'
+                    : 'border-transparent text-ink-4 hover:text-ink-3'
                 }`}
               >
                 {icon}{label}
@@ -247,7 +247,7 @@ export default function PlanPage() {
           </div>
 
           {loading && !board && (
-            <div className="flex items-center gap-2 text-sm text-[#64748b] py-16 justify-center">
+            <div className="flex items-center gap-2 text-sm text-ink-4 py-16 justify-center">
               <Loader2 className="w-4 h-4 animate-spin" /> Cargando el tablero…
             </div>
           )}
@@ -321,7 +321,7 @@ function BoardView({
                   <span className={`text-[10px] uppercase tracking-wide px-2 py-0.5 rounded border ${s.cls}`}>
                     {s.label}
                   </span>
-                  <span className="text-[10px] text-[#475569] font-[family-name:var(--font-mono)]">{items.length}</span>
+                  <span className="text-[10px] text-ink-4 font-[family-name:var(--font-mono)]">{items.length}</span>
                 </div>
                 <div className="space-y-2">
                   {items.map((c) => {
@@ -329,24 +329,24 @@ function BoardView({
                     return (
                       <div
                         key={c.id}
-                        className="rounded-lg border border-[#1e1e2e] bg-[#0d0d14] p-3 hover:border-[#3b82f6]/40 transition-colors cursor-pointer"
+                        className="rounded-lg border border-line bg-surface p-3 hover:border-accent/40 transition-colors cursor-pointer"
                         onClick={() => onOpen(c.id)}
                       >
-                        <p className="text-[10px] font-[family-name:var(--font-mono)] text-[#64748b]">{c.code}</p>
-                        <p className="text-xs text-[#e2e8f0] font-medium mt-0.5 leading-snug">{c.name}</p>
+                        <p className="text-[10px] font-[family-name:var(--font-mono)] text-ink-4">{c.code}</p>
+                        <p className="text-xs text-ink font-medium mt-0.5 leading-snug">{c.name}</p>
                         <div className="flex flex-wrap items-center gap-1.5 mt-2">
                           {angle && (
-                            <span className="text-[9px] px-1.5 py-0.5 rounded bg-[#1e1e2e] text-[#94a3b8] font-[family-name:var(--font-mono)]">
+                            <span className="text-[9px] px-1.5 py-0.5 rounded bg-surface-2 text-ink-3 font-[family-name:var(--font-mono)]">
                               {angle.code}
                             </span>
                           )}
                           {c.narrative_format && (
-                            <span className="text-[9px] text-[#64748b]">{c.narrative_format}</span>
+                            <span className="text-[9px] text-ink-4">{c.narrative_format}</span>
                           )}
                         </div>
                         {c.metrics.spend > 0 && (
-                          <div className="flex items-center gap-3 mt-2 pt-2 border-t border-[#15151f]">
-                            <span className="text-[10px] font-[family-name:var(--font-mono)] text-[#94a3b8]">
+                          <div className="flex items-center gap-3 mt-2 pt-2 border-t border-surface-2">
+                            <span className="text-[10px] font-[family-name:var(--font-mono)] text-ink-3">
                               {money(c.metrics.spend)}
                             </span>
                             <span className={`text-[10px] font-[family-name:var(--font-mono)] ${roasCls(c.metrics.roas, eco)}`}>
@@ -363,7 +363,7 @@ function BoardView({
                               key={x.id}
                               onClick={() => move(c.id, x.id)}
                               title={`Mover a ${x.label}`}
-                              className="w-4 h-1 rounded-full bg-[#1e1e2e] hover:bg-[#3b82f6] transition-colors"
+                              className="w-4 h-1 rounded-full bg-surface-2 hover:bg-accent transition-colors"
                             />
                           ))}
                         </div>
@@ -371,8 +371,8 @@ function BoardView({
                     );
                   })}
                   {items.length === 0 && (
-                    <div className="rounded-lg border border-dashed border-[#15151f] py-6 text-center">
-                      <p className="text-[10px] text-[#334155]">Vacío</p>
+                    <div className="rounded-lg border border-dashed border-surface-2 py-6 text-center">
+                      <p className="text-[10px] text-line-strong">Vacío</p>
                     </div>
                   )}
                 </div>
@@ -387,10 +387,10 @@ function BoardView({
         <RankPanel title="Ángulos validados" icon={<Target className="w-3.5 h-3.5" />}>
           {board.rankings.angles.length === 0 && <Empty>Todavía no hay ángulos con gasto suficiente para opinar.</Empty>}
           {board.rankings.angles.map((a) => (
-            <div key={a.id} className="flex items-center gap-2 py-1.5 border-b border-[#15151f] last:border-0">
-              <span className="text-[10px] font-[family-name:var(--font-mono)] text-[#94a3b8] w-20 truncate">{a.code}</span>
-              <span className="text-[10px] text-[#64748b] flex-1 truncate">{a.concepts} conc.</span>
-              <span className="text-[10px] font-[family-name:var(--font-mono)] text-[#64748b]">{money(a.metrics.spend)}</span>
+            <div key={a.id} className="flex items-center gap-2 py-1.5 border-b border-surface-2 last:border-0">
+              <span className="text-[10px] font-[family-name:var(--font-mono)] text-ink-3 w-20 truncate">{a.code}</span>
+              <span className="text-[10px] text-ink-4 flex-1 truncate">{a.concepts} conc.</span>
+              <span className="text-[10px] font-[family-name:var(--font-mono)] text-ink-4">{money(a.metrics.spend)}</span>
               <span className={`text-[11px] font-[family-name:var(--font-mono)] w-10 text-right ${roasCls(a.metrics.roas, eco)}`}>
                 {roasFmt(a.metrics.roas)}
               </span>
@@ -401,10 +401,10 @@ function BoardView({
         <RankPanel title="Formatos narrativos" icon={<Layers className="w-3.5 h-3.5" />}>
           {board.rankings.formats.length === 0 && <Empty>Asigna un formato narrativo a tus conceptos para ver cuál gana.</Empty>}
           {board.rankings.formats.map((f) => (
-            <div key={f.format} className="flex items-center gap-2 py-1.5 border-b border-[#15151f] last:border-0">
-              <span className="text-[10px] text-[#e2e8f0] flex-1 truncate">{f.format}</span>
-              <span className="text-[10px] text-[#64748b]">{f.concepts}</span>
-              <span className="text-[10px] font-[family-name:var(--font-mono)] text-[#64748b]">{money(f.metrics.spend)}</span>
+            <div key={f.format} className="flex items-center gap-2 py-1.5 border-b border-surface-2 last:border-0">
+              <span className="text-[10px] text-ink flex-1 truncate">{f.format}</span>
+              <span className="text-[10px] text-ink-4">{f.concepts}</span>
+              <span className="text-[10px] font-[family-name:var(--font-mono)] text-ink-4">{money(f.metrics.spend)}</span>
               <span className={`text-[11px] font-[family-name:var(--font-mono)] w-10 text-right ${roasCls(f.metrics.roas, eco)}`}>
                 {roasFmt(f.metrics.roas)}
               </span>
@@ -414,13 +414,13 @@ function BoardView({
 
         {board.unplanned.count > 0 && (
           <RankPanel title={`Sin planear (${board.unplanned.count})`} icon={<AlertTriangle className="w-3.5 h-3.5" />}>
-            <p className="text-[10px] text-[#64748b] mb-2">
+            <p className="text-[10px] text-ink-4 mb-2">
               Corren en Meta pero no salieron de un concepto. Créales uno para que entren al aprendizaje.
             </p>
             {board.unplanned.top.slice(0, 8).map((o) => (
-              <div key={o.ad_name} className="flex items-center gap-2 py-1.5 border-b border-[#15151f] last:border-0">
-                <span className="text-[10px] text-[#94a3b8] flex-1 truncate" title={o.ad_name}>{o.ad_name}</span>
-                <span className="text-[10px] font-[family-name:var(--font-mono)] text-[#64748b]">{money(o.spend)}</span>
+              <div key={o.ad_name} className="flex items-center gap-2 py-1.5 border-b border-surface-2 last:border-0">
+                <span className="text-[10px] text-ink-3 flex-1 truncate" title={o.ad_name}>{o.ad_name}</span>
+                <span className="text-[10px] font-[family-name:var(--font-mono)] text-ink-4">{money(o.spend)}</span>
                 <span className={`text-[11px] font-[family-name:var(--font-mono)] w-10 text-right ${roasCls(o.roas, eco)}`}>
                   {roasFmt(o.roas)}
                 </span>
@@ -435,8 +435,8 @@ function BoardView({
 
 function RankPanel({ title, icon, children }: { title: string; icon: React.ReactNode; children: React.ReactNode }) {
   return (
-    <div className="rounded-xl border border-[#1e1e2e] bg-[#0d0d14] p-4">
-      <h3 className="text-[10px] font-bold uppercase tracking-wide text-[#94a3b8] mb-2 flex items-center gap-1.5">
+    <div className="rounded-xl border border-line bg-surface p-4">
+      <h3 className="text-[10px] font-bold uppercase tracking-wide text-ink-3 mb-2 flex items-center gap-1.5">
         {icon}{title}
       </h3>
       {children}
@@ -444,7 +444,7 @@ function RankPanel({ title, icon, children }: { title: string; icon: React.React
   );
 }
 function Empty({ children }: { children: React.ReactNode }) {
-  return <p className="text-[10px] text-[#475569] py-2">{children}</p>;
+  return <p className="text-[10px] text-ink-4 py-2">{children}</p>;
 }
 
 // ---------------------------------------------------------------------------
@@ -452,10 +452,10 @@ function Empty({ children }: { children: React.ReactNode }) {
 // ---------------------------------------------------------------------------
 function ConceptsTable({ board, eco, onOpen }: { board: Board; eco: Economics; onOpen: (id: string) => void }) {
   return (
-    <div className="rounded-xl border border-[#1e1e2e] bg-[#0d0d14] overflow-x-auto">
+    <div className="rounded-xl border border-line bg-surface overflow-x-auto">
       <table className="w-full text-xs">
         <thead>
-          <tr className="text-[10px] uppercase tracking-wide text-[#64748b] border-b border-[#1e1e2e]">
+          <tr className="text-[10px] uppercase tracking-wide text-ink-4 border-b border-line">
             <th className="text-left px-3 py-2.5 font-medium">Concepto</th>
             <th className="text-left px-3 py-2.5 font-medium">Ángulo</th>
             <th className="text-left px-3 py-2.5 font-medium">Formato</th>
@@ -475,32 +475,32 @@ function ConceptsTable({ board, eco, onOpen }: { board: Board; eco: Economics; o
               <tr
                 key={c.id}
                 onClick={() => onOpen(c.id)}
-                className="border-b border-[#15151f] last:border-0 hover:bg-[#111118] cursor-pointer"
+                className="border-b border-surface-2 last:border-0 hover:bg-surface cursor-pointer"
               >
                 <td className="px-3 py-2.5">
-                  <p className="font-[family-name:var(--font-mono)] text-[10px] text-[#64748b]">{c.code}</p>
-                  <p className="text-[#e2e8f0]">{c.name}</p>
+                  <p className="font-[family-name:var(--font-mono)] text-[10px] text-ink-4">{c.code}</p>
+                  <p className="text-ink">{c.name}</p>
                 </td>
-                <td className="px-3 py-2.5 font-[family-name:var(--font-mono)] text-[10px] text-[#94a3b8]">{angle?.code ?? '—'}</td>
-                <td className="px-3 py-2.5 text-[#94a3b8]">{c.narrative_format ?? '—'}</td>
-                <td className="px-3 py-2.5 text-right font-[family-name:var(--font-mono)] text-[#94a3b8]">
+                <td className="px-3 py-2.5 font-[family-name:var(--font-mono)] text-[10px] text-ink-3">{angle?.code ?? '—'}</td>
+                <td className="px-3 py-2.5 text-ink-3">{c.narrative_format ?? '—'}</td>
+                <td className="px-3 py-2.5 text-right font-[family-name:var(--font-mono)] text-ink-3">
                   {c.metrics.adsWithData}/{c.metrics.ads}
                 </td>
-                <td className="px-3 py-2.5 text-right font-[family-name:var(--font-mono)] text-[#e2e8f0]">{money(c.metrics.spend)}</td>
+                <td className="px-3 py-2.5 text-right font-[family-name:var(--font-mono)] text-ink">{money(c.metrics.spend)}</td>
                 <td className={`px-3 py-2.5 text-right font-[family-name:var(--font-mono)] ${roasCls(c.metrics.roas, eco)}`}>
                   {roasFmt(c.metrics.roas)}
                 </td>
-                <td className="px-3 py-2.5 text-right font-[family-name:var(--font-mono)] text-[#94a3b8]">{money(c.metrics.cpa)}</td>
-                <td className="px-3 py-2.5 text-right font-[family-name:var(--font-mono)] text-[#94a3b8]">{pct(c.metrics.hookRate)}</td>
+                <td className="px-3 py-2.5 text-right font-[family-name:var(--font-mono)] text-ink-3">{money(c.metrics.cpa)}</td>
+                <td className="px-3 py-2.5 text-right font-[family-name:var(--font-mono)] text-ink-3">{pct(c.metrics.hookRate)}</td>
                 <td className="px-3 py-2.5">
                   <span className={`text-[9px] px-1.5 py-0.5 rounded border ${verdictCls(c.verdict.id)}`}>{c.verdict.label}</span>
                 </td>
-                <td className="px-3 py-2.5 text-[10px] text-[#64748b] max-w-[280px]">{c.verdict.action}</td>
+                <td className="px-3 py-2.5 text-[10px] text-ink-4 max-w-[280px]">{c.verdict.action}</td>
               </tr>
             );
           })}
           {board.concepts.length === 0 && (
-            <tr><td colSpan={10} className="px-3 py-10 text-center text-[#64748b]">
+            <tr><td colSpan={10} className="px-3 py-10 text-center text-ink-4">
               Todavía no hay conceptos. Crea el primero — es la unidad que se briefea y se aprende.
             </td></tr>
           )}
@@ -525,22 +525,22 @@ function AnglesTable({ board, eco, onChanged }: { board: Board; eco: Economics; 
   return (
     <div className="space-y-2">
       {[...board.angles].sort((a, b) => b.metrics.spend - a.metrics.spend).map((a) => (
-        <div key={a.id} className="rounded-xl border border-[#1e1e2e] bg-[#0d0d14] p-4">
+        <div key={a.id} className="rounded-xl border border-line bg-surface p-4">
           <div className="flex flex-wrap items-start gap-3">
             <div className="flex-1 min-w-[220px]">
               <div className="flex items-center gap-2">
-                <span className="text-[10px] font-[family-name:var(--font-mono)] px-1.5 py-0.5 rounded bg-[#1e1e2e] text-[#94a3b8]">
+                <span className="text-[10px] font-[family-name:var(--font-mono)] px-1.5 py-0.5 rounded bg-surface-2 text-ink-3">
                   {a.code}
                 </span>
-                <p className="text-sm text-[#f1f5f9] font-medium">{a.name}</p>
+                <p className="text-sm text-ink font-medium">{a.name}</p>
                 <span className={`text-[9px] px-1.5 py-0.5 rounded border ${verdictCls(a.verdict.id)}`}>{a.verdict.label}</span>
               </div>
-              <p className="text-[11px] text-[#64748b] mt-1">{a.verdict.why}</p>
-              <p className="text-[11px] text-[#60a5fa] mt-1.5 flex items-start gap-1.5">
+              <p className="text-[11px] text-ink-4 mt-1">{a.verdict.why}</p>
+              <p className="text-[11px] text-accent mt-1.5 flex items-start gap-1.5">
                 <Sparkles className="w-3 h-3 mt-0.5 shrink-0" />{a.verdict.action}
               </p>
               {a.learnings && (
-                <p className="text-[10px] text-[#475569] mt-1.5 italic">Aprendizaje: {a.learnings}</p>
+                <p className="text-[10px] text-ink-4 mt-1.5 italic">Aprendizaje: {a.learnings}</p>
               )}
             </div>
 
@@ -553,21 +553,21 @@ function AnglesTable({ board, eco, onChanged }: { board: Board; eco: Economics; 
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-1 mt-3 pt-3 border-t border-[#15151f]">
+          <div className="flex flex-wrap items-center gap-1 mt-3 pt-3 border-t border-surface-2">
             {ANGLE_STATUS.map((s) => (
               <button
                 key={s.id}
                 onClick={() => setStatus(a.id, s.id)}
                 className={`text-[9px] px-2 py-0.5 rounded border transition-colors ${
-                  a.status === s.id ? s.cls : 'border-transparent text-[#475569] hover:text-[#94a3b8]'
+                  a.status === s.id ? s.cls : 'border-transparent text-ink-4 hover:text-ink-3'
                 }`}
               >
                 {s.label}
               </button>
             ))}
             {a.bestConcept && (
-              <span className="ml-auto text-[10px] text-[#64748b]">
-                Mejor concepto: <span className="font-[family-name:var(--font-mono)] text-[#94a3b8]">{a.bestConcept.code}</span>
+              <span className="ml-auto text-[10px] text-ink-4">
+                Mejor concepto: <span className="font-[family-name:var(--font-mono)] text-ink-3">{a.bestConcept.code}</span>
                 {' · '}{roasFmt(a.bestConcept.roas)}x
               </span>
             )}
@@ -575,9 +575,9 @@ function AnglesTable({ board, eco, onChanged }: { board: Board; eco: Economics; 
         </div>
       ))}
       {board.angles.length === 0 && (
-        <div className="rounded-xl border border-dashed border-[#1e1e2e] p-10 text-center">
-          <Target className="w-8 h-8 text-[#334155] mx-auto mb-3" />
-          <p className="text-sm text-[#64748b]">
+        <div className="rounded-xl border border-dashed border-line p-10 text-center">
+          <Target className="w-8 h-8 text-line-strong mx-auto mb-3" />
+          <p className="text-sm text-ink-4">
             Sin ángulos todavía. Un ángulo es la razón por la que alguien compra: persona + dolor + mecanismo.
             De cada uno salen varios conceptos.
           </p>
@@ -627,13 +627,13 @@ function PersonasView({ board, brandId, onChanged }: { board: Board; brandId: st
           onChange={(e) => setName(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') add(); }}
           placeholder="Mujer de 34 que se depiló y le quedaron manchas…"
-          className="flex-1 rounded-lg border border-[#1e1e2e] bg-[#0d0d14] px-3 py-2 text-sm text-[#f1f5f9] focus:border-[#3b82f6] outline-none"
+          className="flex-1 rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink focus:border-accent outline-none"
         />
-        <button onClick={add} disabled={!name.trim() || saving} className="px-4 rounded-lg gradient-blue text-white disabled:opacity-50">
+        <button onClick={add} disabled={!name.trim() || saving} className="px-4 rounded-lg gradient-blue text-on-accent disabled:opacity-50">
           <Plus className="w-4 h-4" />
         </button>
       </div>
-      <p className="text-[11px] text-[#475569] mb-4 max-w-xl">
+      <p className="text-[11px] text-ink-4 mb-4 max-w-xl">
         Sé específico. &quot;Mujeres 25-45&quot; no es una persona: es un censo. Una persona es alguien
         con un problema concreto que puedes visualizar mientras escribes el guion.
       </p>
@@ -642,10 +642,10 @@ function PersonasView({ board, brandId, onChanged }: { board: Board; brandId: st
         {board.personas.map((p) => {
           const usedBy = board.angles.filter((a) => a.persona_id === p.id).length;
           return (
-            <div key={p.id} className="group rounded-xl border border-[#1e1e2e] bg-[#0d0d14] p-4">
+            <div key={p.id} className="group rounded-xl border border-line bg-surface p-4">
               <div className="flex items-start gap-2">
-                <p className="flex-1 text-sm text-[#f1f5f9] font-medium leading-snug">{p.name}</p>
-                <button onClick={() => remove(p.id)} className="opacity-0 group-hover:opacity-100 text-[#64748b] hover:text-[#f43f5e]">
+                <p className="flex-1 text-sm text-ink font-medium leading-snug">{p.name}</p>
+                <button onClick={() => remove(p.id)} className="opacity-0 group-hover:opacity-100 text-ink-4 hover:text-danger">
                   <X className="w-3.5 h-3.5" />
                 </button>
               </div>
@@ -654,9 +654,9 @@ function PersonasView({ board, brandId, onChanged }: { board: Board; brandId: st
                 onBlur={(e) => patch(p.id, 'description', e.target.value)}
                 rows={3}
                 placeholder="Qué vive el día que ve el anuncio. Dolores en sus palabras, no en las tuyas."
-                className="w-full mt-2 rounded-lg border border-[#15151f] bg-[#0a0a0f] px-2.5 py-2 text-xs text-[#cbd5e1] focus:border-[#3b82f6] outline-none resize-none"
+                className="w-full mt-2 rounded-lg border border-surface-2 bg-canvas px-2.5 py-2 text-xs text-ink-2 focus:border-accent outline-none resize-none"
               />
-              <p className="text-[10px] text-[#475569] mt-2">
+              <p className="text-[10px] text-ink-4 mt-2">
                 {usedBy} ángulo{usedBy === 1 ? '' : 's'} apuntan a esta persona
               </p>
             </div>
@@ -726,23 +726,23 @@ function NewConceptModal({
   };
 
   return (
-    <div className="fixed inset-0 z-[100] bg-black/70 backdrop-blur-sm flex items-start justify-center overflow-y-auto p-4">
-      <div className="w-full max-w-lg rounded-2xl border border-[#1e1e2e] bg-[#0d0d14] p-5 my-8">
+    <div className="fixed inset-0 z-[100] bg-overlay/70  flex items-start justify-center overflow-y-auto p-4">
+      <div className="w-full max-w-lg rounded-2xl border border-line bg-surface p-5 my-8">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-sm font-bold text-[#f1f5f9]">
+          <h2 className="text-sm font-bold text-ink">
             {created ? 'Concepto creado' : 'Nuevo concepto'}
           </h2>
-          <button onClick={created ? onCreated : onClose} className="text-[#64748b] hover:text-[#f1f5f9]">
+          <button onClick={created ? onCreated : onClose} className="text-ink-4 hover:text-ink">
             <X className="w-4 h-4" />
           </button>
         </div>
 
         {created ? (
           <div>
-            <p className="text-xs text-[#94a3b8] mb-1">
-              Código: <span className="font-[family-name:var(--font-mono)] text-[#f1f5f9]">{created.code}</span>
+            <p className="text-xs text-ink-3 mb-1">
+              Código: <span className="font-[family-name:var(--font-mono)] text-ink">{created.code}</span>
             </p>
-            <p className="text-[11px] text-[#64748b] mb-3">
+            <p className="text-[11px] text-ink-4 mb-3">
               Estos son los nombres exactos para pegar en Meta. Si los usas tal cual, el próximo export
               se conecta solo con este concepto y no tienes que mapear nada a mano.
             </p>
@@ -751,11 +751,11 @@ function NewConceptModal({
             </div>
             <button
               onClick={() => navigator.clipboard.writeText(created.ads.map((a) => a.ad_name).join('\n'))}
-              className="w-full py-2 rounded-lg border border-[#1e1e2e] text-xs text-[#94a3b8] hover:text-[#f1f5f9] mb-2"
+              className="w-full py-2 rounded-lg border border-line text-xs text-ink-3 hover:text-ink mb-2"
             >
               Copiar todos
             </button>
-            <button onClick={onCreated} className="w-full py-2 rounded-lg gradient-blue text-white text-sm font-medium">
+            <button onClick={onCreated} className="w-full py-2 rounded-lg gradient-blue text-on-accent text-sm font-medium">
               Listo
             </button>
           </div>
@@ -765,14 +765,14 @@ function NewConceptModal({
               <input
                 value={name} onChange={(e) => setName(e.target.value)} autoFocus
                 placeholder="Duelo de productos"
-                className="w-full rounded-lg border border-[#1e1e2e] bg-[#0a0a0f] px-3 py-2 text-sm text-[#f1f5f9] focus:border-[#3b82f6] outline-none"
+                className="w-full rounded-lg border border-line bg-canvas px-3 py-2 text-sm text-ink focus:border-accent outline-none"
               />
             </Field>
 
             <Field label="Ángulo (la razón de compra)">
               <select
                 value={angleId} onChange={(e) => setAngleId(e.target.value)}
-                className="w-full rounded-lg border border-[#1e1e2e] bg-[#0a0a0f] px-3 py-2 text-sm text-[#f1f5f9] focus:border-[#3b82f6] outline-none"
+                className="w-full rounded-lg border border-line bg-canvas px-3 py-2 text-sm text-ink focus:border-accent outline-none"
               >
                 <option value="">— Crear uno nuevo —</option>
                 {angles.map((a) => <option key={a.id} value={a.id}>{a.code} · {a.name}</option>)}
@@ -782,12 +782,12 @@ function NewConceptModal({
                   <input
                     value={newAngleCode} onChange={(e) => setNewAngleCode(e.target.value.toUpperCase())}
                     placeholder="CÓDIGO"
-                    className="rounded-lg border border-[#1e1e2e] bg-[#0a0a0f] px-2 py-1.5 text-xs font-[family-name:var(--font-mono)] text-[#f1f5f9] focus:border-[#3b82f6] outline-none"
+                    className="rounded-lg border border-line bg-canvas px-2 py-1.5 text-xs font-[family-name:var(--font-mono)] text-ink focus:border-accent outline-none"
                   />
                   <input
                     value={newAngleName} onChange={(e) => setNewAngleName(e.target.value)}
                     placeholder="Ya probé de todo y nada funcionó"
-                    className="rounded-lg border border-[#1e1e2e] bg-[#0a0a0f] px-2 py-1.5 text-xs text-[#f1f5f9] focus:border-[#3b82f6] outline-none"
+                    className="rounded-lg border border-line bg-canvas px-2 py-1.5 text-xs text-ink focus:border-accent outline-none"
                   />
                 </div>
               )}
@@ -797,7 +797,7 @@ function NewConceptModal({
               <Field label="Persona">
                 <select
                   value={personaId} onChange={(e) => setPersonaId(e.target.value)}
-                  className="w-full rounded-lg border border-[#1e1e2e] bg-[#0a0a0f] px-3 py-2 text-sm text-[#f1f5f9] focus:border-[#3b82f6] outline-none"
+                  className="w-full rounded-lg border border-line bg-canvas px-3 py-2 text-sm text-ink focus:border-accent outline-none"
                 >
                   <option value="">—</option>
                   {personas.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
@@ -806,7 +806,7 @@ function NewConceptModal({
               <Field label="Formato narrativo">
                 <select
                   value={format} onChange={(e) => setFormat(e.target.value)}
-                  className="w-full rounded-lg border border-[#1e1e2e] bg-[#0a0a0f] px-3 py-2 text-sm text-[#f1f5f9] focus:border-[#3b82f6] outline-none"
+                  className="w-full rounded-lg border border-line bg-canvas px-3 py-2 text-sm text-ink focus:border-accent outline-none"
                 >
                   <option value="">—</option>
                   {NARRATIVE_FORMATS.map((f) => <option key={f} value={f}>{f}</option>)}
@@ -818,7 +818,7 @@ function NewConceptModal({
               <textarea
                 value={hypothesis} onChange={(e) => setHypothesis(e.target.value)} rows={3}
                 placeholder="Creo que [persona] va a responder a [mensaje] porque [razón]. Espero hook rate > 25% y ROAS > 2."
-                className="w-full rounded-lg border border-[#1e1e2e] bg-[#0a0a0f] px-3 py-2 text-xs text-[#cbd5e1] focus:border-[#3b82f6] outline-none resize-none"
+                className="w-full rounded-lg border border-line bg-canvas px-3 py-2 text-xs text-ink-2 focus:border-accent outline-none resize-none"
               />
             </Field>
 
@@ -826,7 +826,7 @@ function NewConceptModal({
               <Field label="Quién lo produce">
                 <select
                   value={owner} onChange={(e) => setOwner(e.target.value)}
-                  className="w-full rounded-lg border border-[#1e1e2e] bg-[#0a0a0f] px-3 py-2 text-sm text-[#f1f5f9] focus:border-[#3b82f6] outline-none"
+                  className="w-full rounded-lg border border-line bg-canvas px-3 py-2 text-sm text-ink focus:border-accent outline-none"
                 >
                   <option value="">—</option>
                   {OWNERS.map((o) => <option key={o} value={o}>{o}</option>)}
@@ -836,16 +836,16 @@ function NewConceptModal({
                 <input
                   type="number" min={1} max={12} value={assets}
                   onChange={(e) => setAssets(Math.max(1, Math.min(12, Number(e.target.value))))}
-                  className="w-full rounded-lg border border-[#1e1e2e] bg-[#0a0a0f] px-3 py-2 text-sm text-[#f1f5f9] focus:border-[#3b82f6] outline-none"
+                  className="w-full rounded-lg border border-line bg-canvas px-3 py-2 text-sm text-ink focus:border-accent outline-none"
                 />
               </Field>
             </div>
 
-            {error && <p className="text-xs text-[#f87171]">{error}</p>}
+            {error && <p className="text-xs text-danger">{error}</p>}
 
             <button
               onClick={save} disabled={!name.trim() || saving}
-              className="w-full py-2.5 rounded-lg gradient-blue text-white text-sm font-medium disabled:opacity-50 flex items-center justify-center gap-2"
+              className="w-full py-2.5 rounded-lg gradient-blue text-on-accent text-sm font-medium disabled:opacity-50 flex items-center justify-center gap-2"
             >
               {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
               Crear y generar nombres
@@ -860,7 +860,7 @@ function NewConceptModal({
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
-      <label className="block text-[10px] uppercase tracking-wide text-[#64748b] mb-1">{label}</label>
+      <label className="block text-[10px] uppercase tracking-wide text-ink-4 mb-1">{label}</label>
       {children}
     </div>
   );
@@ -903,26 +903,26 @@ function ConceptDrawer({
 
   return (
     <div className="fixed inset-0 z-[100] flex justify-end">
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative w-full max-w-2xl h-full overflow-y-auto bg-[#0a0a0f] border-l border-[#1e1e2e] p-6">
+      <div className="absolute inset-0 bg-overlay/60 " onClick={onClose} />
+      <div className="relative w-full max-w-2xl h-full overflow-y-auto bg-canvas border-l border-line p-6">
         <div className="flex items-start justify-between gap-3 mb-4">
           <div>
-            <p className="text-[11px] font-[family-name:var(--font-mono)] text-[#64748b]">{concept.code}</p>
-            <h2 className="text-lg font-bold text-[#f1f5f9] leading-tight">{concept.name}</h2>
+            <p className="text-[11px] font-[family-name:var(--font-mono)] text-ink-4">{concept.code}</p>
+            <h2 className="text-lg font-bold text-ink leading-tight">{concept.name}</h2>
             <div className="flex flex-wrap items-center gap-2 mt-2">
               {angle && (
-                <span className="text-[10px] font-[family-name:var(--font-mono)] px-2 py-0.5 rounded bg-[#1e1e2e] text-[#94a3b8]">
+                <span className="text-[10px] font-[family-name:var(--font-mono)] px-2 py-0.5 rounded bg-surface-2 text-ink-3">
                   {angle.code}
                 </span>
               )}
-              {concept.narrative_format && <span className="text-[10px] text-[#64748b]">{concept.narrative_format}</span>}
-              {concept.owner && <span className="text-[10px] text-[#64748b]">· {concept.owner}</span>}
+              {concept.narrative_format && <span className="text-[10px] text-ink-4">{concept.narrative_format}</span>}
+              {concept.owner && <span className="text-[10px] text-ink-4">· {concept.owner}</span>}
               <span className={`text-[9px] px-1.5 py-0.5 rounded border ${verdictCls(concept.verdict.id)}`}>
                 {concept.verdict.label}
               </span>
             </div>
           </div>
-          <button onClick={onClose} className="text-[#64748b] hover:text-[#f1f5f9]"><X className="w-5 h-5" /></button>
+          <button onClick={onClose} className="text-ink-4 hover:text-ink"><X className="w-5 h-5" /></button>
         </div>
 
         {/* Veredicto y acción */}
@@ -935,7 +935,7 @@ function ConceptDrawer({
 
         {/* Resultados */}
         {concept.metrics.spend > 0 && (
-          <div className="grid grid-cols-3 sm:grid-cols-6 gap-3 rounded-xl border border-[#1e1e2e] bg-[#0d0d14] p-4 mb-4">
+          <div className="grid grid-cols-3 sm:grid-cols-6 gap-3 rounded-xl border border-line bg-surface p-4 mb-4">
             <Metric label="Gasto" value={money(concept.metrics.spend)} />
             <Metric label="ROAS" value={roasFmt(concept.metrics.roas)} cls={roasCls(concept.metrics.roas, eco)} />
             <Metric label="CPA" value={money(concept.metrics.cpa)} />
@@ -947,14 +947,14 @@ function ConceptDrawer({
 
         {/* Estado de producción */}
         <div className="mb-4">
-          <p className="text-[10px] uppercase tracking-wide text-[#64748b] mb-1.5">Estado</p>
+          <p className="text-[10px] uppercase tracking-wide text-ink-4 mb-1.5">Estado</p>
           <div className="flex flex-wrap gap-1">
             {CONCEPT_STATUS.map((s) => (
               <button
                 key={s.id}
                 onClick={() => patchConcept({ status: s.id })}
                 className={`text-[10px] px-2 py-1 rounded border transition-colors ${
-                  concept.status === s.id ? s.cls : 'border-[#1e1e2e] text-[#475569] hover:text-[#94a3b8]'
+                  concept.status === s.id ? s.cls : 'border-line text-ink-4 hover:text-ink-3'
                 }`}
               >
                 {s.label}
@@ -965,50 +965,50 @@ function ConceptDrawer({
 
         {/* Hipótesis */}
         {concept.hypothesis && (
-          <div className="rounded-xl border border-[#1e1e2e] bg-[#0d0d14] p-4 mb-4">
-            <p className="text-[10px] uppercase tracking-wide text-[#64748b] mb-1.5">Hipótesis</p>
-            <p className="text-xs text-[#cbd5e1] leading-relaxed">{concept.hypothesis}</p>
+          <div className="rounded-xl border border-line bg-surface p-4 mb-4">
+            <p className="text-[10px] uppercase tracking-wide text-ink-4 mb-1.5">Hipótesis</p>
+            <p className="text-xs text-ink-2 leading-relaxed">{concept.hypothesis}</p>
             {concept.origin === 'ganador' && concept.origin_ad_name && (
-              <p className="text-[10px] text-[#475569] mt-2">Nació de: {concept.origin_ad_name}</p>
+              <p className="text-[10px] text-ink-4 mt-2">Nació de: {concept.origin_ad_name}</p>
             )}
           </div>
         )}
 
         {/* Anuncios del concepto */}
-        <div className="rounded-xl border border-[#1e1e2e] bg-[#0d0d14] p-4 mb-4">
+        <div className="rounded-xl border border-line bg-surface p-4 mb-4">
           <div className="flex items-center justify-between mb-2">
-            <p className="text-[10px] uppercase tracking-wide text-[#64748b]">
+            <p className="text-[10px] uppercase tracking-wide text-ink-4">
               Anuncios ({concept.metrics.adsWithData} de {concept.ads.length} con datos)
             </p>
             <button
               onClick={() => navigator.clipboard.writeText(concept.ads.map((a) => a.ad_name).join('\n'))}
-              className="text-[10px] text-[#64748b] hover:text-[#f1f5f9] flex items-center gap-1"
+              className="text-[10px] text-ink-4 hover:text-ink flex items-center gap-1"
             >
               <Copy className="w-3 h-3" /> Copiar nombres
             </button>
           </div>
           <div className="space-y-2">
             {concept.ads.map((a) => (
-              <div key={a.id} className="rounded-lg border border-[#15151f] bg-[#0a0a0f] p-2.5">
+              <div key={a.id} className="rounded-lg border border-surface-2 bg-canvas p-2.5">
                 <div className="flex items-center gap-2 flex-wrap">
                   <CopyChip text={a.ad_name} />
                   {a.hasData ? (
                     <>
-                      <span className="text-[10px] font-[family-name:var(--font-mono)] text-[#94a3b8]">{money(a.spend)}</span>
+                      <span className="text-[10px] font-[family-name:var(--font-mono)] text-ink-3">{money(a.spend)}</span>
                       <span className={`text-[10px] font-[family-name:var(--font-mono)] ${roasCls(a.roas, eco)}`}>
                         {roasFmt(a.roas)}x
                       </span>
-                      <span className="text-[10px] font-[family-name:var(--font-mono)] text-[#64748b]">
+                      <span className="text-[10px] font-[family-name:var(--font-mono)] text-ink-4">
                         hook {pct(a.hook_rate)}
                       </span>
                     </>
                   ) : (
-                    <span className="text-[10px] text-[#475569]">sin datos en Meta todavía</span>
+                    <span className="text-[10px] text-ink-4">sin datos en Meta todavía</span>
                   )}
                   <select
                     value={a.status}
                     onChange={(e) => patchAd(a.id, { status: e.target.value })}
-                    className="ml-auto text-[10px] rounded border border-[#1e1e2e] bg-[#0a0a0f] px-1.5 py-0.5 text-[#94a3b8] outline-none"
+                    className="ml-auto text-[10px] rounded border border-line bg-canvas px-1.5 py-0.5 text-ink-3 outline-none"
                   >
                     {['planeado', 'produccion', 'listo', 'subido'].map((s) => <option key={s} value={s}>{s}</option>)}
                   </select>
@@ -1017,7 +1017,7 @@ function ConceptDrawer({
                   defaultValue={a.hook ?? ''}
                   onBlur={(e) => patchAd(a.id, { hook: e.target.value })}
                   placeholder="El hook literal — los primeros 2 segundos"
-                  className="w-full mt-2 rounded border border-[#15151f] bg-[#0d0d14] px-2 py-1.5 text-[11px] text-[#cbd5e1] focus:border-[#3b82f6] outline-none"
+                  className="w-full mt-2 rounded border border-surface-2 bg-surface px-2 py-1.5 text-[11px] text-ink-2 focus:border-accent outline-none"
                 />
               </div>
             ))}
@@ -1025,8 +1025,8 @@ function ConceptDrawer({
         </div>
 
         {/* Brief */}
-        <div className="rounded-xl border border-[#1e1e2e] bg-[#0d0d14] p-4">
-          <p className="text-[10px] uppercase tracking-wide text-[#64748b] mb-1.5">
+        <div className="rounded-xl border border-line bg-surface p-4">
+          <p className="text-[10px] uppercase tracking-wide text-ink-4 mb-1.5">
             Brief para el equipo
           </p>
           <textarea
@@ -1034,12 +1034,12 @@ function ConceptDrawer({
             onChange={(e) => setBrief(e.target.value)}
             rows={10}
             placeholder={'## La apuesta\nPersona · Dolor · Objeción a cerrar\n\n## Copy literal por slot\nHeadline: ""\nCTA: ""\n\n## Dirección de arte\nQué se ve · Qué NO debe aparecer\n\n## Lo que NO se toca\n'}
-            className="w-full rounded-lg border border-[#15151f] bg-[#0a0a0f] px-3 py-2 text-xs text-[#cbd5e1] focus:border-[#3b82f6] outline-none resize-y font-[family-name:var(--font-mono)]"
+            className="w-full rounded-lg border border-surface-2 bg-canvas px-3 py-2 text-xs text-ink-2 focus:border-accent outline-none resize-y font-[family-name:var(--font-mono)]"
           />
           <button
             onClick={saveBrief}
             disabled={savingBrief}
-            className="mt-2 px-3 py-1.5 rounded-lg border border-[#1e1e2e] text-xs text-[#94a3b8] hover:text-[#f1f5f9] disabled:opacity-50"
+            className="mt-2 px-3 py-1.5 rounded-lg border border-line text-xs text-ink-3 hover:text-ink disabled:opacity-50"
           >
             {savingBrief ? 'Guardando…' : 'Guardar brief'}
           </button>

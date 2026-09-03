@@ -286,17 +286,17 @@ function StudioContent() {
 
       {/* Wizard de onboarding */}
       {showWizard && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-sm px-6">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-overlay/70  px-6">
           <motion.div
             initial={{ opacity: 0, scale: 0.96 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="w-full max-w-md rounded-2xl border border-[#1e1e2e] bg-[#111118] p-6"
+            className="w-full max-w-md rounded-2xl border border-line bg-surface p-6"
           >
             <div className="w-11 h-11 rounded-xl gradient-blue flex items-center justify-center mb-4">
-              <Sparkles className="w-5 h-5 text-white" />
+              <Sparkles className="w-5 h-5 text-on-accent" />
             </div>
             <h2 className="text-lg font-bold mb-1">¡Bienvenido! ¿Cómo se llama tu marca?</h2>
-            <p className="text-sm text-[#94a3b8] mb-4">
+            <p className="text-sm text-ink-3 mb-4">
               Tus análisis se organizan por marca. Ponle nombre a la primera y sube tu primer
               creativo ganador.
             </p>
@@ -307,13 +307,13 @@ function StudioContent() {
               onChange={(e) => setWizardName(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && completeWizard()}
               placeholder="Ej. Skinglow"
-              className="w-full px-3 py-2.5 rounded-xl bg-[#0a0a0f] border border-[#1e1e2e] text-sm text-[#f1f5f9] placeholder:text-[#475569] focus:border-[#3b82f6]/60 focus:outline-none mb-4"
+              className="w-full px-3 py-2.5 rounded-xl bg-canvas border border-line text-sm text-ink placeholder:text-ink-4 focus:border-accent/60 focus:outline-none mb-4"
             />
             <div className="flex gap-2">
               <button
                 onClick={completeWizard}
                 disabled={wizardSaving}
-                className="flex-1 py-2.5 rounded-xl text-sm font-semibold gradient-blue text-white disabled:opacity-60 flex items-center justify-center gap-2"
+                className="flex-1 py-2.5 rounded-xl text-sm font-semibold gradient-blue text-on-accent disabled:opacity-60 flex items-center justify-center gap-2"
               >
                 {wizardSaving && <Loader2 className="w-4 h-4 animate-spin" />}
                 Empezar
@@ -323,7 +323,7 @@ function StudioContent() {
                   localStorage.setItem('addna-onboarded', '1');
                   setShowWizard(false);
                 }}
-                className="px-4 py-2.5 rounded-xl text-sm text-[#94a3b8] border border-[#1e1e2e] hover:text-[#f1f5f9]"
+                className="px-4 py-2.5 rounded-xl text-sm text-ink-3 border border-line hover:text-ink"
               >
                 Después
               </button>
@@ -339,7 +339,7 @@ function StudioContent() {
             <motion.div
               initial={{ opacity: 0, y: -8 }}
               animate={{ opacity: 1, y: 0 }}
-              className="inline-flex items-center gap-2 text-sm px-4 py-2 rounded-full border border-[#eab308]/30 bg-[#eab308]/10 text-[#fde68a] mb-6 max-w-full"
+              className="inline-flex items-center gap-2 text-sm px-4 py-2 rounded-full border border-warn/30 bg-warn/10 text-warn mb-6 max-w-full"
             >
               <Film className="w-4 h-4 shrink-0" />
               <span className="truncate">
@@ -353,7 +353,7 @@ function StudioContent() {
             transition={{ duration: 0.6 }}
           >
             <h2 className="text-2xl font-semibold mb-2 tracking-tight">Analyze a creative</h2>
-            <p className="text-sm text-[#94a3b8] max-w-2xl mx-auto mb-2">
+            <p className="text-sm text-ink-3 max-w-2xl mx-auto mb-2">
               Upload a video or image{activeBrand ? ` for ${activeBrand.name}` : ''}. It gets transcribed, analyzed and stored with its Meta metrics.
             </p>
           </motion.div>
@@ -365,14 +365,14 @@ function StudioContent() {
         <div className="max-w-4xl mx-auto">
           {/* Mode toggle: Video vs Imagen */}
           <div className="flex justify-center mb-6">
-            <div className="inline-flex gap-1 bg-[#111118] border border-[#1e1e2e] rounded-xl p-1">
+            <div className="inline-flex gap-1 bg-surface border border-line rounded-xl p-1">
               <button
                 onClick={() => !isProcessing && setMode('video')}
                 disabled={isProcessing}
                 className={`flex items-center gap-2 px-5 py-2 rounded-lg text-sm font-medium transition-all disabled:opacity-50 ${
                   mode === 'video'
-                    ? 'bg-[#3b82f6] text-white shadow-lg shadow-blue-500/20'
-                    : 'text-[#94a3b8] hover:text-[#f1f5f9]'
+                    ? 'bg-accent text-on-accent shadow-lg '
+                    : 'text-ink-3 hover:text-ink'
                 }`}
               >
                 <Film className="w-4 h-4" />
@@ -383,8 +383,8 @@ function StudioContent() {
                 disabled={isProcessing}
                 className={`flex items-center gap-2 px-5 py-2 rounded-lg text-sm font-medium transition-all disabled:opacity-50 ${
                   mode === 'image'
-                    ? 'bg-[#8b5cf6] text-white shadow-lg shadow-purple-500/20'
-                    : 'text-[#94a3b8] hover:text-[#f1f5f9]'
+                    ? 'bg-accent text-on-accent shadow-lg '
+                    : 'text-ink-3 hover:text-ink'
                 }`}
               >
                 <ImageIcon className="w-4 h-4" />
@@ -412,8 +412,8 @@ function StudioContent() {
               animate={{ opacity: 1, y: 0 }}
               className={`mt-4 p-4 rounded-xl border text-sm ${
                 error.upgrade
-                  ? 'bg-[#f59e0b]/10 border-[#f59e0b]/25 text-[#fbbf24]'
-                  : 'bg-[#f43f5e]/10 border-[#f43f5e]/20 text-[#f43f5e] font-[family-name:var(--font-mono)]'
+                  ? 'bg-warn/10 border-warn/25 text-warn'
+                  : 'bg-danger/10 border-danger/20 text-danger font-[family-name:var(--font-mono)]'
               }`}
             >
               <p>{error.message}</p>
@@ -431,7 +431,7 @@ export default function StudioPage() {
     <Suspense
       fallback={
         <div className="flex-1 flex items-center justify-center">
-          <Loader2 className="w-8 h-8 text-[#3b82f6] animate-spin" />
+          <Loader2 className="w-8 h-8 text-accent animate-spin" />
         </div>
       }
     >

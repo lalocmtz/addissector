@@ -85,7 +85,7 @@ export default function AnalyzeImagePage() {
   if (loading) {
     return (
       <div className="flex-1 flex items-center justify-center">
-        <Loader2 className="w-8 h-8 text-[#8b5cf6] animate-spin" />
+        <Loader2 className="w-8 h-8 text-accent animate-spin" />
       </div>
     );
   }
@@ -94,25 +94,25 @@ export default function AnalyzeImagePage() {
 
   return (
     <main className="flex-1">
-      <header className="border-b border-[#1e1e2e] px-6 py-4 sticky top-0 z-50 bg-[#0a0a0f]/90 backdrop-blur-xl">
+      <header className="border-b border-line px-6 py-4 sticky top-0 z-50 bg-canvas/90 ">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-4">
             <button
               onClick={() => router.push('/studio')}
-              className="flex items-center gap-2 text-sm text-[#94a3b8] hover:text-[#f1f5f9] transition-colors"
+              className="flex items-center gap-2 text-sm text-ink-3 hover:text-ink transition-colors"
             >
               <ArrowLeft className="w-4 h-4" />
               Nuevo analisis
             </button>
-            <div className="w-px h-6 bg-[#1e1e2e]" />
+            <div className="w-px h-6 bg-surface-2" />
             <div className="flex items-center gap-2">
               <div className="w-8 h-8 rounded-lg gradient-blue flex items-center justify-center">
-                <Scan className="w-4 h-4 text-white" />
+                <Scan className="w-4 h-4 text-on-accent" />
               </div>
               <span className="text-sm font-semibold font-[family-name:var(--font-mono)]">AdDNA</span>
             </div>
           </div>
-          <div className="text-xs text-[#64748b] font-[family-name:var(--font-mono)]">
+          <div className="text-xs text-ink-4 font-[family-name:var(--font-mono)]">
             {results.size} imagen{results.size > 1 ? 'es' : ''} analizada{results.size > 1 ? 's' : ''}
           </div>
         </div>
@@ -123,15 +123,15 @@ export default function AnalyzeImagePage() {
           {/* Selector de imagen (si hay varias) */}
           {keys.length > 1 && (
             <div className="overflow-x-auto mb-6">
-              <div className="flex gap-1 bg-[#111118] border border-[#1e1e2e] rounded-xl p-1 min-w-min">
+              <div className="flex gap-1 bg-surface border border-line rounded-xl p-1 min-w-min">
                 {keys.map((key) => (
                   <button
                     key={key}
                     onClick={() => setActiveKey(key)}
                     className={`px-4 py-2 rounded-lg text-xs font-medium transition-all whitespace-nowrap ${
                       (activeKey || keys[0]) === key
-                        ? 'bg-[#8b5cf6] text-white shadow-lg shadow-purple-500/20'
-                        : 'text-[#94a3b8] hover:text-[#f1f5f9] hover:bg-[#1e1e2e]'
+                        ? 'bg-accent text-on-accent shadow-lg '
+                        : 'text-ink-3 hover:text-ink hover:bg-surface-2'
                     }`}
                   >
                     {key}
@@ -150,7 +150,7 @@ export default function AnalyzeImagePage() {
             {/* Vista previa de la imagen (contexto rápido) */}
             {active.previewUrl && (
               <div className="mb-6 flex justify-center">
-                <div className="rounded-2xl overflow-hidden border border-[#1e1e2e] bg-[#0a0a0f] max-w-[220px]">
+                <div className="rounded-2xl overflow-hidden border border-line bg-canvas max-w-[220px]">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={active.previewUrl} alt={activeKey} className="w-full object-contain" />
                 </div>

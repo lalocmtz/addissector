@@ -82,14 +82,14 @@ const RESEARCH_QUICK = [
 ];
 
 const NOTE_STATUS = [
-  { id: 'idea', label: 'Idea', cls: 'border-[#334155] text-[#94a3b8]' },
-  { id: 'en_prueba', label: 'En prueba', cls: 'border-[#eab308]/40 text-[#facc15]' },
-  { id: 'funciona', label: 'Funciona', cls: 'border-[#22c55e]/40 text-[#4ade80]' },
-  { id: 'descartado', label: 'Descartado', cls: 'border-[#ef4444]/40 text-[#f87171]' },
+  { id: 'idea', label: 'Idea', cls: 'border-line-strong text-ink-3' },
+  { id: 'en_prueba', label: 'En prueba', cls: 'border-warn/40 text-warn' },
+  { id: 'funciona', label: 'Funciona', cls: 'border-ok/40 text-ok' },
+  { id: 'descartado', label: 'Descartado', cls: 'border-danger/40 text-danger' },
 ] as const;
 
 const INPUT_CLS =
-  'w-full rounded-lg border border-[#1e1e2e] bg-[#0a0a0f] px-2.5 py-1.5 text-xs text-[#e2e8f0] placeholder:text-[#475569] focus:border-[#3b82f6] outline-none';
+  'w-full rounded-lg border border-line bg-canvas px-2.5 py-1.5 text-xs text-ink placeholder:text-ink-4 focus:border-accent outline-none';
 
 // ---------------------------------------------------------------------------
 // Piezas reutilizables
@@ -108,7 +108,7 @@ function Field({ label, value, placeholder, rows, mono, onSave }: {
   const commit = (v: string) => { if (v.trim() !== (value ?? '').trim()) onSave(v.trim()); };
   return (
     <div>
-      {label && <p className="text-[9px] uppercase tracking-wide text-[#475569] mb-1">{label}</p>}
+      {label && <p className="text-[9px] uppercase tracking-wide text-ink-4 mb-1">{label}</p>}
       {rows ? (
         <textarea
           defaultValue={value ?? ''}
@@ -135,11 +135,11 @@ function IaMark({ source, evidence }: { source: string | null; evidence?: string
   if (source !== 'ia') return null;
   return (
     <div className="space-y-1">
-      <span className="inline-flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded border border-[#3b82f6]/40 bg-[#3b82f6]/10 text-[#60a5fa] font-[family-name:var(--font-mono)]">
+      <span className="inline-flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded border border-accent/40 bg-accent/10 text-accent font-[family-name:var(--font-mono)]">
         <Sparkles className="w-2.5 h-2.5" /> IA
       </span>
       {evidence && (
-        <p className="text-[9px] text-[#475569] leading-snug whitespace-pre-wrap">{evidence}</p>
+        <p className="text-[9px] text-ink-4 leading-snug whitespace-pre-wrap">{evidence}</p>
       )}
     </div>
   );
@@ -151,7 +151,7 @@ function TabHead({ title, hint, action }: { title: string; hint: string; action?
     <div className="flex items-start justify-between gap-4 mb-4">
       <div>
         <h1 className="text-lg font-bold font-[family-name:var(--font-mono)] tracking-tight">{title}</h1>
-        <p className="text-xs text-[#64748b] mt-0.5 max-w-2xl">{hint}</p>
+        <p className="text-xs text-ink-4 mt-0.5 max-w-2xl">{hint}</p>
       </div>
       {action}
     </div>
@@ -160,15 +160,15 @@ function TabHead({ title, hint, action }: { title: string; hint: string; action?
 
 function Empty({ children }: { children: React.ReactNode }) {
   return (
-    <div className="rounded-xl border border-dashed border-[#1e1e2e] bg-[#0d0d14] p-10 text-center">
-      <p className="text-sm text-[#64748b] max-w-lg mx-auto leading-relaxed">{children}</p>
+    <div className="rounded-xl border border-dashed border-line bg-surface p-10 text-center">
+      <p className="text-sm text-ink-4 max-w-lg mx-auto leading-relaxed">{children}</p>
     </div>
   );
 }
 
 function Loading() {
   return (
-    <div className="flex items-center gap-2 text-xs text-[#64748b] py-10 justify-center">
+    <div className="flex items-center gap-2 text-xs text-ink-4 py-10 justify-center">
       <Loader2 className="w-4 h-4 animate-spin" /> Cargando…
     </div>
   );
@@ -298,17 +298,17 @@ function IngestBanner({ brandId }: { brandId: string | null }) {
   if (!brandId || (pending === 0 && !running && !result)) return null;
 
   return (
-    <div className="mb-4 rounded-xl border border-[#3b82f6]/25 bg-[#3b82f6]/5 px-4 py-3 flex items-center justify-between gap-4 flex-wrap">
+    <div className="mb-4 rounded-xl border border-accent/25 bg-accent/5 px-4 py-3 flex items-center justify-between gap-4 flex-wrap">
       <div className="min-w-0">
-        <p className="text-xs text-[#e2e8f0] flex items-center gap-2">
-          <Sparkles className="w-3.5 h-3.5 text-[#60a5fa] shrink-0" />
+        <p className="text-xs text-ink flex items-center gap-2">
+          <Sparkles className="w-3.5 h-3.5 text-accent shrink-0" />
           {running
             ? `Leyendo tus anuncios ganadores… ${done}${total ? ` de ${total}` : ''}`
             : pending > 0
               ? `Tienes ${pending} análisis que el cerebro todavía no ha leído`
               : 'El cerebro está al día'}
         </p>
-        <p className="text-[10px] text-[#64748b] mt-0.5">
+        <p className="text-[10px] text-ink-4 mt-0.5">
           {result ?? 'Cada anuncio que subiste es un ganador: de ahí salen las personas, los ángulos, los hooks y las pruebas.'}
         </p>
       </div>
@@ -316,7 +316,7 @@ function IngestBanner({ brandId }: { brandId: string | null }) {
         <button
           onClick={run}
           disabled={running}
-          className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg gradient-blue text-white disabled:opacity-60 shrink-0"
+          className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg gradient-blue text-on-accent disabled:opacity-60 shrink-0"
         >
           {running ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Brain className="w-3.5 h-3.5" />}
           {running ? 'Leyendo…' : 'Alimentar el cerebro'}
@@ -358,7 +358,7 @@ function CerebroInner() {
       <AppHeader me={me} activeBrand={activeBrand} onBrandChange={setActiveBrandId} />
 
       {/* Pestañas */}
-      <div className="border-b border-[#1e1e2e] px-4 sm:px-6 bg-[#0a0a0f]">
+      <div className="border-b border-line px-4 sm:px-6 bg-canvas">
         <div className="max-w-[1400px] mx-auto flex items-center gap-1 overflow-x-auto">
           {TABS.map(({ id, label, icon: Icon }) => (
             <button
@@ -366,8 +366,8 @@ function CerebroInner() {
               onClick={() => goTab(id)}
               className={`flex items-center gap-1.5 text-xs px-3 py-2.5 border-b-2 -mb-px whitespace-nowrap transition-colors ${
                 tab === id
-                  ? 'border-[#3b82f6] text-[#f1f5f9]'
-                  : 'border-transparent text-[#64748b] hover:text-[#cbd5e1]'
+                  ? 'border-accent text-ink'
+                  : 'border-transparent text-ink-4 hover:text-ink-2'
               }`}
             >
               <Icon className="w-3.5 h-3.5" />
@@ -459,14 +459,14 @@ function ChatTab({ brandId, brandName }: { brandId: string | null; brandName: st
 
   return (
     <div className="grid lg:grid-cols-[1fr_380px] gap-5 items-start">
-      <div className="rounded-xl border border-[#1e1e2e] bg-[#0d0d14] flex flex-col" style={{ height: 'calc(100vh - 190px)' }}>
-        <div className="flex items-center justify-between px-4 py-3 border-b border-[#1e1e2e]">
+      <div className="rounded-xl border border-line bg-surface flex flex-col" style={{ height: 'calc(100vh - 190px)' }}>
+        <div className="flex items-center justify-between px-4 py-3 border-b border-line">
           <h1 className="text-sm font-bold flex items-center gap-2">
-            <Brain className="w-4 h-4 text-[#3b82f6]" />
+            <Brain className="w-4 h-4 text-accent" />
             Cerebro · {brandName}
           </h1>
           {messages.length > 0 && (
-            <button onClick={clearChat} className="text-xs text-[#64748b] hover:text-[#f43f5e] flex items-center gap-1">
+            <button onClick={clearChat} className="text-xs text-ink-4 hover:text-danger flex items-center gap-1">
               <Trash2 className="w-3.5 h-3.5" /> Limpiar
             </button>
           )}
@@ -475,8 +475,8 @@ function ChatTab({ brandId, brandName }: { brandId: string | null; brandName: st
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
           {messages.length === 0 && !thinking && (
             <div className="text-center py-10">
-              <Brain className="w-10 h-10 text-[#334155] mx-auto mb-3" />
-              <p className="text-sm text-[#94a3b8]">
+              <Brain className="w-10 h-10 text-line-strong mx-auto mb-3" />
+              <p className="text-sm text-ink-3">
                 Pregúntale al cerebro. Sabe qué está funcionando en Meta ahora mismo,
                 qué dicen los guiones ganadores y qué has aprendido.
               </p>
@@ -485,7 +485,7 @@ function ChatTab({ brandId, brandName }: { brandId: string | null; brandName: st
                   <button
                     key={s}
                     onClick={() => send(s)}
-                    className="text-xs px-3 py-1.5 rounded-lg border border-[#1e1e2e] text-[#94a3b8] hover:text-[#f1f5f9] hover:border-[#3b82f6]/50 transition-colors"
+                    className="text-xs px-3 py-1.5 rounded-lg border border-line text-ink-3 hover:text-ink hover:border-accent/50 transition-colors"
                   >
                     {s}
                   </button>
@@ -497,23 +497,23 @@ function ChatTab({ brandId, brandName }: { brandId: string | null; brandName: st
             <div key={m.id ?? i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
               <div className={`max-w-[85%] rounded-xl px-3.5 py-2.5 text-sm whitespace-pre-wrap leading-relaxed ${
                 m.role === 'user'
-                  ? 'bg-[#1d4ed8]/25 text-[#e2e8f0] border border-[#1d4ed8]/30'
-                  : 'bg-[#111118] text-[#cbd5e1] border border-[#1e1e2e]'
+                  ? 'bg-accent-strong/25 text-ink border border-accent-strong/30'
+                  : 'bg-surface text-ink-2 border border-line'
               }`}>
                 {m.content}
               </div>
             </div>
           ))}
           {thinking && (
-            <div className="flex items-center gap-2 text-xs text-[#64748b]">
+            <div className="flex items-center gap-2 text-xs text-ink-4">
               <Loader2 className="w-3.5 h-3.5 animate-spin" /> Pensando con todo tu contexto…
             </div>
           )}
-          {error && <p className="text-xs text-[#f87171]">{error}</p>}
+          {error && <p className="text-xs text-danger">{error}</p>}
           {suggestedLearning && !thinking && (
             <button
               onClick={() => addLearning(suggestedLearning)}
-              className="flex items-center gap-2 text-xs px-3 py-2 rounded-lg border border-[#eab308]/30 bg-[#eab308]/5 text-[#fde68a] hover:bg-[#eab308]/10"
+              className="flex items-center gap-2 text-xs px-3 py-2 rounded-lg border border-warn/30 bg-warn/5 text-warn hover:bg-warn/10"
             >
               <Lightbulb className="w-3.5 h-3.5" /> Guardar aprendizaje: “{suggestedLearning.slice(0, 90)}…”
             </button>
@@ -521,7 +521,7 @@ function ChatTab({ brandId, brandName }: { brandId: string | null; brandName: st
           <div ref={bottomRef} />
         </div>
 
-        <div className="p-3 border-t border-[#1e1e2e]">
+        <div className="p-3 border-t border-line">
           <div className="flex gap-2">
             <textarea
               value={input}
@@ -531,12 +531,12 @@ function ChatTab({ brandId, brandName }: { brandId: string | null; brandName: st
               }}
               rows={2}
               placeholder="Pide guiones, hooks, diagnóstico, ideas…"
-              className="flex-1 rounded-lg border border-[#1e1e2e] bg-[#0a0a0f] px-3 py-2 text-sm text-[#f1f5f9] focus:border-[#3b82f6] outline-none resize-none"
+              className="flex-1 rounded-lg border border-line bg-canvas px-3 py-2 text-sm text-ink focus:border-accent outline-none resize-none"
             />
             <button
               onClick={() => send()}
               disabled={thinking || !input.trim()}
-              className="px-4 rounded-lg gradient-blue text-white disabled:opacity-50"
+              className="px-4 rounded-lg gradient-blue text-on-accent disabled:opacity-50"
             >
               <Send className="w-4 h-4" />
             </button>
@@ -583,10 +583,10 @@ function BrainContextPanel({ brandId }: { brandId: string | null }) {
   };
 
   return (
-    <div className="rounded-xl border border-[#1e1e2e] bg-[#0d0d14] p-4">
+    <div className="rounded-xl border border-line bg-surface p-4">
       <div className="flex items-center justify-between mb-3">
-        <h2 className="text-xs font-bold uppercase tracking-wide text-[#94a3b8]">Contexto de la marca</h2>
-        <button onClick={() => setShowNew((v) => !v)} className="text-xs text-[#3b82f6] hover:text-[#60a5fa] flex items-center gap-1">
+        <h2 className="text-xs font-bold uppercase tracking-wide text-ink-3">Contexto de la marca</h2>
+        <button onClick={() => setShowNew((v) => !v)} className="text-xs text-accent hover:text-accent flex items-center gap-1">
           <Plus className="w-3.5 h-3.5" /> Sección
         </button>
       </div>
@@ -596,18 +596,18 @@ function BrainContextPanel({ brandId }: { brandId: string | null }) {
             value={newTitle}
             onChange={(e) => setNewTitle(e.target.value)}
             placeholder="Título (ej. Producto, Compliance, Tono)"
-            className="flex-1 rounded-lg border border-[#1e1e2e] bg-[#0a0a0f] px-2.5 py-1.5 text-xs text-[#f1f5f9] focus:border-[#3b82f6] outline-none"
+            className="flex-1 rounded-lg border border-line bg-canvas px-2.5 py-1.5 text-xs text-ink focus:border-accent outline-none"
           />
           <button
             onClick={() => { if (newTitle.trim()) { saveSection({ title: newTitle.trim() }); setNewTitle(''); setShowNew(false); } }}
-            className="text-xs px-3 rounded-lg gradient-blue text-white"
+            className="text-xs px-3 rounded-lg gradient-blue text-on-accent"
           >
             Crear
           </button>
         </div>
       )}
       {sections.length === 0 && (
-        <p className="text-xs text-[#64748b]">
+        <p className="text-xs text-ink-4">
           Aún no hay contexto. Crea secciones (producto, compliance, tono…) — el chat las usa en cada respuesta.
           Las personas y los ángulos ya tienen su propia pestaña arriba.
         </p>
@@ -635,11 +635,11 @@ function SectionRow({ section, open, onToggle, onSave, onDelete }: {
   const [content, setContent] = useState(section.content);
   const dirty = content !== section.content;
   return (
-    <div className="rounded-lg border border-[#15151f] bg-[#0a0a0f]">
-      <button onClick={onToggle} className="w-full flex items-center gap-2 px-2.5 py-2 text-xs text-[#e2e8f0]">
-        {open ? <ChevronDown className="w-3.5 h-3.5 text-[#64748b]" /> : <ChevronRight className="w-3.5 h-3.5 text-[#64748b]" />}
+    <div className="rounded-lg border border-surface-2 bg-canvas">
+      <button onClick={onToggle} className="w-full flex items-center gap-2 px-2.5 py-2 text-xs text-ink">
+        {open ? <ChevronDown className="w-3.5 h-3.5 text-ink-4" /> : <ChevronRight className="w-3.5 h-3.5 text-ink-4" />}
         <span className="flex-1 text-left font-medium">{section.title}</span>
-        {section.content && <span className="text-[9px] text-[#475569]">{section.content.length} chars</span>}
+        {section.content && <span className="text-[9px] text-ink-4">{section.content.length} chars</span>}
       </button>
       {open && (
         <div className="px-2.5 pb-2.5">
@@ -647,12 +647,12 @@ function SectionRow({ section, open, onToggle, onSave, onDelete }: {
             value={content}
             onChange={(e) => setContent(e.target.value)}
             rows={6}
-            className="w-full rounded-lg border border-[#1e1e2e] bg-[#0d0d14] px-2.5 py-2 text-xs text-[#e2e8f0] focus:border-[#3b82f6] outline-none resize-y"
+            className="w-full rounded-lg border border-line bg-surface px-2.5 py-2 text-xs text-ink focus:border-accent outline-none resize-y"
           />
           <div className="flex justify-between mt-1.5">
-            <button onClick={onDelete} className="text-[10px] text-[#64748b] hover:text-[#f43f5e]">Eliminar</button>
+            <button onClick={onDelete} className="text-[10px] text-ink-4 hover:text-danger">Eliminar</button>
             {dirty && (
-              <button onClick={() => onSave(content)} className="flex items-center gap-1 text-[10px] text-[#3b82f6] hover:text-[#60a5fa]">
+              <button onClick={() => onSave(content)} className="flex items-center gap-1 text-[10px] text-accent hover:text-accent">
                 <Save className="w-3 h-3" /> Guardar
               </button>
             )}
@@ -679,7 +679,7 @@ function PersonasTab({ brandId }: { brandId: string | null }) {
           <button
             onClick={() => create({ name: 'Persona nueva', status: 'activa' })}
             disabled={!brandId}
-            className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg gradient-blue text-white disabled:opacity-50 shrink-0"
+            className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg gradient-blue text-on-accent disabled:opacity-50 shrink-0"
           >
             <Plus className="w-3.5 h-3.5" /> Agregar persona
           </button>
@@ -693,14 +693,14 @@ function PersonasTab({ brandId }: { brandId: string | null }) {
       ) : (
         <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-4">
           {items.map((p) => (
-            <div key={p.id} className="rounded-xl border border-[#1e1e2e] bg-[#0d0d14] p-4 space-y-3">
+            <div key={p.id} className="rounded-xl border border-line bg-surface p-4 space-y-3">
               <div className="flex items-start gap-2">
                 <div className="flex-1">
                   <Field value={p.name} placeholder="Nombre de la persona" onSave={(v) => patch(p.id, { name: v })} />
                 </div>
                 <button
                   onClick={() => { if (confirm('¿Eliminar esta persona?')) remove(p.id); }}
-                  className="text-[#475569] hover:text-[#f87171] mt-1.5"
+                  className="text-ink-4 hover:text-danger mt-1.5"
                   title="Eliminar"
                 >
                   <X className="w-3.5 h-3.5" />
@@ -737,7 +737,7 @@ function AnglesTab({ brandId }: { brandId: string | null }) {
           <button
             onClick={() => create({ name: 'Ángulo nuevo', status: 'sin_probar' })}
             disabled={!brandId}
-            className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg gradient-blue text-white disabled:opacity-50 shrink-0"
+            className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg gradient-blue text-on-accent disabled:opacity-50 shrink-0"
           >
             <Plus className="w-3.5 h-3.5" /> Agregar ángulo
           </button>
@@ -751,7 +751,7 @@ function AnglesTab({ brandId }: { brandId: string | null }) {
       ) : (
         <div className="grid md:grid-cols-2 gap-4">
           {items.map((a) => (
-            <div key={a.id} className="rounded-xl border border-[#1e1e2e] bg-[#0d0d14] p-4 space-y-3">
+            <div key={a.id} className="rounded-xl border border-line bg-surface p-4 space-y-3">
               <div className="flex items-start gap-2">
                 <div className="w-28 shrink-0">
                   <Field value={a.code} mono placeholder="CÓDIGO" onSave={(v) => patch(a.id, { code: v })} />
@@ -761,7 +761,7 @@ function AnglesTab({ brandId }: { brandId: string | null }) {
                 </div>
                 <button
                   onClick={() => { if (confirm('¿Eliminar este ángulo?')) remove(a.id); }}
-                  className="text-[#475569] hover:text-[#f87171] mt-1.5"
+                  className="text-ink-4 hover:text-danger mt-1.5"
                   title="Eliminar"
                 >
                   <X className="w-3.5 h-3.5" />
@@ -776,7 +776,7 @@ function AnglesTab({ brandId }: { brandId: string | null }) {
                     key={s.id}
                     onClick={() => patch(a.id, { status: s.id })}
                     className={`text-[9px] px-2 py-0.5 rounded border transition-colors ${
-                      a.status === s.id ? s.cls : 'border-transparent text-[#475569] hover:text-[#94a3b8]'
+                      a.status === s.id ? s.cls : 'border-transparent text-ink-4 hover:text-ink-3'
                     }`}
                   >
                     {s.label}
@@ -785,7 +785,7 @@ function AnglesTab({ brandId }: { brandId: string | null }) {
               </div>
 
               <div>
-                <p className="text-[9px] uppercase tracking-wide text-[#475569] mb-1">Persona</p>
+                <p className="text-[9px] uppercase tracking-wide text-ink-4 mb-1">Persona</p>
                 <select
                   value={a.persona_id ?? ''}
                   onChange={(e) => patch(a.id, { persona_id: e.target.value || null })}
@@ -832,7 +832,7 @@ function ConceptsTab({ brandId }: { brandId: string | null }) {
         action={
           <Link
             href="/plan"
-            className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg border border-[#3b82f6]/40 text-[#60a5fa] hover:bg-[#3b82f6]/10 shrink-0"
+            className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg border border-accent/40 text-accent hover:bg-accent/10 shrink-0"
           >
             Los conceptos se planean y se miden en Planificación <ArrowRight className="w-3.5 h-3.5" />
           </Link>
@@ -849,20 +849,20 @@ function ConceptsTab({ brandId }: { brandId: string | null }) {
             <div key={g.id}>
               <div className="flex items-center gap-2 mb-2">
                 <span className={`text-[10px] px-2 py-0.5 rounded border ${g.cls}`}>{g.label}</span>
-                <span className="text-[10px] text-[#475569]">{g.list.length}</span>
+                <span className="text-[10px] text-ink-4">{g.list.length}</span>
               </div>
-              <div className="rounded-xl border border-[#1e1e2e] bg-[#0d0d14] divide-y divide-[#15151f]">
+              <div className="rounded-xl border border-line bg-surface divide-y divide-surface-2">
                 {g.list.map((c) => (
                   <div key={c.id} className="flex items-start gap-3 px-3 py-2.5">
-                    <span className="text-[10px] font-[family-name:var(--font-mono)] text-[#64748b] w-36 shrink-0 truncate" title={c.code ?? ''}>
+                    <span className="text-[10px] font-[family-name:var(--font-mono)] text-ink-4 w-36 shrink-0 truncate" title={c.code ?? ''}>
                       {c.code ?? `#${c.number ?? '—'}`}
                     </span>
                     <div className="flex-1 min-w-0">
-                      <p className="text-xs text-[#e2e8f0] truncate">{c.name ?? 'Sin nombre'}</p>
-                      {c.hypothesis && <p className="text-[10px] text-[#64748b] truncate">{c.hypothesis}</p>}
+                      <p className="text-xs text-ink truncate">{c.name ?? 'Sin nombre'}</p>
+                      {c.hypothesis && <p className="text-[10px] text-ink-4 truncate">{c.hypothesis}</p>}
                     </div>
                     {c.narrative_format && (
-                      <span className="text-[9px] text-[#475569] shrink-0 hidden sm:inline">{c.narrative_format}</span>
+                      <span className="text-[9px] text-ink-4 shrink-0 hidden sm:inline">{c.narrative_format}</span>
                     )}
                   </div>
                 ))}
@@ -870,7 +870,7 @@ function ConceptsTab({ brandId }: { brandId: string | null }) {
             </div>
           ))}
           {sinEstado.length > 0 && (
-            <p className="text-[10px] text-[#475569]">{sinEstado.length} concepto(s) con un estado que no reconozco.</p>
+            <p className="text-[10px] text-ink-4">{sinEstado.length} concepto(s) con un estado que no reconozco.</p>
           )}
         </div>
       )}
@@ -903,12 +903,12 @@ function HooksTab({ brandId }: { brandId: string | null }) {
         hint="Los primeros segundos que sí detuvieron el scroll. Guárdalos literales: la frase exacta vale más que el resumen."
       />
 
-      <div className="rounded-xl border border-[#1e1e2e] bg-[#0d0d14] p-4 mb-5 space-y-2">
+      <div className="rounded-xl border border-line bg-surface p-4 mb-5 space-y-2">
         <input
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           placeholder="El hook, palabra por palabra…"
-          className="w-full rounded-lg border border-[#1e1e2e] bg-[#0a0a0f] px-3 py-2 text-sm text-[#f1f5f9] placeholder:text-[#475569] focus:border-[#3b82f6] outline-none"
+          className="w-full rounded-lg border border-line bg-canvas px-3 py-2 text-sm text-ink placeholder:text-ink-4 focus:border-accent outline-none"
         />
         <div className="grid sm:grid-cols-2 gap-2">
           <input
@@ -929,7 +929,7 @@ function HooksTab({ brandId }: { brandId: string | null }) {
           <button
             onClick={add}
             disabled={!brandId || !title.trim()}
-            className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg gradient-blue text-white disabled:opacity-50"
+            className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg gradient-blue text-on-accent disabled:opacity-50"
           >
             <Plus className="w-3.5 h-3.5" /> Guardar hook
           </button>
@@ -944,15 +944,15 @@ function HooksTab({ brandId }: { brandId: string | null }) {
       ) : (
         <div className="grid md:grid-cols-2 gap-3">
           {hooks.map((n) => (
-            <div key={n.id} className="rounded-xl border border-[#1e1e2e] bg-[#0d0d14] p-4 space-y-2.5">
+            <div key={n.id} className="rounded-xl border border-line bg-surface p-4 space-y-2.5">
               <div className="flex items-start gap-2">
-                <Zap className="w-3.5 h-3.5 text-[#fbbf24] mt-1.5 shrink-0" />
+                <Zap className="w-3.5 h-3.5 text-warn mt-1.5 shrink-0" />
                 <div className="flex-1">
                   <Field value={n.title} placeholder="El hook literal" onSave={(v) => patch(n.id, { title: v })} />
                 </div>
                 <button
                   onClick={() => { if (confirm('¿Eliminar este hook?')) remove(n.id); }}
-                  className="text-[#475569] hover:text-[#f87171] mt-1.5"
+                  className="text-ink-4 hover:text-danger mt-1.5"
                   title="Eliminar"
                 >
                   <X className="w-3.5 h-3.5" />
@@ -991,21 +991,21 @@ function PruebasTab({ brandId }: { brandId: string | null }) {
   };
 
   const row = (l: Learning, muted: boolean) => (
-    <div key={l.id} className={`rounded-xl border border-[#1e1e2e] bg-[#0d0d14] p-4 space-y-2.5 ${muted ? 'opacity-50' : ''}`}>
+    <div key={l.id} className={`rounded-xl border border-line bg-surface p-4 space-y-2.5 ${muted ? 'opacity-50' : ''}`}>
       <div className="flex items-start gap-2">
-        <CheckCircle2 className={`w-3.5 h-3.5 mt-1.5 shrink-0 ${muted ? 'text-[#475569]' : 'text-[#4ade80]'}`} />
+        <CheckCircle2 className={`w-3.5 h-3.5 mt-1.5 shrink-0 ${muted ? 'text-ink-4' : 'text-ok'}`} />
         <div className="flex-1">
           <Field value={l.text} placeholder="Qué aprendiste" onSave={(v) => patch(l.id, { text: v })} />
         </div>
         <button
           onClick={() => patch(l.id, { active: l.active === false })}
-          className="text-[9px] text-[#64748b] hover:text-[#cbd5e1] mt-2 shrink-0"
+          className="text-[9px] text-ink-4 hover:text-ink-2 mt-2 shrink-0"
         >
           {l.active === false ? 'Reactivar' : 'Archivar'}
         </button>
         <button
           onClick={() => { if (confirm('¿Eliminar esta prueba?')) remove(l.id); }}
-          className="text-[#475569] hover:text-[#f87171] mt-1.5 shrink-0"
+          className="text-ink-4 hover:text-danger mt-1.5 shrink-0"
           title="Eliminar"
         >
           <X className="w-3.5 h-3.5" />
@@ -1024,12 +1024,12 @@ function PruebasTab({ brandId }: { brandId: string | null }) {
         hint="Lo que ya confirmaste con dinero real. Todo lo que está aquí activo lo cita la IA cuando le pides guiones."
       />
 
-      <div className="rounded-xl border border-[#1e1e2e] bg-[#0d0d14] p-4 mb-5 space-y-2">
+      <div className="rounded-xl border border-line bg-surface p-4 mb-5 space-y-2">
         <input
           value={text}
           onChange={(e) => setText(e.target.value)}
           placeholder="Qué aprendiste (ej. el testimonio con cara a cámara supera al demo)"
-          className="w-full rounded-lg border border-[#1e1e2e] bg-[#0a0a0f] px-3 py-2 text-sm text-[#f1f5f9] placeholder:text-[#475569] focus:border-[#3b82f6] outline-none"
+          className="w-full rounded-lg border border-line bg-canvas px-3 py-2 text-sm text-ink placeholder:text-ink-4 focus:border-accent outline-none"
         />
         <div className="grid sm:grid-cols-2 gap-2">
           <input value={evidence} onChange={(e) => setEvidence(e.target.value)} placeholder="Evidencia: los números" className={INPUT_CLS} />
@@ -1045,7 +1045,7 @@ function PruebasTab({ brandId }: { brandId: string | null }) {
           <button
             onClick={add}
             disabled={!brandId || !text.trim()}
-            className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg gradient-blue text-white disabled:opacity-50"
+            className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg gradient-blue text-on-accent disabled:opacity-50"
           >
             <Plus className="w-3.5 h-3.5" /> Guardar prueba
           </button>
@@ -1062,7 +1062,7 @@ function PruebasTab({ brandId }: { brandId: string | null }) {
           <div className="grid md:grid-cols-2 gap-3">{activas.map((l) => row(l, false))}</div>
           {archivadas.length > 0 && (
             <div>
-              <p className="text-[10px] uppercase tracking-wide text-[#475569] mb-2">Archivadas ({archivadas.length})</p>
+              <p className="text-[10px] uppercase tracking-wide text-ink-4 mb-2">Archivadas ({archivadas.length})</p>
               <div className="grid md:grid-cols-2 gap-3">{archivadas.map((l) => row(l, true))}</div>
             </div>
           )}
@@ -1134,12 +1134,12 @@ function ExternoTab({ brandId }: { brandId: string | null }) {
             onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); run(); } }}
             rows={2}
             placeholder="¿Qué quieres investigar? (reseñas, dudas, competidores, ángulos…)"
-            className="flex-1 rounded-lg border border-[#1e1e2e] bg-[#0d0d14] px-3 py-2 text-sm text-[#f1f5f9] placeholder:text-[#475569] focus:border-[#3b82f6] outline-none resize-none"
+            className="flex-1 rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink placeholder:text-ink-4 focus:border-accent outline-none resize-none"
           />
           <button
             onClick={() => run()}
             disabled={running || !query.trim() || !brandId}
-            className="px-4 rounded-lg gradient-blue text-white disabled:opacity-50"
+            className="px-4 rounded-lg gradient-blue text-on-accent disabled:opacity-50"
           >
             {running ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
           </button>
@@ -1151,7 +1151,7 @@ function ExternoTab({ brandId }: { brandId: string | null }) {
               key={q}
               onClick={() => { setQuery(q); run(q); }}
               disabled={running}
-              className="text-xs px-3 py-1.5 rounded-lg border border-[#1e1e2e] text-[#94a3b8] hover:text-[#f1f5f9] hover:border-[#3b82f6]/50 transition-colors disabled:opacity-50"
+              className="text-xs px-3 py-1.5 rounded-lg border border-line text-ink-3 hover:text-ink hover:border-accent/50 transition-colors disabled:opacity-50"
             >
               {q.length > 60 ? `${q.slice(0, 60)}…` : q}
             </button>
@@ -1159,20 +1159,20 @@ function ExternoTab({ brandId }: { brandId: string | null }) {
         </div>
 
         {running && (
-          <div className="flex items-center gap-2 text-sm text-[#64748b] py-8 justify-center">
+          <div className="flex items-center gap-2 text-sm text-ink-4 py-8 justify-center">
             <Loader2 className="w-4 h-4 animate-spin" /> Buscando (web + tu contexto)…
           </div>
         )}
-        {error && <p className="text-sm text-[#f87171] mb-3">{error}</p>}
+        {error && <p className="text-sm text-danger mb-3">{error}</p>}
         {result && (
-          <div className="rounded-xl border border-[#1e1e2e] bg-[#0d0d14] p-5 mb-5">
-            <div className="text-sm text-[#cbd5e1] whitespace-pre-wrap leading-relaxed">{result}</div>
-            <div className="mt-4 pt-3 border-t border-[#1e1e2e] flex items-center justify-between gap-3">
-              <p className="text-xs text-[#64748b]">¿Sirve? Guárdalo y el Cerebro lo usa desde ahora.</p>
+          <div className="rounded-xl border border-line bg-surface p-5 mb-5">
+            <div className="text-sm text-ink-2 whitespace-pre-wrap leading-relaxed">{result}</div>
+            <div className="mt-4 pt-3 border-t border-line flex items-center justify-between gap-3">
+              <p className="text-xs text-ink-4">¿Sirve? Guárdalo y el Cerebro lo usa desde ahora.</p>
               <button
                 onClick={saveResult}
                 disabled={saved}
-                className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-[#3b82f6]/40 text-[#60a5fa] hover:bg-[#3b82f6]/10 disabled:opacity-50"
+                className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-accent/40 text-accent hover:bg-accent/10 disabled:opacity-50"
               >
                 {saved ? <><CheckCircle2 className="w-3.5 h-3.5" /> Guardado</> : <><Plus className="w-3.5 h-3.5" /> Guardar como nota</>}
               </button>
@@ -1180,9 +1180,9 @@ function ExternoTab({ brandId }: { brandId: string | null }) {
           </div>
         )}
         {!result && !running && (
-          <div className="rounded-xl border border-dashed border-[#1e1e2e] bg-[#0d0d14] p-10 text-center mb-5">
-            <Compass className="w-8 h-8 text-[#334155] mx-auto mb-3" />
-            <p className="text-sm text-[#64748b] max-w-lg mx-auto">
+          <div className="rounded-xl border border-dashed border-line bg-surface p-10 text-center mb-5">
+            <Compass className="w-8 h-8 text-line-strong mx-auto mb-3" />
+            <p className="text-sm text-ink-4 max-w-lg mx-auto">
               La búsqueda conoce tus ganadores: lo que proponga viene justificado con tus números,
               no con teoría de internet.
             </p>
@@ -1191,7 +1191,7 @@ function ExternoTab({ brandId }: { brandId: string | null }) {
 
         {/* Notas externas guardadas */}
         <div className="flex items-center justify-between mb-2">
-          <h2 className="text-xs font-bold uppercase tracking-wide text-[#94a3b8]">
+          <h2 className="text-xs font-bold uppercase tracking-wide text-ink-3">
             Notas externas ({notes.length})
           </h2>
         </div>
@@ -1206,7 +1206,7 @@ function ExternoTab({ brandId }: { brandId: string | null }) {
           <button
             onClick={() => { if (manual.trim()) { create({ kind: 'externo', title: manual.trim() }); setManual(''); } }}
             disabled={!brandId}
-            className="px-3 rounded-lg border border-[#1e1e2e] text-[#94a3b8] hover:text-[#f1f5f9] disabled:opacity-50"
+            className="px-3 rounded-lg border border-line text-ink-3 hover:text-ink disabled:opacity-50"
           >
             <Plus className="w-3.5 h-3.5" />
           </button>
@@ -1220,21 +1220,21 @@ function ExternoTab({ brandId }: { brandId: string | null }) {
         ) : (
           <div className="space-y-2">
             {notes.map((n) => (
-              <div key={n.id} className="group rounded-lg border border-[#15151f] bg-[#0d0d14] px-3 py-2.5">
+              <div key={n.id} className="group rounded-lg border border-surface-2 bg-surface px-3 py-2.5">
                 <div className="flex items-start gap-2">
                   <div className="flex-1">
                     <Field value={n.title} placeholder="Título de la nota" onSave={(v) => patch(n.id, { title: v })} />
                   </div>
                   <button
                     onClick={() => { if (confirm('¿Eliminar esta nota?')) remove(n.id); }}
-                    className="opacity-0 group-hover:opacity-100 text-[#475569] hover:text-[#f87171] mt-1.5"
+                    className="opacity-0 group-hover:opacity-100 text-ink-4 hover:text-danger mt-1.5"
                     title="Eliminar"
                   >
                     <X className="w-3.5 h-3.5" />
                   </button>
                 </div>
                 {n.body && (
-                  <p className="text-[10px] text-[#64748b] mt-1.5 whitespace-pre-wrap leading-relaxed line-clamp-6">{n.body}</p>
+                  <p className="text-[10px] text-ink-4 mt-1.5 whitespace-pre-wrap leading-relaxed line-clamp-6">{n.body}</p>
                 )}
                 <div className="flex flex-wrap items-center gap-1 mt-2">
                   {NOTE_STATUS.map((s) => (
@@ -1242,13 +1242,13 @@ function ExternoTab({ brandId }: { brandId: string | null }) {
                       key={s.id}
                       onClick={() => patch(n.id, { status: s.id })}
                       className={`text-[9px] px-1.5 py-0.5 rounded border transition-colors ${
-                        n.status === s.id ? s.cls : 'border-transparent text-[#475569] hover:text-[#94a3b8]'
+                        n.status === s.id ? s.cls : 'border-transparent text-ink-4 hover:text-ink-3'
                       }`}
                     >
                       {s.label}
                     </button>
                   ))}
-                  {n.source && <span className="text-[9px] text-[#475569] ml-1">· {n.source}</span>}
+                  {n.source && <span className="text-[9px] text-ink-4 ml-1">· {n.source}</span>}
                 </div>
               </div>
             ))}
@@ -1318,15 +1318,15 @@ function BrandDocsPanel({ brandId }: { brandId: string }) {
   };
 
   return (
-    <div className="rounded-xl border border-[#1e1e2e] bg-[#0d0d14] p-4">
+    <div className="rounded-xl border border-line bg-surface p-4">
       <div className="flex items-center justify-between mb-2">
-        <h2 className="text-xs font-bold uppercase tracking-wide text-[#94a3b8] flex items-center gap-1.5">
-          <FileText className="w-3.5 h-3.5 text-[#8b5cf6]" /> Documentos de la marca ({docs.length})
+        <h2 className="text-xs font-bold uppercase tracking-wide text-ink-3 flex items-center gap-1.5">
+          <FileText className="w-3.5 h-3.5 text-accent" /> Documentos de la marca ({docs.length})
         </h2>
         <button
           onClick={() => fileRef.current?.click()}
           disabled={uploading}
-          className="flex items-center gap-1.5 text-xs text-[#3b82f6] hover:text-[#60a5fa] disabled:opacity-60"
+          className="flex items-center gap-1.5 text-xs text-accent hover:text-accent disabled:opacity-60"
         >
           {uploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
           {uploading ? 'Destilando…' : 'Subir'}
@@ -1339,24 +1339,24 @@ function BrandDocsPanel({ brandId }: { brandId: string }) {
           onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])}
         />
       </div>
-      <p className="text-[10px] text-[#64748b] mb-2">
+      <p className="text-[10px] text-ink-4 mb-2">
         Tus análisis y research propios (PDF/TXT/MD, máx 8 MB). La IA los destila y los usa como
         fuente EXTERNA — separada de lo que sale de los anuncios.
       </p>
-      {error && <p className="text-xs text-[#f87171] mb-2">{error}</p>}
+      {error && <p className="text-xs text-danger mb-2">{error}</p>}
       <div className="space-y-1.5 max-h-[60vh] overflow-y-auto">
         {docs.map((d) => (
-          <div key={d.id} className="group flex items-center gap-2 text-xs text-[#cbd5e1] rounded-lg border border-[#15151f] bg-[#0a0a0f] px-2.5 py-2">
-            <FileText className="w-3.5 h-3.5 text-[#64748b] shrink-0" />
+          <div key={d.id} className="group flex items-center gap-2 text-xs text-ink-2 rounded-lg border border-surface-2 bg-canvas px-2.5 py-2">
+            <FileText className="w-3.5 h-3.5 text-ink-4 shrink-0" />
             <span className="flex-1 truncate" title={d.filename}>{d.filename}</span>
-            <span className="text-[9px] text-[#475569]">{new Date(d.created_at).toLocaleDateString('es-MX')}</span>
-            <button onClick={() => remove(d.id)} className="opacity-0 group-hover:opacity-100 text-[#64748b] hover:text-[#f43f5e]">
+            <span className="text-[9px] text-ink-4">{new Date(d.created_at).toLocaleDateString('es-MX')}</span>
+            <button onClick={() => remove(d.id)} className="opacity-0 group-hover:opacity-100 text-ink-4 hover:text-danger">
               <X className="w-3 h-3" />
             </button>
           </div>
         ))}
         {docs.length === 0 && (
-          <p className="text-xs text-[#64748b]">
+          <p className="text-xs text-ink-4">
             Sube aquí los análisis que ya hiciste — el chat, la búsqueda y los guiones los tomarán en cuenta.
           </p>
         )}

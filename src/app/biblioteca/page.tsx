@@ -74,13 +74,13 @@ export default function BibliotecaPage() {
               <h1 className="text-2xl font-bold font-[family-name:var(--font-mono)] tracking-tight">
                 Biblioteca{activeBrand ? ` · ${activeBrand.name}` : ''}
               </h1>
-              <p className="text-sm text-[#64748b] mt-1">
+              <p className="text-sm text-ink-4 mt-1">
                 Los creativos analizados de esta marca, guardados y listos para reabrir.
               </p>
             </div>
             <button
               onClick={() => router.push('/studio')}
-              className="hidden sm:flex items-center gap-2 text-sm px-4 py-2 rounded-lg gradient-blue text-white font-medium"
+              className="hidden sm:flex items-center gap-2 text-sm px-4 py-2 rounded-lg gradient-blue text-on-accent font-medium"
             >
               <Plus className="w-4 h-4" />
               Analizar nuevo
@@ -89,30 +89,30 @@ export default function BibliotecaPage() {
 
           {loading ? (
             <div className="flex items-center justify-center py-24">
-              <Loader2 className="w-8 h-8 text-[#3b82f6] animate-spin" />
+              <Loader2 className="w-8 h-8 text-accent animate-spin" />
             </div>
           ) : !configured ? (
-            <div className="rounded-xl border border-[#1e1e2e] bg-[#12121a] p-8 text-center">
-              <p className="text-[#f1f5f9] font-medium">La biblioteca aún no está conectada</p>
-              <p className="text-sm text-[#64748b] mt-2">
+            <div className="rounded-xl border border-line bg-surface p-8 text-center">
+              <p className="text-ink font-medium">La biblioteca aún no está conectada</p>
+              <p className="text-sm text-ink-4 mt-2">
                 Falta configurar Supabase (variables de entorno). Una vez configurado, tus análisis se
                 guardarán aquí automáticamente.
               </p>
             </div>
           ) : items.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-[#1e1e2e] bg-[#0d0d14] p-12 text-center">
-              <Library className="w-10 h-10 text-[#334155] mx-auto mb-4" />
-              <p className="text-[#f1f5f9] font-medium">
+            <div className="rounded-xl border border-dashed border-line bg-surface p-12 text-center">
+              <Library className="w-10 h-10 text-line-strong mx-auto mb-4" />
+              <p className="text-ink font-medium">
                 {activeBrand
                   ? `Aún no tienes creativos analizados para ${activeBrand.name}`
                   : 'Aún no tienes creativos guardados'}
               </p>
-              <p className="text-sm text-[#64748b] mt-2">
+              <p className="text-sm text-ink-4 mt-2">
                 Analiza tu primer creativo ganador y aparecerá aquí con su vista previa.
               </p>
               <button
                 onClick={() => router.push('/studio')}
-                className="mt-6 inline-flex items-center gap-2 text-sm px-4 py-2 rounded-lg gradient-blue text-white font-medium"
+                className="mt-6 inline-flex items-center gap-2 text-sm px-4 py-2 rounded-lg gradient-blue text-on-accent font-medium"
               >
                 <Plus className="w-4 h-4" />
                 Analizar creativo
@@ -127,9 +127,9 @@ export default function BibliotecaPage() {
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.3, delay: Math.min(i * 0.03, 0.4) }}
                   onClick={() => router.push(`${c.type === 'image' ? '/analyze-image' : '/analyze'}?id=${c.id}`)}
-                  className="group cursor-pointer rounded-xl border border-[#1e1e2e] bg-[#12121a] overflow-hidden hover:border-[#3b82f6]/60 transition-colors"
+                  className="group cursor-pointer rounded-xl border border-line bg-surface overflow-hidden hover:border-accent/60 transition-colors"
                 >
-                  <div className="relative aspect-[9/16] bg-[#0a0a0f] overflow-hidden">
+                  <div className="relative aspect-[9/16] bg-canvas overflow-hidden">
                     {c.preview_url ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img
@@ -138,39 +138,39 @@ export default function BibliotecaPage() {
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                       />
                     ) : (
-                      <div className="w-full h-full flex items-center justify-center text-[#334155]">
+                      <div className="w-full h-full flex items-center justify-center text-line-strong">
                         {c.type === 'image' ? <ImageIcon className="w-8 h-8" /> : <Film className="w-8 h-8" />}
                       </div>
                     )}
-                    <div className="absolute top-2 left-2 flex items-center gap-1 px-2 py-1 rounded-md bg-black/60 backdrop-blur text-[10px] font-medium text-[#cbd5e1]">
+                    <div className="absolute top-2 left-2 flex items-center gap-1 px-2 py-1 rounded-md bg-overlay/60  text-[10px] font-medium text-ink-2">
                       {c.type === 'image' ? <ImageIcon className="w-3 h-3" /> : <Film className="w-3 h-3" />}
                       {c.type === 'image' ? 'Imagen' : 'Video'}
                     </div>
                     {typeof c.hook_score === 'number' && (
-                      <div className={`absolute top-2 right-2 px-2 py-1 rounded-md text-[10px] font-bold text-white ${c.type === 'image' ? 'bg-[#8b5cf6]/80' : 'bg-[#3b82f6]/80'}`}>
+                      <div className={`absolute top-2 right-2 px-2 py-1 rounded-md text-[10px] font-bold text-on-accent ${c.type === 'image' ? 'bg-accent/80' : 'bg-accent/80'}`}>
                         {c.type === 'image' ? 'Score' : 'Hook'} {c.hook_score}/10
                       </div>
                     )}
                     <button
                       onClick={(e) => handleDelete(e, c.id)}
-                      className="absolute bottom-2 right-2 p-1.5 rounded-md bg-black/60 text-[#94a3b8] opacity-0 group-hover:opacity-100 hover:text-red-400 transition"
+                      className="absolute bottom-2 right-2 p-1.5 rounded-md bg-overlay/60 text-ink-3 opacity-0 group-hover:opacity-100 hover:text-danger transition"
                       aria-label="Eliminar"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
                   </div>
                   <div className="p-3">
-                    <p className="text-sm font-medium text-[#f1f5f9] truncate" title={c.name}>
+                    <p className="text-sm font-medium text-ink truncate" title={c.name}>
                       {c.name}
                     </p>
-                    <p className="text-xs text-[#64748b] truncate mt-0.5">
+                    <p className="text-xs text-ink-4 truncate mt-0.5">
                       {c.ad_name ? (
-                        <span className="text-[#4ade80]">✓ vinculado a Meta</span>
+                        <span className="text-ok">✓ vinculado a Meta</span>
                       ) : (
                         c.product || c.video_type || 'Creativo'
                       )}
                     </p>
-                    <p className="text-[10px] text-[#475569] mt-1 font-[family-name:var(--font-mono)]">
+                    <p className="text-[10px] text-ink-4 mt-1 font-[family-name:var(--font-mono)]">
                       {fmtDate(c.created_at)}
                     </p>
                   </div>
@@ -180,7 +180,7 @@ export default function BibliotecaPage() {
           )}
 
           {error && configured && (
-            <p className="text-xs text-red-400/80 mt-6">{error}</p>
+            <p className="text-xs text-danger/80 mt-6">{error}</p>
           )}
         </div>
       </section>
