@@ -35,6 +35,12 @@
     },
     "src/app/api/meta/queue/route.ts": {
       "maxDuration": 30
+    },
+    "src/app/api/agents/classify/route.ts": {
+      "maxDuration": 300
+    },
+    "src/app/api/agents/link-learnings/route.ts": {
+      "maxDuration": 300
     }
   },
   "crons": [
