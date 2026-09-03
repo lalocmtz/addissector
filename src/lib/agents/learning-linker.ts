@@ -62,7 +62,7 @@ export async function linkLearnings(
   const user = ['# LEARNINGS', ...learnings.map((l) => `- id=${l.id} · ${l.text}${l.source_ad ? ` [ad: ${l.source_ad}]` : ''}`)].join('\n');
 
   const res = await anthropic().messages.create({
-    model: MODEL, max_tokens: 4000,
+    model: MODEL, max_tokens: 8000,
     system: [...cachedSystem(SYSTEM), { type: 'text', text: tax, cache_control: { type: 'ephemeral' } }],
     tools: [LINK_TOOL], tool_choice: { type: 'tool', name: 'link_learnings' },
     messages: [{ role: 'user', content: user }],
