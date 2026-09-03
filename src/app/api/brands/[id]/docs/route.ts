@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
+import { anthropic, anthropicApiKey, MODEL } from '@/lib/ai';
 import { getSupabase, isSupabaseConfigured } from '@/lib/supabase';
 import { getSessionUser, isAuthConfigured } from '@/lib/supabase-server';
 
@@ -65,9 +66,8 @@ export async function POST(
     }
 
     // Destilar el documento a contexto creativo con Claude
-    const apiKey = process.env.MY_ANTHROPIC_KEY || process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) return NextResponse.json({ error: 'IA no configurada' }, { status: 500 });
-    const client = new Anthropic({ apiKey });
+    if (!anthropicApiKey()) return NextResponse.json({ error: 'Anthropic API key is not configured' }, { status: 500 });
+    const client = anthropic();
 
     const instruction =
       'Extrae de este documento TODO el contexto útil para crear anuncios de esta marca: producto(s) y beneficios, avatar/cliente ideal, dolores, objeciones, tono de voz, claims permitidos, diferenciadores, precios/ofertas, frases textuales valiosas. Responde en español como texto plano estructurado y compacto (máx ~800 palabras). Sin introducciones.';
@@ -81,7 +81,7 @@ export async function POST(
         : [{ type: 'text', text: `${instruction}\n\nDOCUMENTO:\n${bytes.toString('utf8').slice(0, 60000)}` }];
 
     const response = await client.messages.create({
-      model: 'claude-sonnet-4-6',
+      model: MODEL,
       max_tokens: 2000,
       messages: [{ role: 'user', content }],
     });

@@ -8,6 +8,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
+import { anthropic, anthropicApiKey, MODEL } from '@/lib/ai';
 import { getSupabase } from '@/lib/supabase';
 import { getSessionUser } from '@/lib/supabase-server';
 import { aggregateAds, verdictFor, DEFAULT_ECONOMICS, type DailyRow, type Economics } from '@/lib/meta';
@@ -15,14 +16,12 @@ import { aggregateAds, verdictFor, DEFAULT_ECONOMICS, type DailyRow, type Econom
 export const runtime = 'nodejs';
 export const maxDuration = 300;
 
-const MODEL = 'claude-sonnet-4-6';
 
 export async function POST(request: NextRequest) {
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: 'No autenticado' }, { status: 401 });
 
-  const apiKey = process.env.MY_ANTHROPIC_KEY || process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) return NextResponse.json({ error: 'Falta la API key de Anthropic' }, { status: 500 });
+  if (!anthropicApiKey()) return NextResponse.json({ error: 'Anthropic API key is not configured' }, { status: 500 });
 
   const { brandId, adName } = (await request.json()) as { brandId: string; adName: string };
   if (!brandId || !adName) return NextResponse.json({ error: 'Faltan datos' }, { status: 400 });
@@ -128,7 +127,7 @@ Reglas: cita SIEMPRE los números reales al afirmar algo; nada de relleno ni obv
   if (metaAd.dossier_video) parts.push(`\nEXPEDIENTE — NOTAS DE EDUARDO SOBRE EL VIDEO:\n${metaAd.dossier_video.slice(0, 4000)}`);
 
   try {
-    const client = new Anthropic({ apiKey });
+    const client = anthropic();
     const response = await client.messages.create({
       model: MODEL,
       max_tokens: 6000,

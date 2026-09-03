@@ -14,13 +14,13 @@
 // =============================================================================
 
 import Anthropic from '@anthropic-ai/sdk';
+import { anthropicApiKey, MODEL } from '@/lib/ai';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { getSupabase } from './supabase';
 import { aggregateAds, type DailyRow } from './meta';
 import { extractCandidates, type IngestCandidates, type IngestMetrics } from './brain-ingest';
 import type { AnalysisResult } from './analysis-schema';
 
-const MODEL = 'claude-sonnet-4-6';
 
 // ---------------------------------------------------------------------------
 // Tipos
@@ -161,7 +161,7 @@ export interface IngestOptions {
 
 export async function ingestCreative(opts: IngestOptions): Promise<IngestSummary> {
   const sb = opts.sb ?? getSupabase();
-  const apiKey = opts.apiKey ?? process.env.MY_ANTHROPIC_KEY ?? process.env.ANTHROPIC_API_KEY;
+  const apiKey = opts.apiKey ?? anthropicApiKey();
 
   // 1 · El creativo -----------------------------------------------------------
   const { data: creative } = await sb

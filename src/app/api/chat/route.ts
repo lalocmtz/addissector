@@ -8,14 +8,13 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
+import { anthropic, anthropicApiKey, MODEL } from '@/lib/ai';
 import { getSupabase } from '@/lib/supabase';
 import { getSessionUser } from '@/lib/supabase-server';
 import { buildBrandContext } from '@/lib/brand-context';
 
 export const runtime = 'nodejs';
 export const maxDuration = 120;
-
-const MODEL = 'claude-sonnet-4-6';
 
 export async function GET(request: NextRequest) {
   const user = await getSessionUser();
@@ -48,8 +47,7 @@ export async function POST(request: NextRequest) {
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: 'No autenticado' }, { status: 401 });
 
-  const apiKey = process.env.MY_ANTHROPIC_KEY || process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) return NextResponse.json({ error: 'Falta la API key de Anthropic en Vercel' }, { status: 500 });
+  if (!anthropicApiKey()) return NextResponse.json({ error: 'Anthropic API key is not configured' }, { status: 500 });
 
   const { brandId, message } = (await request.json()) as { brandId: string; message: string };
   if (!brandId || !message?.trim()) return NextResponse.json({ error: 'Faltan datos' }, { status: 400 });
@@ -78,7 +76,7 @@ Reglas:
 
 ${context}`;
 
-  const client = new Anthropic({ apiKey });
+  const client = anthropic();
   const messages: Anthropic.MessageParam[] = [
     ...recent.map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content })),
     { role: 'user' as const, content: message.trim() },

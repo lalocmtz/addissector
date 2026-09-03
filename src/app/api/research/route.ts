@@ -6,6 +6,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
+import { anthropic, anthropicApiKey, MODEL } from '@/lib/ai';
 import { getSupabase } from '@/lib/supabase';
 import { getSessionUser } from '@/lib/supabase-server';
 import { buildBrandContext } from '@/lib/brand-context';
@@ -13,14 +14,12 @@ import { buildBrandContext } from '@/lib/brand-context';
 export const runtime = 'nodejs';
 export const maxDuration = 300;
 
-const MODEL = 'claude-sonnet-4-6';
 
 export async function POST(request: NextRequest) {
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: 'No autenticado' }, { status: 401 });
 
-  const apiKey = process.env.MY_ANTHROPIC_KEY || process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) return NextResponse.json({ error: 'Falta la API key de Anthropic en Vercel' }, { status: 500 });
+  if (!anthropicApiKey()) return NextResponse.json({ error: 'Anthropic API key is not configured' }, { status: 500 });
 
   const { brandId, query } = (await request.json()) as { brandId: string; query: string };
   if (!brandId || !query?.trim()) return NextResponse.json({ error: 'Faltan datos' }, { status: 400 });
@@ -39,7 +38,7 @@ Responde en español. Sé concreto: los ángulos deben poder convertirse en un g
 
 ${context}`;
 
-  const client = new Anthropic({ apiKey });
+  const client = anthropic();
   try {
     const response = await client.messages.create({
       model: MODEL,
@@ -64,7 +63,7 @@ ${context}`;
     // Fallback sin web search si la organización no lo tiene habilitado
     if (/web_search|tool/i.test(msg)) {
       try {
-        const client2 = new Anthropic({ apiKey });
+        const client2 = anthropic();
         const r2 = await client2.messages.create({
           model: MODEL,
           max_tokens: 4000,
