@@ -19,7 +19,8 @@ import AppHeader from '@/components/AppHeader';
 import { useMe } from '@/lib/use-me';
 import { useT, useFormatters } from '@/lib/i18n';
 import { parseMetaExport, verdictFor, metaAiPrompt, resolveEconomics, type Economics, type Verdict } from '@/lib/meta';
-import type { AdAggregate, AdDailyRow } from '@/lib/metrics';
+import type { AdAggregate, AdDailyRow, MomentumPhase } from '@/lib/metrics';
+import type { WindowId } from '@/lib/windows';
 
 // ---------------------------------------------------------------------------
 // API response types
@@ -37,18 +38,35 @@ interface AdRow extends AdAggregate {
   asset_kind: string | null;
   asset_url: string | null;
   thumbnail_url: string | null;
+  delta: { spend: number | null; roas: number | null; hook_rate: number | null; cpa: number | null } | null;
 }
 
 type SortKey = keyof Pick<AdRow,
   'ad_name' | 'spend' | 'revenue' | 'roas' | 'purchases' | 'cpa' | 'cpm' | 'hook_rate' | 'hold_rate' |
   'ret25' | 'ret50' | 'ret75' | 'freq' | 'cost_atc' | 'link_clicks' | 'cpc' | 'cvr' | 'days'>;
 
-const RANGES = [
-  { id: '7', key: 'meta.range.7', days: 7 },
-  { id: '14', key: 'meta.range.14', days: 14 },
-  { id: '30', key: 'meta.range.30', days: 30 },
-  { id: 'all', key: 'meta.range.all', days: 0 },
-] as const;
+const WINDOWS: Array<{ id: WindowId; key: string }> = [
+  { id: 'today', key: 'window.today' },
+  { id: 'yesterday', key: 'window.yesterday' },
+  { id: 'last3', key: 'window.last3' },
+  { id: 'last7', key: 'window.last7' },
+  { id: 'last14', key: 'window.last14' },
+  { id: 'last30', key: 'window.last30' },
+  { id: 'lifetime', key: 'window.lifetime' },
+];
+
+const PHASE_STYLE: Record<MomentumPhase, string> = {
+  scaling: 'text-ok border-ok/40',
+  stable: 'text-ink-3 border-line',
+  fatiguing: 'text-danger border-danger/40 border-dashed',
+  learning: 'text-ink-4 border-line',
+};
+
+interface AccountSummary {
+  current: { spend: number; revenue: number | null; purchases: number | null; roas: number | null; hook_rate: number | null; hold_rate: number | null; ret75: number | null; cvr: number | null };
+  previous: { spend: number; revenue: number | null; purchases: number | null; roas: number | null; hook_rate: number | null } | null;
+  delta: { spend: number | null; roas: number | null; hook_rate: number | null; purchases: number | null } | null;
+}
 
 type Fmt = ReturnType<typeof useFormatters>;
 interface Col { key: SortKey; label: string; tip: string; higherBetter: boolean | null; fmt: (a: AdRow, f: Fmt, cur: string | null) => string }
@@ -91,7 +109,8 @@ export default function MetaPage() {
   const [loading, setLoading] = useState(true);
   const [memoryFrom, setMemoryFrom] = useState<string | null>(null);
   const [memoryTo, setMemoryTo] = useState<string | null>(null);
-  const [range, setRange] = useState<string>('7');
+  const [windowId, setWindowId] = useState<WindowId>('last7');
+  const [account, setAccount] = useState<AccountSummary | null>(null);
   const [sortKey, setSortKey] = useState<SortKey>('spend');
   const [sortDesc, setSortDesc] = useState(true);
   const [onlyActive, setOnlyActive] = useState(true);
@@ -107,33 +126,20 @@ export default function MetaPage() {
     if (!activeBrandId) return;
     setLoading(true);
     try {
-      // First call: full range (also gives the memory bounds and currency)
-      const probe = await fetch(`/api/meta/ads?brand=${activeBrandId}`).then((x) => x.json());
-      if (probe.error) throw new Error(probe.error);
-      setMemoryFrom(probe.memoryFrom ?? null);
-      setMemoryTo(probe.memoryTo ?? null);
-      setCurrency(probe.currency ?? null);
-      setCurrencySource(probe.currencySource ?? null);
-
-      const r = RANGES.find((x) => x.id === range);
-      if (!r || r.days === 0 || !probe.memoryTo) {
-        setAds(probe.ads ?? []);
-        return;
-      }
-      // The range is measured back from the last day with data (memoryTo)
-      const d = new Date(`${probe.memoryTo}T00:00:00Z`);
-      d.setUTCDate(d.getUTCDate() - (r.days - 1));
-      const from = d.toISOString().slice(0, 10);
-      const res = await fetch(`/api/meta/ads?brand=${activeBrandId}&from=${from}`);
-      const data = await res.json();
+      const data = await fetch(`/api/meta/ads?brand=${activeBrandId}&window=${windowId}`).then((x) => x.json());
       if (data.error) throw new Error(data.error);
+      setMemoryFrom(data.memoryFrom ?? null);
+      setMemoryTo(data.memoryTo ?? null);
+      setCurrency(data.currency ?? null);
+      setCurrencySource(data.currencySource ?? null);
+      setAccount(data.account ?? null);
       setAds(data.ads ?? []);
     } catch {
       setAds([]);
     } finally {
       setLoading(false);
     }
-  }, [activeBrandId, range]);
+  }, [activeBrandId, windowId]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -243,13 +249,13 @@ export default function MetaPage() {
 
             <div className="flex items-center gap-2 flex-wrap">
               <div className="flex rounded-md border border-line overflow-hidden">
-                {RANGES.map((r) => (
+                {WINDOWS.map((w) => (
                   <button
-                    key={r.id}
-                    onClick={() => setRange(r.id)}
-                    className={`px-3 py-1.5 text-xs transition-colors ${range === r.id ? 'bg-surface-2 text-ink font-medium' : 'text-ink-2 hover:text-ink'}`}
+                    key={w.id}
+                    onClick={() => setWindowId(w.id)}
+                    className={`px-2.5 py-1.5 text-xs transition-colors ${windowId === w.id ? 'bg-surface-2 text-ink font-medium' : 'text-ink-2 hover:text-ink'}`}
                   >
-                    {t(r.key)}
+                    {t(w.key)}
                   </button>
                 ))}
               </div>
@@ -306,16 +312,22 @@ export default function MetaPage() {
           )}
 
           {/* Range summary */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
-            <Stat label={t('meta.stat.spend')} value={f.money(totals.spend, currency)} />
+          <div className="grid grid-cols-2 sm:grid-cols-6 gap-3 mb-5">
+            <Stat label={t('meta.stat.spend')} value={f.money(totals.spend, currency)} delta={account?.delta?.spend} />
             <Stat label={t('meta.stat.revenue')} value={f.money(totals.revenue, currency)} />
             <Stat
               label={t('meta.stat.roas', { breakeven: eco.breakeven })}
               value={totals.roas.toFixed(2)}
               tone={totals.roas >= eco.target ? 'ok' : totals.roas >= eco.breakeven ? 'warn' : 'danger'}
+              delta={account?.delta?.roas}
             />
-            <Stat label={t('meta.stat.purchases')} value={f.num(totals.purchases)} />
+            <Stat label={t('meta.stat.purchases')} value={f.num(totals.purchases)} delta={account?.delta?.purchases} />
+            <Stat label={t('meta.col.hook')} value={f.pct(account?.current.hook_rate)} delta={account?.delta?.hook_rate} />
+            <Stat label={t('meta.col.ret75')} value={f.pct(account?.current.ret75, 0)} />
           </div>
+          {account?.previous && (
+            <p className="text-[10px] text-ink-3 -mt-3 mb-4 font-[family-name:var(--font-mono)]">{t('window.vsPrevious')}</p>
+          )}
 
           {/* Winners pending analysis */}
           {pendingWinners.length > 0 && (
@@ -354,6 +366,7 @@ export default function MetaPage() {
                       {t('meta.col.ad', { n: visible.length })}
                     </th>
                     <th className="text-left px-2 py-2 font-medium">{t('meta.col.verdict')}</th>
+                    <th className="text-left px-2 py-2 font-medium" title={t('meta.col.momentum.tip')}>{t('meta.col.momentum')}</th>
                     <th className="text-center px-2 py-2 font-medium" title={t('meta.col.analysis.tip')}>{t('meta.col.analysis')}</th>
                     {COLS.map((c) => (
                       <th
@@ -380,6 +393,16 @@ export default function MetaPage() {
                         </td>
                         <td className="px-2 py-1.5">
                           <span title={v.why} className={`inline-block px-2 py-0.5 rounded border text-[10px] ${VERDICT_STYLE[v.id]}`}>{t(v.labelKey)}</span>
+                        </td>
+                        <td className="px-2 py-1.5">
+                          {a.momentum && (
+                            <span
+                              title={`spend ×${a.momentum.spend_velocity?.toFixed(2) ?? '—'} · ROAS ${a.momentum.roas_prev3?.toFixed(2) ?? '—'} → ${a.momentum.roas_last3?.toFixed(2) ?? '—'} · ${a.momentum.days_live}d`}
+                              className={`inline-block px-1.5 py-0.5 rounded border text-[10px] font-[family-name:var(--font-mono)] ${PHASE_STYLE[a.momentum.phase]}`}
+                            >
+                              {t(`phase.${a.momentum.phase}`)}{a.delta?.roas != null ? ` ${a.delta.roas >= 0 ? '▲' : '▼'}${Math.abs(a.delta.roas).toFixed(0)}%` : ''}
+                            </span>
+                          )}
                         </td>
                         <td className="px-2 py-1.5 text-center">
                           {v.id === 'ganador' || v.id === 'prometedor' || a.analyzed || a.has_dossier ? (
@@ -422,12 +445,17 @@ export default function MetaPage() {
   );
 }
 
-function Stat({ label, value, tone }: { label: string; value: string; tone?: 'ok' | 'warn' | 'danger' }) {
+function Stat({ label, value, tone, delta }: { label: string; value: string; tone?: 'ok' | 'warn' | 'danger'; delta?: number | null }) {
   const color = tone === 'ok' ? 'text-ok' : tone === 'warn' ? 'text-warn' : tone === 'danger' ? 'text-danger' : 'text-ink';
   return (
     <div className="rounded-md border border-line bg-surface px-4 py-3">
       <p className="text-[10px] uppercase tracking-wide text-ink-3">{label}</p>
-      <p className={`text-lg font-semibold font-[family-name:var(--font-mono)] tabular-nums ${color}`}>{value}</p>
+      <p className={`text-lg font-semibold font-[family-name:var(--font-mono)] tabular-nums ${color}`}>
+        {value}
+        {delta != null && Number.isFinite(delta) && (
+          <span className={`ml-2 text-[11px] font-normal ${delta >= 0 ? 'text-ok' : 'text-danger'}`}>{delta >= 0 ? '▲' : '▼'}{Math.abs(delta).toFixed(0)}%</span>
+        )}
+      </p>
     </div>
   );
 }

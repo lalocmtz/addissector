@@ -146,4 +146,21 @@ export const es: Record<string, string> = {
   'auth.passwordPh': 'Contraseña',
   'auth.google': 'Continuar con Google',
   'auth.passwordMinPh': 'Contraseña (mínimo 6 caracteres)',
+
+  // Windows & momentum
+  'window.today': 'Hoy',
+  'window.yesterday': 'Ayer',
+  'window.last3': 'Últimos 3 días',
+  'window.last7': 'Últimos 7 días',
+  'window.last14': 'Últimos 14 días',
+  'window.last30': 'Últimos 30 días',
+  'window.lifetime': 'Histórico',
+  'window.custom': 'Personalizado',
+  'window.vsPrevious': '▲▼ vs el periodo anterior de igual duración',
+  'meta.col.momentum': 'Momentum',
+  'meta.col.momentum.tip': 'Hacia dónde va el anuncio: velocidad de gasto y pendiente del ROAS en sus últimos 3 días vs los 3 anteriores',
+  'phase.learning': 'aprendiendo',
+  'phase.scaling': 'escalando',
+  'phase.stable': 'estable',
+  'phase.fatiguing': 'fatigándose',
 };

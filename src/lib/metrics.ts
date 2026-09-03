@@ -172,6 +172,7 @@ export interface AdAggregate extends Totals, Rates {
   roas_last3: number | null;
   /** true when any row still carries untrusted video metrics (metrics_version 0) */
   video_metrics_pending: boolean;
+  momentum?: Momentum;
 }
 
 /**
@@ -180,7 +181,7 @@ export interface AdAggregate extends Totals, Rates {
  * Sorted by spend desc — spend is the signal that Meta was able to distribute
  * the creative.
  */
-export function aggregateByAd(rows: AdDailyRow[]): AdAggregate[] {
+export function aggregateByAd(rows: AdDailyRow[], momentum?: { minSpend: number; breakeven: number }): AdAggregate[] {
   const by = new Map<string, AdDailyRow[]>();
   for (const r of rows) {
     if (!r.ad_id) continue;
@@ -206,6 +207,7 @@ export function aggregateByAd(rows: AdDailyRow[]): AdAggregate[] {
       spend_last3: t3.spend,
       roas_last3: t3.revenue != null ? div(t3.revenue, t3.spend) : null,
       video_metrics_pending: days.some((d) => d.metrics_version === 0 && d.source === 'api'),
+      ...(momentum ? { momentum: momentumOf(days, momentum) } : {}),
     });
   }
   return out.sort((a, b) => b.spend - a.spend);
@@ -238,4 +240,60 @@ export function rollupAggregates(ads: AdAggregate[]): Totals & Rates & { ads: nu
   }
   t.freq = freqImp > 0 ? freqW / freqImp : null;
   return { ...t, ...ratesOf(t), ads: ads.length };
+}
+
+// ---------------------------------------------------------------------------
+// Momentum — where an ad is going, not only where it has been.
+//
+//   spend_velocity   spend/day over the last 3 days vs the 3 before (ratio)
+//   roas_slope       ROAS of the last 3 days minus ROAS of the 3 days before
+//   days_live        distinct days with delivery since first seen
+//   phase            learning · scaling · stable · fatiguing
+//
+// Phase rules (deliberately simple, all derived from counts):
+//   learning   < 3 days live or spend below the brand's kill/2 threshold
+//   scaling    spend accelerating (velocity ≥ 1.25) and ROAS not falling
+//   fatiguing  ROAS slope < -20% of the lifetime ROAS with frequency rising,
+//              or ROAS_last3 below break-even while lifetime ROAS is above it
+//   stable     everything else
+// ---------------------------------------------------------------------------
+export type MomentumPhase = 'learning' | 'scaling' | 'stable' | 'fatiguing';
+
+export interface Momentum {
+  days_live: number;
+  spend_last3: number;
+  spend_prev3: number;
+  spend_velocity: number | null;
+  roas_last3: number | null;
+  roas_prev3: number | null;
+  roas_slope: number | null;
+  freq_last3: number | null;
+  freq_prev3: number | null;
+  phase: MomentumPhase;
+}
+
+export function momentumOf(days: AdDailyRow[], opts: { minSpend: number; breakeven: number }): Momentum {
+  const sorted = [...days].sort((a, b) => a.date.localeCompare(b.date));
+  const last3 = sorted.slice(-3);
+  const prev3 = sorted.slice(-6, -3);
+  const t = sumRows(sorted), l = sumRows(last3), p = sumRows(prev3);
+  const rl = ratesOf(l), rp = ratesOf(p), rt = ratesOf(t);
+  const velocity = p.spend > 0 ? l.spend / p.spend : null;
+  const slope = rl.roas != null && rp.roas != null ? rl.roas - rp.roas : null;
+
+  let phase: MomentumPhase = 'stable';
+  if (sorted.length < 3 || t.spend < opts.minSpend) phase = 'learning';
+  else if (
+    (rt.roas != null && rt.roas >= opts.breakeven && rl.roas != null && rl.roas < opts.breakeven && l.spend > 0) ||
+    (slope != null && rt.roas != null && slope < -0.2 * rt.roas && (l.freq ?? 0) > (p.freq ?? 0))
+  ) phase = 'fatiguing';
+  else if (velocity != null && velocity >= 1.25 && (slope == null || slope >= 0)) phase = 'scaling';
+
+  return {
+    days_live: sorted.length,
+    spend_last3: l.spend, spend_prev3: p.spend, spend_velocity: velocity,
+    roas_last3: rl.roas, roas_prev3: rp.roas, roas_slope: slope,
+    freq_last3: l.freq, freq_prev3: p.freq,
+    phase,
+  };
 }

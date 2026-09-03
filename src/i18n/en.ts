@@ -150,4 +150,21 @@ export const en: Record<string, string> = {
   'auth.passwordPh': 'Password',
   'auth.google': 'Continue with Google',
   'auth.passwordMinPh': 'Password (at least 6 characters)',
+
+  // Windows & momentum
+  'window.today': 'Today',
+  'window.yesterday': 'Yesterday',
+  'window.last3': 'Last 3 Days',
+  'window.last7': 'Last 7 Days',
+  'window.last14': 'Last 14 Days',
+  'window.last30': 'Last 30 Days',
+  'window.lifetime': 'Lifetime',
+  'window.custom': 'Custom',
+  'window.vsPrevious': '▲▼ vs the previous period of equal length',
+  'meta.col.momentum': 'Momentum',
+  'meta.col.momentum.tip': 'Where the ad is going: spend velocity and ROAS slope over its last 3 days vs the 3 before',
+  'phase.learning': 'learning',
+  'phase.scaling': 'scaling',
+  'phase.stable': 'stable',
+  'phase.fatiguing': 'fatiguing',
 };
