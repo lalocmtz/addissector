@@ -318,7 +318,7 @@ function Detail({ e, brandId, currency, members, personas, angles, concepts, ads
   const nameOf = (xs: Named[], id: string | null) => xs.find((x) => x.id === id);
 
   return (
-    <div className="fixed inset-0 z-40 flex justify-end" onClick={onClose}>
+    <div className="fixed inset-0 z-[60] flex justify-end" onClick={onClose}>
       <div className="absolute inset-0 bg-overlay" />
       <div onClick={(x) => x.stopPropagation()} className="relative h-full w-full max-w-[760px] bg-canvas border-l border-line overflow-y-auto shadow-xl">
         <div className="sticky top-0 z-10 bg-canvas/95 backdrop-blur border-b border-line px-5 py-3 flex items-center justify-between gap-3">
@@ -692,7 +692,7 @@ function CreateModal({ brandId, idea, members, personas, angles, concepts, ads, 
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-[70] flex items-center justify-center p-4" onClick={onClose}>
       <div className="absolute inset-0 bg-overlay" />
       <div onClick={(e) => e.stopPropagation()} className="relative w-full max-w-xl rounded-xl border border-line bg-canvas shadow-xl">
         <div className="px-5 py-3 border-b border-line flex items-center justify-between">
