@@ -15,16 +15,17 @@
 // Body / query (legacy Spanish aliases still accepted):
 //   phase        numbers | creatives | all       (numeros | creativos | todo)
 //   days         window for the numbers phase (default 14, max 90)
-//   minSpend     spend threshold below which a creative is not analyzed (gastoMinimo)
+//   topN         top spenders per evaluated day that get a creative (default 10)
+//   windowDays   days the spend is summed over to rank them (default 3)
+//   lookbackDays how far back the ranking is re-evaluated, for backfills (default 60)
 //   creativeLimit how many creatives to resolve per run (limiteCreativos)
 // =============================================================================
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabase } from '@/lib/supabase';
 import { getSessionUser } from '@/lib/supabase-server';
-import { fetchAds, resolveAsset, videoIdsOf, pageIdOf, sleep, esLimiteDePeticiones, MetaApiError, type RawAd } from '@/lib/meta-api';
+import { fetchAds, fetchAdsByIds, resolveAsset, videoIdsOf, pageIdOf, sleep, esLimiteDePeticiones, MetaApiError, type RawAd } from '@/lib/meta-api';
 import { fetchAll } from '@/lib/fetch-all';
-import { resolveEconomics } from '@/lib/meta';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
@@ -36,8 +37,12 @@ interface Body {
   phase?: string;
   days?: number;
   minSpend?: number;
-  /** top spenders of the last 14 days that are always pulled (default 10) */
+  /** how many top spenders per evaluated day get a creative (default 10) */
   topN?: number;
+  /** days the spend is summed over to rank them (default 3) */
+  windowDays?: number;
+  /** how many days back the ranking is re-evaluated, for backfills (default 60) */
+  lookbackDays?: number;
   creativeLimit?: number;
   /** @deprecated aliases */
   gastoMinimo?: number;
@@ -93,42 +98,79 @@ async function syncNumbers(brandId: string, days: number) {
   return { rows: r.rows ?? 0, ads: r.ads ?? 0 };
 }
 
+/**
+ * Union of the daily top-N spenders over a trailing window.
+ *
+ * For each of the last `lookbackDays` days, sums each ad's spend over the
+ * `windowDays` ending that day and keeps the N biggest. The union is the set
+ * of ads the account actually bet on at some point — not a spend threshold,
+ * which scales with the account and pulls hundreds on a big one.
+ */
+export function rollingTopSpenders(
+  rows: Array<{ ad_id: string; date: string; spend: number }>,
+  topN: number, windowDays: number, lookbackDays: number,
+): Set<string> {
+  const out = new Set<string>();
+  if (!rows.length || topN <= 0) return out;
+  const byDate = new Map<string, Array<{ ad_id: string; spend: number }>>();
+  let last = rows[0].date;
+  for (const r of rows) {
+    if (r.date > last) last = r.date;
+    const bucket = byDate.get(r.date) ?? [];
+    bucket.push({ ad_id: r.ad_id, spend: r.spend });
+    byDate.set(r.date, bucket);
+  }
+  const dayMs = 86_400_000;
+  const lastMs = Date.parse(`${last}T00:00:00Z`);
+  const iso = (ms: number) => new Date(ms).toISOString().slice(0, 10);
+  for (let back = 0; back < lookbackDays; back++) {
+    const endMs = lastMs - back * dayMs;
+    const totals = new Map<string, number>();
+    for (let w = 0; w < windowDays; w++) {
+      for (const r of byDate.get(iso(endMs - w * dayMs)) ?? []) {
+        totals.set(r.ad_id, (totals.get(r.ad_id) ?? 0) + r.spend);
+      }
+    }
+    if (!totals.size) continue;
+    for (const [id] of [...totals.entries()].filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]).slice(0, topN)) out.add(id);
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------------------
 // Phase 2 — creatives: resolve the asset and queue
 // ---------------------------------------------------------------------------
 async function syncCreatives(
-  sb: ReturnType<typeof getSupabase>, acc: AccountRow, limit: number, minSpend: number, topN: number
+  sb: ReturnType<typeof getSupabase>, acc: AccountRow, limit: number, topN: number, windowDays: number, lookbackDays: number
 ) {
   const actId = acc.ad_account_id;
   const brandId = acc.brand_id;
-  const ads: RawAd[] = await fetchAds(actId);
 
-  // Lifetime spend per ad_id. A creative with irrelevant spend is not analyzed:
-  // it did not fail, it never had a chance — and feeding it to the brain as an
-  // example of "what does not work" poisons the conclusions.
-  // Two gates, either one lets an ad through:
-  //   · lifetime spend ≥ minSpend (the brand's kill by default)
-  //   · the top N spenders of the last 14 days — what the account is betting on
-  //     right now always gets pulled, so the brain learns from the money.
+  // WHICH ads deserve a creative. The rule: the top N spenders of the trailing
+  // 3 days, evaluated once per day over the lookback. Union of those daily
+  // top-Ns — so a backfill catches everything the account ever bet on, and from
+  // then on only the one or two that enter the top each day.
+  //
+  // Measured on FEEL-INK (58 days): top-10/3d = 69 distinct ads = 21% of the
+  // ads but 91.3% of the spend and 93.6% of the revenue. Everything outside is
+  // not "what does not work" — it is spend Meta never granted. Labelling it as
+  // a loser would poison the brain, so it is marked sin_senal, never analyzed.
+  const daily = await fetchAll(() => sb.from('ad_daily').select('ad_id,date,spend').eq('brand_id', brandId).not('ad_id', 'is', null).order('date'));
+  const rows = daily.map((d) => ({ ad_id: d.ad_id as string, date: d.date as string, spend: Number(d.spend ?? 0) }));
   const spendByAd = new Map<string, number>();
-  const recentByAd = new Map<string, number>();
-  const since14 = new Date(Date.now() - 14 * 86_400_000).toISOString().slice(0, 10);
-  {
-    const data = await fetchAll(() => sb.from('ad_daily').select('ad_id,date,spend').eq('brand_id', brandId).not('ad_id', 'is', null).order('ad_id').order('date'));
-    for (const d of data) {
-      const id = d.ad_id as string, v = Number(d.spend ?? 0);
-      spendByAd.set(id, (spendByAd.get(id) ?? 0) + v);
-      if ((d.date as string) >= since14) recentByAd.set(id, (recentByAd.get(id) ?? 0) + v);
-    }
-  }
-  const topIds = new Set([...recentByAd.entries()].filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]).slice(0, topN).map(([id]) => id));
-  const passesGate = (adId: string) => topIds.has(adId) || (spendByAd.get(adId) ?? 0) >= minSpend;
+  for (const r of rows) spendByAd.set(r.ad_id, (spendByAd.get(r.ad_id) ?? 0) + r.spend);
+  const topIds = rollingTopSpenders(rows, topN, windowDays, lookbackDays);
+  const passesGate = (adId: string) => topIds.has(adId);
 
-  const { data: rows } = await sb
+  // Only those ads are asked of Meta. Sweeping /act_<id>/ads with the nested
+  // creative{} is what makes a 783-ad account answer `code 1`.
+  const ads: RawAd[] = topIds.size ? await fetchAdsByIds([...topIds]) : [];
+
+  const { data: rows2 } = await sb
     .from('meta_ads')
     .select('id,name,ad_id,asset_kind,asset_url,queue_status,creative_id,asset_strategy')
     .eq('brand_id', brandId);
-  const byAdId = new Map((rows ?? []).map((r) => [r.ad_id as string, r]));
+  const byAdId = new Map((rows2 ?? []).map((r) => [r.ad_id as string, r]));
 
   // Videos already analyzed → dedup (many ads share one video)
   const { data: done } = await sb
@@ -152,7 +194,7 @@ async function syncCreatives(
   for (const ad of ads) {
     const prev = byAdId.get(ad.id);
     // An ad skipped for low spend earlier is reconsidered once it passes the gate.
-    const skippedForSpend = prev?.queue_status === 'omitido' && prev?.asset_strategy === 'poco-gasto';
+    const skippedForSpend = prev?.queue_status === 'omitido' && (prev?.asset_strategy === 'poco-gasto' || prev?.asset_strategy === 'sin-senal');
     const alreadyDone = Boolean(prev?.asset_url) || prev?.queue_status === 'listo' || (prev?.queue_status === 'omitido' && !(skippedForSpend && passesGate(ad.id)));
     if (alreadyDone) continue;
     if (resolved >= limit || limited) { remaining++; continue; }
@@ -180,8 +222,8 @@ async function syncCreatives(
     if (!passesGate(ad.id)) {
       pending.push({
         ...base, video_id: vids[0] ?? null, queue_status: 'omitido',
-        asset_strategy: 'poco-gasto',
-        queue_error: `spend ${spend.toFixed(0)} < ${minSpend} ${acc.currency ?? ''}: not enough signal to analyze`.trim(),
+        asset_strategy: 'sin-senal',
+        queue_error: `spend ${spend.toFixed(0)} ${acc.currency ?? ''}: never in the top ${topN} of a 3-day window — no signal, not a loser`.trim(),
       });
       lowSpend++;
       if (pending.length >= 25) await flush();
@@ -229,7 +271,24 @@ async function syncCreatives(
   }
 
   await flush();
-  return { adsSeen: ads.length, resolved, queued, deduped, blocked, lowSpend, remaining, limited, waitMin, strategies };
+  // Everything the policy did not select stops being "pending forever": it is
+  // spend Meta never granted, so it is parked as sin_senal and never analyzed.
+  let noSignal = 0;
+  {
+    const stale = (rows2 ?? []).filter((r) => !topIds.has(r.ad_id as string) && (r.queue_status === 'pendiente' || r.queue_status == null)).map((r) => r.id as string);
+    for (let i = 0; i < stale.length; i += 500) {
+      const slice = stale.slice(i, i + 500);
+      const { error } = await sb.from('meta_ads').update({
+        queue_status: 'omitido', asset_strategy: 'sin-senal',
+        queue_error: `never in the top ${topN} of a ${windowDays}-day window — no signal, not a loser`,
+        updated_at: new Date().toISOString(),
+      }).in('id', slice);
+      if (error) throw new Error(`meta_ads(sin-senal): ${error.message}`);
+      noSignal += slice.length;
+    }
+  }
+
+  return { adsSeen: ads.length, selected: topIds.size, resolved, queued, deduped, blocked, lowSpend, noSignal, remaining, limited, waitMin, strategies };
 }
 
 // ---------------------------------------------------------------------------
@@ -247,6 +306,10 @@ async function run(request: NextRequest, body: Body) {
   const days = Math.min(Math.max(body.days ?? 14, 1), 90);
   const limit = Math.min(Math.max(body.creativeLimit ?? body.limiteCreativos ?? 60, 1), 300);
   const topN = Math.min(Math.max(body.topN ?? 10, 0), 50);
+  // The window the top-N is measured over, and how far back we re-evaluate it.
+  // Defaults are the agreed policy: top 10 of the last 3 days, backfilled 60 days.
+  const windowDays = Math.min(Math.max(body.windowDays ?? 3, 1), 30);
+  const lookbackDays = Math.min(Math.max(body.lookbackDays ?? 60, 1), 365);
 
   const accounts = await targetAccounts(sb, user?.id ?? null, body.brandId);
   if (accounts.length === 0) {
@@ -273,10 +336,7 @@ async function run(request: NextRequest, body: Body) {
       }
       if (phase === 'creatives' || phase === 'all') {
         try {
-          // Spend gate: explicit, else the brand's kill threshold.
-          const { data: brandRow } = await sb.from('brands').select('economics').eq('id', acc.brand_id).single();
-          const minSpend = Math.max(body.minSpend ?? body.gastoMinimo ?? resolveEconomics(brandRow?.economics).kill, 0);
-          r.creatives = await syncCreatives(sb, acc, limit, minSpend, topN);
+          r.creatives = await syncCreatives(sb, acc, limit, topN, windowDays, lookbackDays);
           if ((r.creatives as { limited?: boolean })?.limited) r.limited = true;
         } catch (e) {
           if (!esLimiteDePeticiones(e)) throw e;
@@ -320,6 +380,8 @@ export async function GET(request: NextRequest) {
     days: n('days'),
     minSpend: n('minSpend') ?? n('gastoMin'),
     topN: n('top'),
+    windowDays: n('window'),
+    lookbackDays: n('lookback'),
     creativeLimit: n('limit') ?? n('limite'),
   });
 }

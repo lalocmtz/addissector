@@ -179,6 +179,32 @@ export async function fetchAds(actId: string, maxPages = 40): Promise<RawAd[]> {
   return graphAll<RawAd>(`${actId}/ads`, { fields: AD_FIELDS }, { maxPages });
 }
 
+/** Meta acepta como mucho 50 ids por peticion en el endpoint /?ids=. */
+const IDS_CHUNK = 50;
+
+/**
+ * Solo los anuncios que nos interesan, por id.
+ *
+ * Barrer /act_<id>/ads con AD_FIELDS anidado revienta en cuentas grandes: con
+ * 783 anuncios Meta contesta `code 1 · An unknown error occurred` (no es la
+ * trampa del limit, PAGE_LIMIT ya es 100 — es que expandir creative{} 783
+ * veces se le hace largo). Como la politica solo necesita los que mas gastan,
+ * pedimos esos por id: una peticion chica en vez de ocho gordas.
+ */
+export async function fetchAdsByIds(ids: string[], token?: string): Promise<RawAd[]> {
+  const unique = [...new Set(ids.filter(Boolean))];
+  const out: RawAd[] = [];
+  for (let i = 0; i < unique.length; i += IDS_CHUNK) {
+    const chunk = unique.slice(i, i + IDS_CHUNK);
+    const raw = await graph<Record<string, RawAd>>('', { ids: chunk.join(','), fields: AD_FIELDS }, token);
+    for (const id of chunk) {
+      const ad = raw?.[id];
+      if (ad?.id) out.push(ad);
+    }
+  }
+  return out;
+}
+
 /** Extrae todos los video_id que referencia un anuncio (incluye dynamic creative). */
 export function videoIdsOf(ad: RawAd): string[] {
   const c = ad.creative ?? {};
