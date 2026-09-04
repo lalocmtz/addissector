@@ -9,7 +9,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { aggregateByAd, AD_DAILY_COLUMNS, type AdDailyRow, type AdAggregate } from '@/lib/metrics';
-import { resolveEconomics } from '@/lib/meta';
+import { resolveEconomics, type Economics } from '@/lib/meta';
 import { matchAndPin } from '@/lib/ad-matching';
 import { evaluateExperiment, resolveCriteria, closeExperiment, type Evaluation, type ExperimentRow, type SuccessCriteria } from '@/lib/experiments';
 import { fetchAll } from '@/lib/fetch-all';
@@ -32,6 +32,17 @@ export interface ExperimentFull extends ExperimentRow {
   variants: VariantRow[];
   evaluation: Evaluation | null;
   control_name: string | null;
+}
+
+/**
+ * Shapes a freshly inserted row into the same ExperimentFull the board reads.
+ * Without this the create response lacks `criteria`, and the drawer — which
+ * opens on the new experiment right away — reads criteria.min_spend of
+ * undefined and takes the page down.
+ */
+export function shapeNewExperiment(row: unknown, eco: Economics): ExperimentFull {
+  const e = row as Omit<ExperimentFull, 'criteria' | 'variants' | 'evaluation' | 'control_name'>;
+  return { ...e, criteria: resolveCriteria(e.success_criteria, eco), variants: [], evaluation: null, control_name: null };
 }
 
 export async function loadExperiments(sb: SupabaseClient, userId: string, brandId: string, opts: { autoClose?: boolean } = {}): Promise<{ experiments: ExperimentFull[]; currency: string | null; closed: string[] }> {

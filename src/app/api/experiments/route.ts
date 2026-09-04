@@ -10,7 +10,7 @@ import { getSupabase } from '@/lib/supabase';
 import { getSessionUser } from '@/lib/supabase-server';
 import { resolveEconomics } from '@/lib/meta';
 import { isVariable, defaultCriteria, resolveCriteria, nextExperimentNumber, experimentCode, EXPERIMENT_STATUSES } from '@/lib/experiments';
-import { loadExperiments, EXPERIMENT_SELECT } from '@/lib/experiments-server';
+import { loadExperiments, shapeNewExperiment, EXPERIMENT_SELECT } from '@/lib/experiments-server';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -57,7 +57,7 @@ export async function POST(request: NextRequest) {
     owner_id: owner, status: 'draft', planned_for: str(body.planned_for),
   }).select(EXPERIMENT_SELECT).single();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ experiment: data });
+  return NextResponse.json({ experiment: shapeNewExperiment(data, eco) });
 }
 
 const WRITABLE = ['name', 'hypothesis', 'prior_evidence', 'variable', 'persona_id', 'angle_id', 'concept_id', 'control_ad_id', 'control_note', 'success_criteria', 'owner_id', 'status', 'planned_for', 'brief'] as const;

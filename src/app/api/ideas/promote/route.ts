@@ -8,7 +8,7 @@ import { getSupabase } from '@/lib/supabase';
 import { getSessionUser } from '@/lib/supabase-server';
 import { resolveEconomics } from '@/lib/meta';
 import { isVariable, defaultCriteria, nextExperimentNumber, experimentCode } from '@/lib/experiments';
-import { EXPERIMENT_SELECT } from '@/lib/experiments-server';
+import { EXPERIMENT_SELECT, shapeNewExperiment } from '@/lib/experiments-server';
 
 export const runtime = 'nodejs';
 
@@ -43,7 +43,7 @@ export async function POST(request: NextRequest) {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   await sb.from('idea').update({ status: 'promoted', experiment_id: exp.id, variable: body.variable, updated_at: new Date().toISOString() }).eq('id', idea.id);
-  return NextResponse.json({ experiment: exp });
+  return NextResponse.json({ experiment: shapeNewExperiment(exp, eco) });
 }
 
 async function defaultOwner(sb: ReturnType<typeof getSupabase>, userId: string, brandId: string): Promise<string | null> {

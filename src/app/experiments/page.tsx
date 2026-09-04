@@ -167,7 +167,7 @@ export default function ExperimentsPage() {
         <CreateModal
           brandId={activeBrandId} idea={creating.idea} members={members} personas={personas} angles={angles} concepts={concepts} ads={ads} currency={currency}
           onClose={() => setCreating(null)}
-          onCreated={(e) => { setCreating(null); setExperiments((xs) => [{ ...e, variants: [], evaluation: null }, ...xs]); setSelectedId(e.id); load(); }}
+          onCreated={(e) => { setCreating(null); setExperiments((xs) => [e, ...xs]); setSelectedId(e.id); load(); }}
           onError={setError}
         />
       )}
@@ -319,7 +319,7 @@ function Detail({ e, brandId, currency, members, personas, angles, concepts, ads
 
   return (
     <div className="fixed inset-0 z-[60] flex justify-end" onClick={onClose}>
-      <div className="absolute inset-0 bg-overlay" />
+      <div className="absolute inset-0 bg-overlay/60" />
       <div onClick={(x) => x.stopPropagation()} className="relative h-full w-full max-w-[760px] bg-canvas border-l border-line overflow-y-auto shadow-xl">
         <div className="sticky top-0 z-10 bg-canvas/95 backdrop-blur border-b border-line px-5 py-3 flex items-center justify-between gap-3">
           <div className="min-w-0">
@@ -693,7 +693,7 @@ function CreateModal({ brandId, idea, members, personas, angles, concepts, ads, 
 
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center p-4" onClick={onClose}>
-      <div className="absolute inset-0 bg-overlay" />
+      <div className="absolute inset-0 bg-overlay/60" />
       <div onClick={(e) => e.stopPropagation()} className="relative w-full max-w-xl rounded-xl border border-line bg-canvas shadow-xl">
         <div className="px-5 py-3 border-b border-line flex items-center justify-between">
           <h2 className="text-sm font-semibold text-ink">{idea ? t('exp.inbox.promote') : t('exp.new')}</h2>
