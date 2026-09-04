@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import AppHeader from '@/components/AppHeader';
 import { useMe, type BrandRow } from '@/lib/use-me';
+import { TeamSection, ProductsSection } from '@/components/TeamAndProducts';
 
 interface BrandAsset {
   id: string;
@@ -527,6 +528,8 @@ export default function MarcasPage() {
 
           {activeBrand && <BrandAssetsSection brand={activeBrand} />}
           {activeBrand && <BrandDocsSection brand={activeBrand} />}
+          {activeBrand && <TeamSection brandId={activeBrand.id} />}
+          {activeBrand && <ProductsSection brandId={activeBrand.id} />}
 
           <div className="mt-8 rounded-xl border border-line bg-surface p-4">
             <p className="text-xs text-ink-3 leading-relaxed">

@@ -298,4 +298,36 @@ export const en: Record<string, string> = {
   'exp.learning.none': 'No learning written (no verdict).',
   'exp.result.best': 'Best variant',
   'exp.error.generic': 'Something went wrong',
+  // Team (brand screen)
+  'team.title': 'Team',
+  'team.help': 'Who executes the work. A member belongs to this brand only, or to every brand. The assistant counts as a member and can own work too.',
+  'team.name': 'Name',
+  'team.email': 'Email (optional)',
+  'team.add': 'Add',
+  'team.remove': 'Remove from the team',
+  'team.restore': 'Restore',
+  'team.scope.brand': 'This brand',
+  'team.scope.all': 'All brands',
+
+  // Products (brand screen)
+  'products.title': 'Products',
+  'products.help': 'What an experiment sells. A brand can have several, and each experiment names the one it tests.',
+  'products.name': 'Product name',
+  'products.description': 'Description',
+  'products.price': 'Price',
+  'products.add': 'Add',
+  'products.empty': 'No products yet.',
+  'products.archive': 'Archive',
+  'products.restore': 'Restore',
+
+  // Member roles
+  'role.strategist': 'Strategist',
+  'role.image_editor': 'Image editor',
+  'role.video_editor': 'Video editor',
+  'role.ugc_creator': 'UGC creator',
+  'role.media_buyer': 'Media buyer',
+  'role.designer': 'Designer',
+  'role.editor': 'Editor',
+  'role.ai': 'Assistant',
+  'role.other': 'Other',
 };

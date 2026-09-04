@@ -294,4 +294,36 @@ export const es: Record<string, string> = {
   'exp.learning.none': 'Sin aprendizaje escrito (sin veredicto).',
   'exp.result.best': 'Mejor variante',
   'exp.error.generic': 'Algo salió mal',
+  // Equipo (pantalla de marca)
+  'team.title': 'Equipo',
+  'team.help': 'Quién ejecuta el trabajo. Un integrante pertenece solo a esta marca o a todas. El asistente también cuenta como integrante y puede ser responsable.',
+  'team.name': 'Nombre',
+  'team.email': 'Correo (opcional)',
+  'team.add': 'Agregar',
+  'team.remove': 'Quitar del equipo',
+  'team.restore': 'Restaurar',
+  'team.scope.brand': 'Esta marca',
+  'team.scope.all': 'Todas las marcas',
+
+  // Productos (pantalla de marca)
+  'products.title': 'Productos',
+  'products.help': 'Lo que vende un experimento. Una marca puede tener varios, y cada experimento nombra el que prueba.',
+  'products.name': 'Nombre del producto',
+  'products.description': 'Descripción',
+  'products.price': 'Precio',
+  'products.add': 'Agregar',
+  'products.empty': 'Todavía no hay productos.',
+  'products.archive': 'Archivar',
+  'products.restore': 'Restaurar',
+
+  // Roles del equipo
+  'role.strategist': 'Estratega',
+  'role.image_editor': 'Editor de imagen',
+  'role.video_editor': 'Editor de video',
+  'role.ugc_creator': 'Creador UGC',
+  'role.media_buyer': 'Media buyer',
+  'role.designer': 'Diseñador',
+  'role.editor': 'Editor',
+  'role.ai': 'Asistente',
+  'role.other': 'Otro',
 };
