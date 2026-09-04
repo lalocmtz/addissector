@@ -24,6 +24,7 @@ import { getSupabase } from '@/lib/supabase';
 import { getSessionUser } from '@/lib/supabase-server';
 import { fetchAds, resolveAsset, videoIdsOf, pageIdOf, sleep, esLimiteDePeticiones, MetaApiError, type RawAd } from '@/lib/meta-api';
 import { fetchAll } from '@/lib/fetch-all';
+import { resolveEconomics } from '@/lib/meta';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
@@ -35,6 +36,8 @@ interface Body {
   phase?: string;
   days?: number;
   minSpend?: number;
+  /** top spenders of the last 14 days that are always pulled (default 10) */
+  topN?: number;
   creativeLimit?: number;
   /** @deprecated aliases */
   gastoMinimo?: number;
@@ -94,7 +97,7 @@ async function syncNumbers(brandId: string, days: number) {
 // Phase 2 — creatives: resolve the asset and queue
 // ---------------------------------------------------------------------------
 async function syncCreatives(
-  sb: ReturnType<typeof getSupabase>, acc: AccountRow, limit: number, minSpend: number
+  sb: ReturnType<typeof getSupabase>, acc: AccountRow, limit: number, minSpend: number, topN: number
 ) {
   const actId = acc.ad_account_id;
   const brandId = acc.brand_id;
@@ -103,15 +106,27 @@ async function syncCreatives(
   // Lifetime spend per ad_id. A creative with irrelevant spend is not analyzed:
   // it did not fail, it never had a chance — and feeding it to the brain as an
   // example of "what does not work" poisons the conclusions.
+  // Two gates, either one lets an ad through:
+  //   · lifetime spend ≥ minSpend (the brand's kill by default)
+  //   · the top N spenders of the last 14 days — what the account is betting on
+  //     right now always gets pulled, so the brain learns from the money.
   const spendByAd = new Map<string, number>();
-  if (minSpend > 0) {
-    const data = await fetchAll(() => sb.from('ad_daily').select('ad_id,spend').eq('brand_id', brandId).not('ad_id', 'is', null).order('ad_id').order('date'));
-    for (const d of data) spendByAd.set(d.ad_id as string, (spendByAd.get(d.ad_id as string) ?? 0) + Number(d.spend ?? 0));
+  const recentByAd = new Map<string, number>();
+  const since14 = new Date(Date.now() - 14 * 86_400_000).toISOString().slice(0, 10);
+  {
+    const data = await fetchAll(() => sb.from('ad_daily').select('ad_id,date,spend').eq('brand_id', brandId).not('ad_id', 'is', null).order('ad_id').order('date'));
+    for (const d of data) {
+      const id = d.ad_id as string, v = Number(d.spend ?? 0);
+      spendByAd.set(id, (spendByAd.get(id) ?? 0) + v);
+      if ((d.date as string) >= since14) recentByAd.set(id, (recentByAd.get(id) ?? 0) + v);
+    }
   }
+  const topIds = new Set([...recentByAd.entries()].filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]).slice(0, topN).map(([id]) => id));
+  const passesGate = (adId: string) => topIds.has(adId) || (spendByAd.get(adId) ?? 0) >= minSpend;
 
   const { data: rows } = await sb
     .from('meta_ads')
-    .select('id,name,ad_id,asset_kind,asset_url,queue_status,creative_id')
+    .select('id,name,ad_id,asset_kind,asset_url,queue_status,creative_id,asset_strategy')
     .eq('brand_id', brandId);
   const byAdId = new Map((rows ?? []).map((r) => [r.ad_id as string, r]));
 
@@ -136,7 +151,9 @@ async function syncCreatives(
 
   for (const ad of ads) {
     const prev = byAdId.get(ad.id);
-    const alreadyDone = Boolean(prev?.asset_url) || prev?.queue_status === 'listo' || prev?.queue_status === 'omitido';
+    // An ad skipped for low spend earlier is reconsidered once it passes the gate.
+    const skippedForSpend = prev?.queue_status === 'omitido' && prev?.asset_strategy === 'poco-gasto';
+    const alreadyDone = Boolean(prev?.asset_url) || prev?.queue_status === 'listo' || (prev?.queue_status === 'omitido' && !(skippedForSpend && passesGate(ad.id)));
     if (alreadyDone) continue;
     if (resolved >= limit || limited) { remaining++; continue; }
 
@@ -160,7 +177,7 @@ async function syncCreatives(
 
     // Spend gate BEFORE asking Meta anything: saves quota and tokens.
     const spend = spendByAd.get(ad.id) ?? 0;
-    if (minSpend > 0 && spend < minSpend) {
+    if (!passesGate(ad.id)) {
       pending.push({
         ...base, video_id: vids[0] ?? null, queue_status: 'omitido',
         asset_strategy: 'poco-gasto',
@@ -229,7 +246,7 @@ async function run(request: NextRequest, body: Body) {
   const phase = normalizePhase(body.phase);
   const days = Math.min(Math.max(body.days ?? 14, 1), 90);
   const limit = Math.min(Math.max(body.creativeLimit ?? body.limiteCreativos ?? 60, 1), 300);
-  const minSpend = Math.max(body.minSpend ?? body.gastoMinimo ?? 58, 0);
+  const topN = Math.min(Math.max(body.topN ?? 10, 0), 50);
 
   const accounts = await targetAccounts(sb, user?.id ?? null, body.brandId);
   if (accounts.length === 0) {
@@ -256,7 +273,10 @@ async function run(request: NextRequest, body: Body) {
       }
       if (phase === 'creatives' || phase === 'all') {
         try {
-          r.creatives = await syncCreatives(sb, acc, limit, minSpend);
+          // Spend gate: explicit, else the brand's kill threshold.
+          const { data: brandRow } = await sb.from('brands').select('economics').eq('id', acc.brand_id).single();
+          const minSpend = Math.max(body.minSpend ?? body.gastoMinimo ?? resolveEconomics(brandRow?.economics).kill, 0);
+          r.creatives = await syncCreatives(sb, acc, limit, minSpend, topN);
           if ((r.creatives as { limited?: boolean })?.limited) r.limited = true;
         } catch (e) {
           if (!esLimiteDePeticiones(e)) throw e;
@@ -299,6 +319,7 @@ export async function GET(request: NextRequest) {
     phase: sp.get('phase') ?? undefined,
     days: n('days'),
     minSpend: n('minSpend') ?? n('gastoMin'),
+    topN: n('top'),
     creativeLimit: n('limit') ?? n('limite'),
   });
 }
