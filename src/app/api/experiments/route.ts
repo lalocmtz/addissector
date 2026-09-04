@@ -54,13 +54,13 @@ export async function POST(request: NextRequest) {
     persona_id: str(body.persona_id), angle_id: str(body.angle_id), concept_id: str(body.concept_id),
     control_ad_id: str(body.control_ad_id), control_note: str(body.control_note),
     success_criteria: body.success_criteria ? resolveCriteria(body.success_criteria, eco) : defaultCriteria(eco),
-    owner_id: owner, status: 'draft', planned_for: str(body.planned_for),
+    owner_id: owner, status: 'draft', planned_for: str(body.planned_for), product_id: str(body.product_id),
   }).select(EXPERIMENT_SELECT).single();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ experiment: shapeNewExperiment(data, eco) });
 }
 
-const WRITABLE = ['name', 'hypothesis', 'prior_evidence', 'variable', 'persona_id', 'angle_id', 'concept_id', 'control_ad_id', 'control_note', 'success_criteria', 'owner_id', 'status', 'planned_for', 'brief'] as const;
+const WRITABLE = ['name', 'hypothesis', 'prior_evidence', 'variable', 'persona_id', 'angle_id', 'concept_id', 'control_ad_id', 'control_note', 'success_criteria', 'owner_id', 'status', 'planned_for', 'brief', 'product_id', 'hypothesis_doc', 'notes'] as const;
 
 export async function PATCH(request: NextRequest) {
   const user = await getSessionUser();

@@ -14,7 +14,7 @@ import { matchAndPin } from '@/lib/ad-matching';
 import { evaluateExperiment, resolveCriteria, closeExperiment, type Evaluation, type ExperimentRow, type SuccessCriteria } from '@/lib/experiments';
 import { fetchAll } from '@/lib/fetch-all';
 
-export const EXPERIMENT_SELECT = 'id,user_id,brand_id,number,code,name,hypothesis,prior_evidence,variable,persona_id,angle_id,concept_id,control_ad_id,control_note,success_criteria,owner_id,status,result,learning_id,brief,planned_for,started_at,closed_at,close_reason,evaluated_at,idea_id,created_at,updated_at';
+export const EXPERIMENT_SELECT = 'id,user_id,brand_id,number,code,name,hypothesis,prior_evidence,variable,persona_id,angle_id,concept_id,control_ad_id,control_note,success_criteria,owner_id,status,result,learning_id,brief,planned_for,started_at,closed_at,close_reason,evaluated_at,idea_id,product_id,hypothesis_doc,notes,created_at,updated_at';
 export const VARIANT_SELECT = 'id,experiment_id,concept_id,ad_name,variant,hook_id,hook,format,script,visual_notes,status,owner_id,meta_ad_id,matched_at,uploaded_at,claimed_from,result,created_at';
 
 export interface VariantRow {
@@ -28,6 +28,7 @@ export interface ExperimentFull extends ExperimentRow {
   number: number; prior_evidence: unknown; control_note: string | null; owner_id: string | null; status: string; result: unknown;
   learning_id: string | null; brief: unknown; planned_for: string | null; closed_at: string | null; close_reason: string | null;
   evaluated_at: string | null; idea_id: string | null; created_at: string; updated_at: string;
+  product_id: string | null; hypothesis_doc: unknown; notes: string | null;
   criteria: SuccessCriteria;
   variants: VariantRow[];
   evaluation: Evaluation | null;

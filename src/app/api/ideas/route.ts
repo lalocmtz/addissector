@@ -5,8 +5,8 @@ export const runtime = 'nodejs';
 
 const crud = makeCrud({
   table: 'idea',
-  select: 'id,text,rationale,source,status,variable,persona_id,angle_id,concept_id,hook_id,dimension,dimension_value,evidence,experiment_id,owner_id,created_by,discarded_reason,created_at,updated_at',
-  writable: ['text', 'rationale', 'source', 'status', 'variable', 'persona_id', 'angle_id', 'concept_id', 'hook_id', 'dimension', 'dimension_value', 'evidence', 'owner_id', 'created_by', 'discarded_reason'],
+  select: 'id,text,rationale,source,status,variable,persona_id,angle_id,concept_id,hook_id,dimension,dimension_value,evidence,experiment_id,owner_id,created_by,discarded_reason,notes,created_at,updated_at',
+  writable: ['text', 'rationale', 'source', 'status', 'variable', 'persona_id', 'angle_id', 'concept_id', 'hook_id', 'dimension', 'dimension_value', 'evidence', 'owner_id', 'created_by', 'discarded_reason', 'notes'],
   orderBy: { column: 'created_at', ascending: false },
   limit: 1000,
 });

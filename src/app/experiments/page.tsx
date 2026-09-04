@@ -7,19 +7,24 @@
 // =============================================================================
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Plus, Loader2, X, Copy, Check, Sparkles, ArrowUpRight, Trash2, Link2, CircleDashed, CheckCircle2, XCircle, MinusCircle, ChevronRight } from 'lucide-react';
+import { Plus, Loader2, X, Copy, Check, Sparkles, ArrowUpRight, Trash2, Link2, CircleDashed, CheckCircle2, XCircle, MinusCircle, ChevronRight, NotebookPen } from 'lucide-react';
 import AppHeader from '@/components/AppHeader';
 import { useMe } from '@/lib/use-me';
 import { useT, useFormatters } from '@/lib/i18n';
 import { EXPERIMENT_VARIABLES, type ExperimentVariable, type SuccessCriteria, type Verdict } from '@/lib/experiments';
 import type { ExperimentFull, VariantRow } from '@/lib/experiments-server';
 import type { Brief } from '@/lib/agents/brief-writer';
+import type { HypothesisDoc } from '@/lib/agents/hypothesis-writer';
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
-interface Idea { id: string; text: string; rationale: string | null; source: string; status: string; variable: string | null; persona_id: string | null; angle_id: string | null; concept_id: string | null; experiment_id: string | null; created_at: string }
+interface Idea { id: string; text: string; rationale: string | null; notes: string | null; source: string; status: string; variable: string | null; persona_id: string | null; angle_id: string | null; concept_id: string | null; experiment_id: string | null; created_at: string }
 interface Member { id: string; name: string; role: string; is_ai: boolean }
+interface Product { id: string; name: string; price: number | null; active: boolean }
+
+/** Who can be handed a variant to produce. Everyone else stays out of that list. */
+const PRODUCTION_ROLES = new Set(['image_editor', 'video_editor', 'ugc_creator', 'designer', 'editor']);
 interface Named { id: string; name: string; code?: string | null }
 interface AdPick { ad_id: string; ad_name: string; spend: number; roas: number | null; hook_rate: number | null }
 
@@ -69,6 +74,7 @@ export default function ExperimentsPage() {
   const [angles, setAngles] = useState<Named[]>([]);
   const [concepts, setConcepts] = useState<Named[]>([]);
   const [ads, setAds] = useState<AdPick[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [closedNotice, setClosedNotice] = useState(0);
   const [tab, setTab] = useState<'active' | 'closed'>('active');
@@ -80,18 +86,20 @@ export default function ExperimentsPage() {
     if (!activeBrandId) return;
     setLoading(true);
     try {
-      const [ex, id, pe, an, co, ad] = await Promise.all([
+      const [ex, id, pe, an, co, ad, pr] = await Promise.all([
         api<{ experiments: ExperimentFull[]; currency: string | null; closed: string[]; members: Member[] }>(`/api/experiments?brand=${activeBrandId}`),
         api<{ items: Idea[] }>(`/api/ideas?brand=${activeBrandId}`),
         api<{ items: Named[] }>(`/api/plan/personas?brand=${activeBrandId}`),
         api<{ items: Named[] }>(`/api/plan/angles?brand=${activeBrandId}`),
         api<{ items: Named[] }>(`/api/plan/concepts?brand=${activeBrandId}`),
         api<{ ads: AdPick[] }>(`/api/meta/ads?brand=${activeBrandId}&window=lifetime`),
+        api<{ items: Product[] }>(`/api/products?brand=${activeBrandId}`).catch(() => ({ items: [] as Product[] })),
       ]);
       setExperiments(ex.experiments); setCurrency(ex.currency); setMembers(ex.members);
       if (ex.closed.length) setClosedNotice(ex.closed.length);
       setIdeas(id.items); setPersonas(pe.items); setAngles(an.items); setConcepts(co.items);
       setAds((ad.ads ?? []).map((a) => ({ ad_id: a.ad_id, ad_name: a.ad_name, spend: a.spend, roas: a.roas, hook_rate: a.hook_rate })));
+      setProducts((pr.items ?? []).filter((x) => x.active !== false));
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : t('exp.error.generic'));
@@ -159,13 +167,13 @@ export default function ExperimentsPage() {
 
       {selected && activeBrandId && (
         <Detail
-          e={selected} brandId={activeBrandId} currency={currency} members={members} personas={personas} angles={angles} concepts={concepts} ads={ads}
+          e={selected} brandId={activeBrandId} currency={currency} members={members} personas={personas} angles={angles} concepts={concepts} ads={ads} products={products}
           onClose={() => setSelectedId(null)} onChange={patchExperiment} onReload={load} onError={setError}
         />
       )}
       {creating && activeBrandId && (
         <CreateModal
-          brandId={activeBrandId} idea={creating.idea} members={members} personas={personas} angles={angles} concepts={concepts} ads={ads} currency={currency}
+          brandId={activeBrandId} idea={creating.idea} members={members} personas={personas} angles={angles} concepts={concepts} ads={ads} products={products} currency={currency}
           onClose={() => setCreating(null)}
           onCreated={(e) => { setCreating(null); setExperiments((xs) => [e, ...xs]); setSelectedId(e.id); load(); }}
           onError={setError}
@@ -192,6 +200,12 @@ function Inbox({ brandId, ideas, setIdeas, onPromote, onError }: { brandId: stri
       setIdeas((xs) => [item, ...xs]); setText('');
     } catch (e) { onError(e instanceof Error ? e.message : t('exp.error.generic')); } finally { setBusy(false); }
   };
+  const saveNotes = async (i: Idea, notes: string) => {
+    try {
+      await api('/api/ideas', { method: 'PATCH', body: JSON.stringify({ id: i.id, notes }) });
+      setIdeas((xs) => xs.map((x) => (x.id === i.id ? { ...x, notes } : x)));
+    } catch (e) { onError(e instanceof Error ? e.message : t('exp.error.generic')); }
+  };
   const discard = async (i: Idea) => {
     try {
       await api('/api/ideas', { method: 'PATCH', body: JSON.stringify({ id: i.id, status: 'discarded' }) });
@@ -217,6 +231,9 @@ function Inbox({ brandId, ideas, setIdeas, onPromote, onError }: { brandId: stri
           <li key={i.id} className="px-4 py-3 group">
             <p className="text-sm text-ink leading-snug">{i.text}</p>
             {i.rationale && <p className="text-xs text-ink-3 mt-1">{i.rationale}</p>}
+            <textarea defaultValue={i.notes ?? ''} rows={2} placeholder={t('exp.inbox.notes.placeholder')}
+              className={`${input} resize-y mt-2 text-xs`}
+              onBlur={(e) => e.target.value !== (i.notes ?? '') && saveNotes(i, e.target.value)} />
             <div className="flex items-center justify-between mt-2">
               <span className="text-[11px] text-ink-4">{t(`exp.inbox.source.${i.source}`)}</span>
               <div className="flex items-center gap-1">
@@ -272,8 +289,8 @@ function ExperimentCard({ e, f, currency, owner, selected, onClick }: { e: Exper
 // ---------------------------------------------------------------------------
 // Detail drawer
 // ---------------------------------------------------------------------------
-function Detail({ e, brandId, currency, members, personas, angles, concepts, ads, onClose, onChange, onReload, onError }: {
-  e: ExperimentFull; brandId: string; currency: string | null; members: Member[]; personas: Named[]; angles: Named[]; concepts: Named[]; ads: AdPick[];
+function Detail({ e, brandId, currency, members, personas, angles, concepts, ads, products, onClose, onChange, onReload, onError }: {
+  e: ExperimentFull; brandId: string; currency: string | null; members: Member[]; personas: Named[]; angles: Named[]; concepts: Named[]; ads: AdPick[]; products: Product[];
   onClose: () => void; onChange: (e: ExperimentFull) => void; onReload: () => void; onError: (m: string) => void;
 }) {
   const t = useT();
@@ -284,6 +301,7 @@ function Detail({ e, brandId, currency, members, personas, angles, concepts, ads
   const [showClaim, setShowClaim] = useState(false);
   const ev = e.evaluation;
   const brief = e.brief as Brief | null;
+  const doc = (e.hypothesis_doc ?? null) as HypothesisDoc | null;
   const verdict = (e.result as { verdict?: Verdict } | null)?.verdict ?? null;
   const fail = (x: unknown) => onError(x instanceof Error ? x.message : t('exp.error.generic'));
 
@@ -292,6 +310,12 @@ function Detail({ e, brandId, currency, members, personas, angles, concepts, ads
     try { const { experiment } = await api<{ experiment: ExperimentFull }>('/api/experiments', { method: 'PATCH', body: JSON.stringify({ id: e.id, ...body }) }); onChange({ ...e, ...experiment }); }
     catch (x) { fail(x); } finally { setBusy(null); }
   };
+  const draftHypothesis = async () => {
+    setBusy('hypothesis');
+    try { const { experiment } = await api<{ experiment: ExperimentFull }>('/api/experiments/hypothesis', { method: 'POST', body: JSON.stringify({ id: e.id }) }); onChange({ ...e, ...experiment }); }
+    catch (x) { fail(x); } finally { setBusy(null); }
+  };
+  const patchDoc = (part: Partial<HypothesisDoc>) => patch({ hypothesis_doc: { ...(doc ?? {}), ...part } });
   const writeBrief = async () => {
     setBusy('brief');
     try { const { experiment } = await api<{ experiment: ExperimentFull }>('/api/experiments/brief', { method: 'POST', body: JSON.stringify({ id: e.id }) }); onChange({ ...e, ...experiment }); }
@@ -311,6 +335,10 @@ function Detail({ e, brandId, currency, members, personas, angles, concepts, ads
   const setVariantStatus = async (v: VariantRow, status: string) => {
     try { await api('/api/experiments/variants', { method: 'PATCH', body: JSON.stringify({ id: v.id, status }) }); onReload(); } catch (x) { fail(x); }
   };
+  const setVariantOwner = async (v: VariantRow, owner_id: string | null) => {
+    try { await api('/api/experiments/variants', { method: 'PATCH', body: JSON.stringify({ id: v.id, owner_id }) }); onReload(); } catch (x) { fail(x); }
+  };
+  const makers = members.filter((m) => PRODUCTION_ROLES.has(m.role));
   const removeVariant = async (v: VariantRow) => {
     try { await api(`/api/experiments/variants?id=${v.id}`, { method: 'DELETE' }); onReload(); } catch (x) { fail(x); }
   };
@@ -361,10 +389,49 @@ function Detail({ e, brandId, currency, members, personas, angles, concepts, ads
             <Field label={t('exp.field.angle')}><Select value={e.angle_id} options={angles} onChange={(v) => patch({ angle_id: v })} /></Field>
             <Field label={t('exp.field.concept')}><Select value={e.concept_id} options={concepts} onChange={(v) => patch({ concept_id: v })} /></Field>
             <Field label={t('exp.field.owner')}><Select value={e.owner_id} options={members} onChange={(v) => patch({ owner_id: v })} /></Field>
-            <Field label={t('exp.field.control')} className="sm:col-span-2">
+            <Field label={t('exp.field.product')}>
+              <Select value={e.product_id} options={products} onChange={(v) => patch({ product_id: v })} placeholder={t('exp.field.product.none')} />
+            </Field>
+            <Field label={t('exp.field.control')}>
               <AdSearch ads={ads} value={e.control_ad_id} valueName={e.control_name} onChange={(id) => patch({ control_ad_id: id })} f={f} currency={currency} />
             </Field>
           </div>
+
+          {/* Guided hypothesis — the AI drafts it, the strategist owns it */}
+          <section>
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-xs uppercase tracking-wide text-ink-3">{t('exp.doc')}</h3>
+              <button className={btn} disabled={busy === 'hypothesis'} onClick={draftHypothesis}>
+                {busy === 'hypothesis' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                {busy === 'hypothesis' ? t('exp.doc.drafting') : doc ? t('exp.doc.redraft') : t('exp.doc.draft')}
+              </button>
+            </div>
+            {!doc ? (
+              <p className="text-xs text-ink-3 rounded-md border border-dashed border-line px-4 py-5 text-center">{t('exp.doc.empty')}</p>
+            ) : (
+              <div className="rounded-lg border border-line bg-surface p-4 space-y-3">
+                <DocField label={t('exp.doc.statement')} value={doc.statement} rows={2} onSave={(v) => patchDoc({ statement: v })} />
+                <div className="grid sm:grid-cols-2 gap-3">
+                  <DocField label={t('exp.doc.audience')} value={doc.audience} rows={3} onSave={(v) => patchDoc({ audience: v })} />
+                  <DocField label={t('exp.doc.avatar')} value={doc.avatar} rows={3} onSave={(v) => patchDoc({ avatar: v })} />
+                  <DocField label={t('exp.doc.angleRationale')} value={doc.angle_rationale} rows={3} onSave={(v) => patchDoc({ angle_rationale: v })} />
+                  <DocField label={t('exp.doc.conceptRationale')} value={doc.concept_rationale} rows={3} onSave={(v) => patchDoc({ concept_rationale: v })} />
+                </div>
+                <DocList label={t('exp.doc.variantsToMake')} items={doc.variants_to_make} onSave={(v) => patchDoc({ variants_to_make: v })} />
+                <DocList label={t('exp.doc.heldConstant')} items={doc.held_constant} onSave={(v) => patchDoc({ held_constant: v })} />
+                <DocField label={t('exp.doc.killSignal')} value={doc.kill_signal} rows={2} onSave={(v) => patchDoc({ kill_signal: v })} />
+                {doc.open_questions?.length > 0 && <DocList label={t('exp.doc.openQuestions')} items={doc.open_questions} onSave={(v) => patchDoc({ open_questions: v })} />}
+                <p className="text-[11px] text-ink-4">{t('exp.doc.help')}</p>
+              </div>
+            )}
+          </section>
+
+          {/* Notebook */}
+          <section>
+            <h3 className="text-xs uppercase tracking-wide text-ink-3 mb-2 flex items-center gap-1.5"><NotebookPen className="w-3.5 h-3.5" />{t('exp.notes')}</h3>
+            <textarea defaultValue={e.notes ?? ''} rows={4} placeholder={t('exp.notes.placeholder')} className={`${input} resize-y`}
+              onBlur={(x) => x.target.value !== (e.notes ?? '') && patch({ notes: x.target.value })} />
+          </section>
 
           {/* Criteria */}
           <section>
@@ -409,7 +476,7 @@ function Detail({ e, brandId, currency, members, personas, angles, concepts, ads
                 <button className={btn} onClick={() => setShowAdd((v) => !v)}><Plus className="w-3.5 h-3.5" />{t('exp.variants.add')}</button>
               </div>
             </div>
-            {showAdd && <AddVariant experimentId={e.id} members={members} onDone={() => { setShowAdd(false); onReload(); }} onError={onError} />}
+            {showAdd && <AddVariant experimentId={e.id} members={makers.length ? makers : members} onDone={() => { setShowAdd(false); onReload(); }} onError={onError} />}
             {showClaim && <ClaimPanel brandId={brandId} experimentId={e.id} ads={ads} concepts={concepts} f={f} currency={currency} takenIds={new Set(e.variants.map((v) => v.meta_ad_id).filter(Boolean) as string[])} onDone={() => { setShowClaim(false); onReload(); }} onError={onError} />}
             {!e.variants.length ? (
               <p className="text-xs text-ink-3 rounded-md border border-dashed border-line px-4 py-5 text-center">{t('exp.variants.empty')}</p>
@@ -423,10 +490,14 @@ function Detail({ e, brandId, currency, members, personas, angles, concepts, ads
                         <span className="text-[11px] font-semibold text-ink-2 w-5">{v.variant}</span>
                         <code className="text-xs font-[family-name:var(--font-mono)] text-ink truncate">{v.ad_name}</code>
                         <button onClick={() => copy(v.ad_name)} className="text-ink-3 hover:text-ink" title={t('exp.variants.copyName')}>{copied === v.ad_name ? <Check className="w-3.5 h-3.5 text-ok" /> : <Copy className="w-3.5 h-3.5" />}</button>
-                        <span className="ml-auto text-[11px] px-1.5 py-0.5 rounded border border-line text-ink-3">{t(`exp.variants.status.${v.status}`)}</span>
+                        <span className="ml-auto text-[11px] text-ink-3">{members.find((m) => m.id === v.owner_id)?.name ?? t('exp.variants.noOwner')}</span>
+                        <span className="text-[11px] px-1.5 py-0.5 rounded border border-line text-ink-3">{t(`exp.variants.status.${v.status}`)}</span>
                         {!v.meta_ad_id && <button onClick={() => removeVariant(v)} className="text-ink-4 hover:text-danger"><Trash2 className="w-3.5 h-3.5" /></button>}
                       </div>
                       {(v.hook || v.format) && <p className="text-xs text-ink-2 mt-1 pl-7">{[v.format, v.hook].filter(Boolean).join(' · ')}</p>}
+                      <div className="pl-7 mt-1.5 max-w-[240px]">
+                        <Select value={v.owner_id} options={makers} placeholder={t('exp.variants.assign')} onChange={(id) => setVariantOwner(v, id)} />
+                      </div>
                       <div className="flex items-center gap-2 mt-1.5 pl-7 text-[11px] text-ink-3">
                         {v.meta_ad_id ? (
                           <><CheckCircle2 className="w-3 h-3 text-ok" />{t('exp.variants.pinned', { id: v.meta_ad_id })}{m && <span className="text-ink-2">· {f.money(m.spend, currency)} · ROAS {f.ratio(m.roas)} · {t('exp.gate.hook')} {f.pct(m.hook_rate)}</span>}</>
@@ -531,6 +602,29 @@ function BriefView({ brief, f }: { brief: Brief; f: Fmt }) {
 // ---------------------------------------------------------------------------
 function Field({ label: l, children, className = '' }: { label: string; children: React.ReactNode; className?: string }) {
   return <div className={className}><span className={label}>{l}</span>{children}</div>;
+}
+
+/** One editable field of the hypothesis draft. Saves on blur, like the rest. */
+function DocField({ label: l, value, rows, onSave }: { label: string; value: string; rows: number; onSave: (v: string) => void }) {
+  return (
+    <div>
+      <span className={label}>{l}</span>
+      <textarea key={value} defaultValue={value ?? ''} rows={rows} className={`${input} resize-y`}
+        onBlur={(e) => e.target.value !== (value ?? '') && onSave(e.target.value)} />
+    </div>
+  );
+}
+
+/** A list field of the draft: one line per item, blank lines dropped. */
+function DocList({ label: l, items, onSave }: { label: string; items: string[]; onSave: (v: string[]) => void }) {
+  const text = (items ?? []).join('\n');
+  return (
+    <div>
+      <span className={label}>{l}</span>
+      <textarea key={text} defaultValue={text} rows={Math.max(2, Math.min(8, (items ?? []).length + 1))} className={`${input} resize-y font-[family-name:var(--font-mono)] text-xs`}
+        onBlur={(e) => { const next = e.target.value.split('\n').map((x) => x.trim()).filter(Boolean); if (JSON.stringify(next) !== JSON.stringify(items ?? [])) onSave(next); }} />
+    </div>
+  );
 }
 
 function Select({ value, options, onChange, placeholder }: { value: string | null; options: Array<{ id: string; name: string; code?: string | null }>; onChange: (v: string | null) => void; placeholder?: string }) {
@@ -661,8 +755,8 @@ function ClaimPanel({ brandId, experimentId, ads, concepts, f, currency, takenId
 // ---------------------------------------------------------------------------
 // Create / promote modal
 // ---------------------------------------------------------------------------
-function CreateModal({ brandId, idea, members, personas, angles, concepts, ads, currency, onClose, onCreated, onError }: {
-  brandId: string; idea?: Idea; members: Member[]; personas: Named[]; angles: Named[]; concepts: Named[]; ads: AdPick[]; currency: string | null;
+function CreateModal({ brandId, idea, members, personas, angles, concepts, ads, products, currency, onClose, onCreated, onError }: {
+  brandId: string; idea?: Idea; members: Member[]; personas: Named[]; angles: Named[]; concepts: Named[]; ads: AdPick[]; products: Product[]; currency: string | null;
   onClose: () => void; onCreated: (e: ExperimentFull) => void; onError: (m: string) => void;
 }) {
   const t = useT();
@@ -675,6 +769,7 @@ function CreateModal({ brandId, idea, members, personas, angles, concepts, ads, 
   const [conceptId, setConceptId] = useState<string | null>(idea?.concept_id ?? null);
   const [ownerId, setOwnerId] = useState<string | null>(members.find((m) => m.role === 'strategist')?.id ?? null);
   const [controlId, setControlId] = useState<string | null>(null);
+  const [productId, setProductId] = useState<string | null>(products.length === 1 ? products[0].id : null);
   const [busy, setBusy] = useState(false);
   const [touched, setTouched] = useState(false);
 
@@ -683,7 +778,7 @@ function CreateModal({ brandId, idea, members, personas, angles, concepts, ads, 
     if (!variable || !name.trim()) return;
     setBusy(true);
     try {
-      const body = { brandId, name, variable, hypothesis, persona_id: personaId, angle_id: angleId, concept_id: conceptId, owner_id: ownerId, control_ad_id: controlId };
+      const body = { brandId, name, variable, hypothesis, persona_id: personaId, angle_id: angleId, concept_id: conceptId, owner_id: ownerId, control_ad_id: controlId, product_id: productId };
       const { experiment } = idea
         ? await api<{ experiment: ExperimentFull }>('/api/ideas/promote', { method: 'POST', body: JSON.stringify({ id: idea.id, ...body }) })
         : await api<{ experiment: ExperimentFull }>('/api/experiments', { method: 'POST', body: JSON.stringify(body) });
@@ -714,7 +809,8 @@ function CreateModal({ brandId, idea, members, personas, angles, concepts, ads, 
           <Field label={t('exp.field.angle')}><Select value={angleId} options={angles} onChange={setAngleId} /></Field>
           <Field label={t('exp.field.concept')}><Select value={conceptId} options={concepts} onChange={setConceptId} /></Field>
           <Field label={t('exp.field.owner')}><Select value={ownerId} options={members} onChange={setOwnerId} /></Field>
-          <Field label={t('exp.field.control')} className="sm:col-span-2"><AdSearch ads={ads} value={controlId} onChange={setControlId} f={f} currency={currency} /></Field>
+          <Field label={t('exp.field.product')}><Select value={productId} options={products} onChange={setProductId} placeholder={t('exp.field.product.none')} /></Field>
+          <Field label={t('exp.field.control')}><AdSearch ads={ads} value={controlId} onChange={setControlId} f={f} currency={currency} /></Field>
         </div>
         <div className="px-5 py-3 border-t border-line flex items-center justify-end gap-2">
           <button onClick={onClose} className={btn}>{t('common.cancel')}</button>
