@@ -187,7 +187,9 @@ function Tree({ data, money, brandId, onChange }: { data: Payload; money: (n: nu
     } finally { setBusy(false); }
   };
 
-  const AddRow = ({ id, kind, parent }: { id: string; kind: Kind; parent: { persona_id?: string; angle_id?: string } }) =>
+  // A plain render function, not a component: as a component React would remount
+  // it on every keystroke and the input would lose focus.
+  const addRow = (id: string, kind: Kind, parent: { persona_id?: string; angle_id?: string }) =>
     adding === id ? (
       <div className="flex items-center gap-2 py-2">
         <input autoFocus value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') create(kind, parent); if (e.key === 'Escape') setAdding(null); }} placeholder={t(`strategy.new.${kind}`)} className={`${input} max-w-sm`} />
@@ -245,12 +247,12 @@ function Tree({ data, money, brandId, onChange }: { data: Payload; money: (n: nu
                           <span className="ml-auto"><Numbers r={c.rollup} money={money} /></span>
                         </div>
                       ))}
-                      <AddRow id={`c-${a.id}`} kind="concept" parent={{ angle_id: a.id, persona_id: p.id }} />
+                      {addRow(`c-${a.id}`, 'concept', { angle_id: a.id, persona_id: p.id })}
                     </div>
                   )}
                 </div>
               ))}
-              <AddRow id={`a-${p.id}`} kind="angle" parent={{ persona_id: p.id }} />
+              {addRow(`a-${p.id}`, 'angle', { persona_id: p.id })}
             </div>
           )}
         </div>
@@ -274,7 +276,7 @@ function Tree({ data, money, brandId, onChange }: { data: Payload; money: (n: nu
         </div>
       )}
 
-      <AddRow id="p-new" kind="persona" parent={{}} />
+      {addRow('p-new', 'persona', {})}
     </div>
   );
 }

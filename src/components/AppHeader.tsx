@@ -24,7 +24,7 @@ interface AppHeaderProps {
 const NAV = [
   { href: '/meta', key: 'nav.meta', icon: BarChart3 },
   { href: '/experiments', key: 'nav.experiments', icon: FlaskConical },
-  { href: '/plan', key: 'nav.plan', icon: LayoutGrid },
+  { href: '/strategy', key: 'nav.strategy', icon: LayoutGrid },
   { href: '/biblioteca', key: 'nav.library', icon: Library },
   { href: '/cerebro', key: 'nav.brain', icon: Brain },
   { href: '/studio', key: 'nav.analyze', icon: Film },
