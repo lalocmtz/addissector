@@ -8,14 +8,18 @@ import { getSessionUser } from '@/lib/supabase-server';
 
 export const runtime = 'nodejs';
 const SELECT = 'id,brand_id,name,email,role,is_ai,active,created_at';
-const ROLES = ['strategist', 'designer', 'editor', 'media_buyer', 'ai', 'other'];
+
+import { MEMBER_ROLES } from '@/lib/team';
+const ROLES: readonly string[] = MEMBER_ROLES;
 
 export async function GET(request: NextRequest) {
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
   const brandId = request.nextUrl.searchParams.get('brand');
   const sb = getSupabase();
-  let q = sb.from('member').select(SELECT).eq('user_id', user.id).eq('active', true).order('created_at');
+  const all = request.nextUrl.searchParams.get('all') === '1';
+  let q = sb.from('member').select(SELECT).eq('user_id', user.id).order('created_at');
+  if (!all) q = q.eq('active', true);
   if (brandId) q = q.or(`brand_id.is.null,brand_id.eq.${brandId}`);
   const { data, error } = await q;
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
