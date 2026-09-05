@@ -129,9 +129,11 @@ export default function BarridoPage() {
     for (let round = 0; round < 60 && !detener.current; round++) {
       let cre: { remaining?: number; limited?: boolean; resolved?: number;
                  queued?: number; deduped?: number; blocked?: number; lowSpend?: number;
+                 selected?: number; noSignal?: number;
                  adsSeen?: number; strategies?: Record<string, number> } | null = null;
       let waitMin = 0;
       let limited = false;
+      let fallo = false;
       try {
         // Batches of 12: one long run exceeds the server time limit and the
         // browser only sees "Failed to fetch".
@@ -143,14 +145,16 @@ export default function BarridoPage() {
         const j = await r.json();
 
         for (const m of j.accounts ?? []) {
-          if (m.error) { apunta('err', `${m.brand}: ${m.error}`); continue; }
+          // Una cuenta que falla NO es un barrido completo: sin esto la bitácora
+          // escribía "Sync complete" en verde justo debajo del error en rojo.
+          if (m.error) { apunta('err', `${m.brand}: ${m.error}`); fallo = true; continue; }
           if (m.numbers) apunta('ok', `${m.brand}: ${m.numbers.rows ?? 0} ad-days saved`);
           if (m.limited) limited = true;
           if (m.waitMin) waitMin = Math.max(waitMin, m.waitMin);
           cre = m.creatives ?? null;
           if (cre) {
             totalResolved += cre.resolved ?? 0;
-            apunta('ok', `Creatives: ${cre.queued ?? 0} worth analyzing · ${cre.lowSpend ?? 0} skipped for low spend · ${cre.deduped ?? 0} duplicates · ${cre.remaining ?? 0} remaining`);
+            apunta('ok', `Creatives: ${cre.selected ?? 0} selected by spend · ${cre.queued ?? 0} worth analyzing · ${cre.deduped ?? 0} duplicates · ${cre.noSignal ?? 0} parked with no signal · ${cre.remaining ?? 0} remaining`);
             if (cre.strategies && Object.keys(cre.strategies).length) {
               apunta('info', 'Routes: ' + Object.entries(cre.strategies).map(([k, v]) => `${k}:${v}`).join(' · '));
             }
@@ -160,6 +164,8 @@ export default function BarridoPage() {
         apunta('err', e instanceof Error ? e.message : 'Sync error');
         break;
       }
+
+      if (fallo) { apunta('err', 'Barrido detenido: Meta rechazó la petición. Nada se descubrió.'); break; }
 
       phase = 'creatives'; // numbers only need one pass
       await cargarResumen();

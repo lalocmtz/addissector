@@ -55,6 +55,7 @@ interface AccountRow {
   user_id: string | null;
   ad_account_id: string;
   currency: string | null;
+  access_token: string | null;
   brand: { name: string } | { name: string }[] | null;
 }
 
@@ -68,7 +69,7 @@ function normalizePhase(p: string | undefined): Phase {
 
 /** Accounts to sync: the requested brand's, or every active account. */
 async function targetAccounts(sb: ReturnType<typeof getSupabase>, userId: string | null, brandId?: string): Promise<AccountRow[]> {
-  let q = sb.from('ad_account').select('id,brand_id,user_id,ad_account_id,currency,brand:brands(name)').eq('active', true);
+  let q = sb.from('ad_account').select('id,brand_id,user_id,ad_account_id,currency,access_token,brand:brands(name)').eq('active', true);
   if (brandId) q = q.eq('brand_id', brandId);
   if (userId) q = q.eq('user_id', userId);
   const { data } = await q;
@@ -145,6 +146,8 @@ async function syncCreatives(
 ) {
   const actId = acc.ad_account_id;
   const brandId = acc.brand_id;
+  // El token vive en la BD (ad_account.access_token). Ver adToken() en meta-api.
+  const token = acc.access_token ?? null;
 
   // WHICH ads deserve a creative. The rule: the top N spenders of the trailing
   // 3 days, evaluated once per day over the lookback. Union of those daily
@@ -164,7 +167,7 @@ async function syncCreatives(
 
   // Only those ads are asked of Meta. Sweeping /act_<id>/ads with the nested
   // creative{} is what makes a 783-ad account answer `code 1`.
-  const ads: RawAd[] = topIds.size ? await fetchAdsByIds([...topIds]) : [];
+  const ads: RawAd[] = topIds.size ? await fetchAdsByIds([...topIds], token) : [];
 
   const { data: rows2 } = await sb
     .from('meta_ads')
@@ -239,7 +242,7 @@ async function syncCreatives(
       deduped++;
     } else {
       try {
-        const asset = await resolveAsset(ad, actId);
+        const asset = await resolveAsset(ad, actId, token);
         resolved++;
         strategies[asset.strategy] = (strategies[asset.strategy] ?? 0) + 1;
         pending.push({

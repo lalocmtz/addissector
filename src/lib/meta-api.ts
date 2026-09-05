@@ -53,9 +53,18 @@ function leerCuota(res: Response): { usoPct: number; esperaMin: number } {
 }
 
 /** Token de la cuenta publicitaria (ads_read + ads_management). */
-export function adToken(): string {
-  const t = process.env.META_ACCESS_TOKEN;
-  if (!t) throw new MetaApiError('Falta META_ACCESS_TOKEN en las variables de entorno');
+/**
+ * Token de la cuenta publicitaria.
+ *
+ * El de la BD (ad_account.access_token) manda: es el mismo que usa el edge
+ * function meta-sync, se cambia con un UPDATE y surte efecto de inmediato. La
+ * variable de entorno queda solo como respaldo — cambiarla exige reconstruir
+ * el deploy (Vercel la hornea en el build), y por eso el 30-ago-2026 los
+ * numeros siguieron entrando mientras los creativos morian con [190].
+ */
+export function adToken(explicit?: string | null): string {
+  const t = explicit || process.env.META_ACCESS_TOKEN;
+  if (!t) throw new MetaApiError('No hay token: ni ad_account.access_token ni META_ACCESS_TOKEN');
   return t;
 }
 
@@ -175,8 +184,8 @@ const AD_FIELDS =
   'creative{id,video_id,image_url,thumbnail_url,effective_object_story_id,object_story_spec,asset_feed_spec}';
 
 /** Todos los anuncios de la cuenta con su creativo. Pagina de 100 en 100. */
-export async function fetchAds(actId: string, maxPages = 40): Promise<RawAd[]> {
-  return graphAll<RawAd>(`${actId}/ads`, { fields: AD_FIELDS }, { maxPages });
+export async function fetchAds(actId: string, maxPages = 40, token?: string | null): Promise<RawAd[]> {
+  return graphAll<RawAd>(`${actId}/ads`, { fields: AD_FIELDS }, { maxPages, token: adToken(token) });
 }
 
 /** Meta acepta como mucho 50 ids por peticion en el endpoint /?ids=. */
@@ -191,12 +200,12 @@ const IDS_CHUNK = 50;
  * veces se le hace largo). Como la politica solo necesita los que mas gastan,
  * pedimos esos por id: una peticion chica en vez de ocho gordas.
  */
-export async function fetchAdsByIds(ids: string[], token?: string): Promise<RawAd[]> {
+export async function fetchAdsByIds(ids: string[], token?: string | null): Promise<RawAd[]> {
   const unique = [...new Set(ids.filter(Boolean))];
   const out: RawAd[] = [];
   for (let i = 0; i < unique.length; i += IDS_CHUNK) {
     const chunk = unique.slice(i, i + IDS_CHUNK);
-    const raw = await graph<Record<string, RawAd>>('', { ids: chunk.join(','), fields: AD_FIELDS }, token);
+    const raw = await graph<Record<string, RawAd>>('', { ids: chunk.join(','), fields: AD_FIELDS }, adToken(token));
     for (const id of chunk) {
       const ad = raw?.[id];
       if (ad?.id) out.push(ad);
@@ -262,25 +271,26 @@ export function pageIdOf(ad: RawAd): string | null {
  */
 const pageTokenCache = new Map<string, string | null>();
 
-export async function tokenForPage(pageId: string): Promise<string | null> {
+export async function tokenForPage(pageId: string, userToken?: string | null): Promise<string | null> {
   const override = pageTokenOverride();
   if (override) return override;
-  if (pageTokenCache.has(pageId)) return pageTokenCache.get(pageId)!;
+  const key = `${pageId}:${(userToken ?? '').slice(-12)}`;
+  if (pageTokenCache.has(key)) return pageTokenCache.get(key)!;
   let token: string | null = null;
   try {
-    const r = await graph<{ access_token?: string }>(pageId, { fields: 'access_token' });
+    const r = await graph<{ access_token?: string }>(pageId, { fields: 'access_token' }, adToken(userToken));
     token = r.access_token ?? null;
   } catch {
     token = null;
   }
-  pageTokenCache.set(pageId, token);
+  pageTokenCache.set(key, token);
   return token;
 }
 
 /** Catálogo de la videoteca de la cuenta, cacheado por proceso. */
 const catalogCache = new Map<string, Map<string, { source?: string; length?: number; picture?: string }>>();
 
-export async function advideoCatalog(actId: string) {
+export async function advideoCatalog(actId: string, token?: string | null) {
   const hit = catalogCache.get(actId);
   if (hit) return hit;
   const map = new Map<string, { source?: string; length?: number; picture?: string }>();
@@ -288,7 +298,7 @@ export async function advideoCatalog(actId: string) {
     const vids = await graphAll<{ id: string; source?: string; length?: number; picture?: string }>(
       `${actId}/advideos`,
       { fields: 'id,source,length,picture' },
-      { maxPages: 20 }
+      { maxPages: 20, token: adToken(token) }
     );
     for (const v of vids) map.set(v.id, v);
   } catch {
@@ -307,15 +317,15 @@ export async function advideoCatalog(actId: string) {
  *   5. imagen del creativo (estáticos)
  * Nunca lanza: si todo falla devuelve kind 'none' con el motivo.
  */
-export async function resolveAsset(ad: RawAd, actId: string): Promise<ResolvedAsset> {
+export async function resolveAsset(ad: RawAd, actId: string, token?: string | null): Promise<ResolvedAsset> {
   const vids = videoIdsOf(ad);
   const errors: string[] = [];
   const pageId = pageIdOf(ad);
-  const pt = pageId ? await tokenForPage(pageId) : pageTokenOverride();
+  const pt = pageId ? await tokenForPage(pageId, token) : pageTokenOverride();
 
   for (const vid of vids) {
     // 1 y 2 — nodo del video, primero con token de página
-    for (const [label, tk] of [['page-token', pt], ['ad-token', adToken()]] as const) {
+    for (const [label, tk] of [['page-token', pt], ['ad-token', adToken(token)]] as const) {
       if (!tk) continue;
       try {
         const v = await graph<{ source?: string; length?: number; picture?: string }>(
@@ -331,7 +341,7 @@ export async function resolveAsset(ad: RawAd, actId: string): Promise<ResolvedAs
     }
     // 3 — videoteca de la cuenta
     try {
-      const cat = await advideoCatalog(actId);
+      const cat = await advideoCatalog(actId, token);
       const v = cat.get(vid);
       if (v?.source) {
         return { kind: 'video', url: v.source, strategy: 'advideos-catalog',
