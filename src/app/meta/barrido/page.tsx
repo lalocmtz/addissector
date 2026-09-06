@@ -41,6 +41,10 @@ interface Resumen { pendiente: number; listo: number; error: number; omitido: nu
 
 const esperar = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/** Un anuncio que por su naturaleza no tiene creativo que analizar (catálogo /
+ *  Advantage+). No es un fallo: ya quedó marcado en la cola, no se reintenta. */
+class NoAplica extends Error {}
+
 /**
  * "Failed to fetch" es el mensaje que da el navegador cuando la conexion se
  * corta, y no dice nada de donde. Descargar un MP4 grande por el proxy o una
@@ -193,6 +197,8 @@ export default function BarridoPage() {
     setSincronizando(false);
   }, [activeBrandId, apunta, cargarResumen]);
 
+  // Un anuncio que NO se puede analizar por su naturaleza (catálogo) no es un
+  // fallo: ya quedó marcado en la cola, no hay que reintentarlo ni contarlo.
   // -------------------------------------------------------------------------
   // Paso 2 — analizar un anuncio (mismo pipeline que el Studio)
   // -------------------------------------------------------------------------
@@ -201,7 +207,16 @@ export default function BarridoPage() {
     const assetRes = await pedir(`/api/meta/asset?ad=${item.id}`, {}, 'Descarga del creativo',
       { intentos: 3, msLimite: 150000 });
     const blob = await assetRes.blob();
-    if (blob.size < 1024) throw new Error('El archivo descargado está vacío');
+    // Un anuncio de catálogo / Advantage+ no tiene UN creativo descargable: el
+    // proxy devuelve un archivo vacío. Eso no es un fallo que haya que
+    // reintentar, es un tipo de anuncio que no aplica.
+    if (blob.size < 1024) {
+      await fetch('/api/meta/queue', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: item.id, status: 'omitido', error: 'Anuncio de catálogo / Advantage+: no tiene un creativo único que analizar' }),
+      }).catch(() => {});
+      throw new NoAplica('Anuncio de catálogo: no hay un creativo que analizar');
+    }
 
     const esVideo = item.asset_kind === 'video';
     const ext = esVideo ? 'mp4' : 'jpg';
@@ -213,18 +228,26 @@ export default function BarridoPage() {
 
     if (esVideo) {
       const { frames, metadata } = await extractFrames(file);
-      // 8 en vez de 12: el hook vive en los primeros segundos y los ultimos
-      // frames repiten. Menos imagenes = menos tokens de vision por anuncio.
-      const selected = selectFramesForAnalysis(frames, 8);
+      // 6 en vez de 12: el hook vive en los primeros segundos y los ultimos
+      // frames repiten. Menos imagenes = menos tokens de vision y menos timeouts.
+      const selected = selectFramesForAnalysis(frames, 6);
 
       let audio: File = file;
       try { audio = await extractAudioForTranscription(file); } catch { audio = file; }
 
-      const fd = new FormData();
-      fd.append('file', audio);
-      const tr = await pedir('/api/transcribe', { method: 'POST', body: fd }, 'Transcripción',
-        { intentos: 2, msLimite: 120000 });
-      const transcript: TranscriptResult = await tr.json();
+      // Un video sin pista de audio (estático animado, UGC mudo) hacía fallar
+      // el anuncio entero con "no audio track found". La transcripción es un
+      // extra: si no hay audio, se analiza igual con los frames.
+      let transcript: TranscriptResult = { text: '', segments: [] } as unknown as TranscriptResult;
+      try {
+        const fd = new FormData();
+        fd.append('file', audio);
+        const tr = await pedir('/api/transcribe', { method: 'POST', body: fd }, 'Transcripción',
+          { intentos: 2, msLimite: 120000 });
+        transcript = await tr.json();
+      } catch {
+        apunta('info', `${item.name} — sin audio, se analiza solo con imagen`);
+      }
 
       const ar = await pedir('/api/analyze', {
         method: 'POST',
@@ -301,7 +324,7 @@ export default function BarridoPage() {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id: item.id, status: 'listo', creativeId }),
     });
-  }, [activeBrandId]);
+  }, [activeBrandId, apunta]);
 
   // -------------------------------------------------------------------------
   // Paso 3 — el loop
@@ -318,9 +341,11 @@ export default function BarridoPage() {
       Promise.race([p, new Promise<never>((_, rej) =>
         setTimeout(() => rej(new Error(`Se pasó de ${Math.round(ms / 60000)} min en: ${que}`)), ms))]);
 
-    // Dos, no tres: tres descargas de MP4 al mismo tiempo por el proxy son
-    // justo lo que empezo a tirar "Failed to fetch".
-    const EN_PARALELO = 2;
+    // El trabajo pesado (descarga, decodificado, frames, audio) corre en ESTA
+    // pestaña. De 2 en 2 eran ~4 min por anuncio. Tres es el punto sano: más
+    // decodificados de video simultáneos saturan la CPU del portátil y vuelven
+    // a provocar timeouts, que es justo lo que estamos quitando.
+    const EN_PARALELO = 3;
     let hechos = 0;
 
     while (!detener.current) {
@@ -339,11 +364,17 @@ export default function BarridoPage() {
 
         await Promise.all(tanda.map(async (item) => {
           try {
-            await conLimiteDeTiempo(analizarUno(item), 5 * 60000, item.name);
+            // Un video no cabe en 5 min: sus pasos por separado ya permiten
+            // 150 s de descarga + 120 s de transcripción + 300 s de análisis.
+            // Ese techo era el que mataba TODOS los videos — por eso solo
+            // terminaban las imágenes. Las imágenes sí caben de sobra en 5.
+            const techo = item.asset_kind === 'video' ? 12 * 60000 : 5 * 60000;
+            await conLimiteDeTiempo(analizarUno(item), techo, item.name);
             hechos++;
             apunta('ok', item.name);
           } catch (e) {
             const err = e as Error & { upgrade?: boolean };
+            if (err instanceof NoAplica) { apunta('info', `${item.name} — ${err.message}`); return; }
             apunta('err', `${item.name} — ${err.message}`);
             await fetch('/api/meta/queue', {
               method: 'POST', headers: { 'Content-Type': 'application/json' },

@@ -148,6 +148,8 @@ async function syncCreatives(
   const brandId = acc.brand_id;
   // El token vive en la BD (ad_account.access_token). Ver adToken() en meta-api.
   const token = acc.access_token ?? null;
+  const { data: brandRow } = await sb.from('brands').select('meta_page_id').eq('id', brandId).maybeSingle();
+  const fallbackPageId = (brandRow?.meta_page_id as string | null) ?? null;
 
   // WHICH ads deserve a creative. The rule: the top N spenders of the trailing
   // 3 days, evaluated once per day over the lookback. Union of those daily
@@ -214,7 +216,7 @@ async function syncCreatives(
       adset_id: ad.adset_id ?? null,
       campaign_id: ad.campaign_id ?? null,
       creative_meta_id: ad.creative?.id ?? null,
-      page_id: pageIdOf(ad),
+      page_id: pageIdOf(ad) ?? fallbackPageId,
       status: (ad.effective_status ?? ad.status ?? null)?.toLowerCase() ?? null,
       created_date: ad.created_time ? ad.created_time.slice(0, 10) : null,
       updated_at: new Date().toISOString(),
@@ -242,7 +244,7 @@ async function syncCreatives(
       deduped++;
     } else {
       try {
-        const asset = await resolveAsset(ad, actId, token);
+        const asset = await resolveAsset(ad, actId, token, fallbackPageId);
         resolved++;
         strategies[asset.strategy] = (strategies[asset.strategy] ?? 0) + 1;
         pending.push({

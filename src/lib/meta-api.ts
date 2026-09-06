@@ -317,10 +317,16 @@ export async function advideoCatalog(actId: string, token?: string | null) {
  *   5. imagen del creativo (estáticos)
  * Nunca lanza: si todo falla devuelve kind 'none' con el motivo.
  */
-export async function resolveAsset(ad: RawAd, actId: string, token?: string | null): Promise<ResolvedAsset> {
+export async function resolveAsset(
+  ad: RawAd, actId: string, token?: string | null, fallbackPageId?: string | null,
+): Promise<ResolvedAsset> {
   const vids = videoIdsOf(ad);
   const errors: string[] = [];
-  const pageId = pageIdOf(ad);
+  // pageIdOf solo sabe leer object_story_spec. Los anuncios de creativo
+  // dinámico (asset_feed_spec) no lo traen, y sin page_id no hay token de
+  // página: el video queda bloqueado con #283 aunque el token esté completo.
+  // Como cada marca tiene UNA página, la de la marca sirve de respaldo.
+  const pageId = pageIdOf(ad) ?? fallbackPageId ?? null;
   const pt = pageId ? await tokenForPage(pageId, token) : pageTokenOverride();
 
   for (const vid of vids) {
