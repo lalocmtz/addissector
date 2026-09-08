@@ -11,7 +11,7 @@ import { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
-  Scan, LayoutGrid, ChevronDown, Check, Plus, LogOut, BarChart3, Library, Brain, Film, SunMoon, FlaskConical } from 'lucide-react';
+  Scan, ChevronDown, Check, Plus, LogOut, BarChart3, Library, Brain, Film, SunMoon, FlaskConical } from 'lucide-react';
 import type { MeData, BrandRow } from '@/lib/use-me';
 import { useT, useLocale, setLocaleCookie, type Locale } from '@/lib/i18n';
 
@@ -21,10 +21,13 @@ interface AppHeaderProps {
   onBrandChange: (id: string) => void;
 }
 
+// Five entries, and one of them is where every decision is made. Strategy and
+// Experiments used to be two doors into the same confusion; the Workshop is
+// the single screen that replaced them. Both routes still answer for anyone
+// with an old link, they are just no longer part of the way around.
 const NAV = [
   { href: '/meta', key: 'nav.meta', icon: BarChart3 },
-  { href: '/experiments', key: 'nav.experiments', icon: FlaskConical },
-  { href: '/strategy', key: 'nav.strategy', icon: LayoutGrid },
+  { href: '/workshop', key: 'nav.workshop', icon: FlaskConical },
   { href: '/biblioteca', key: 'nav.library', icon: Library },
   { href: '/cerebro', key: 'nav.brain', icon: Brain },
   { href: '/studio', key: 'nav.analyze', icon: Film },
@@ -55,6 +58,7 @@ export default function AppHeader({ me, activeBrand, onBrandChange }: AppHeaderP
     pathname === href ||
     pathname.startsWith(`${href}/`) ||
     (href === '/biblioteca' && (pathname.startsWith('/analyze'))) ||
+    (href === '/workshop' && (pathname.startsWith('/experiments') || pathname.startsWith('/strategy'))) ||
     (href === '/studio' && pathname.startsWith('/studio'));
 
   return (

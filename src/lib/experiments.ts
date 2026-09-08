@@ -68,7 +68,7 @@ export function resolveCriteria(raw: unknown, eco: Economics): SuccessCriteria {
   };
 }
 
-export const experimentCode = (n: number) => `EXP-${String(n).padStart(3, '0')}`;
+export const experimentCode = (n: number) => `T${String(n).padStart(2, '0')}`;
 
 export async function nextExperimentNumber(sb: SupabaseClient, brandId: string): Promise<number> {
   const { data } = await sb.from('experiment').select('number').eq('brand_id', brandId).order('number', { ascending: false }).limit(1).maybeSingle();
