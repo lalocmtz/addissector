@@ -62,6 +62,34 @@ function actionSum(list: unknown, ...types: string[]): number | null {
   return found ? total : null;
 }
 const videoView = (list: unknown) => actionSum(list, "video_view");
+
+/**
+ * One conversion, counted once.
+ *
+ * Meta reports the SAME purchase under several action_type names in the same
+ * response: `omni_purchase` (every surface), `purchase` (web) and
+ * `offsite_conversion.fb_pixel_purchase` (the pixel). They are nested, not
+ * disjoint. Adding them multiplies every conversion and every unit of revenue
+ * by however many of the three the account happens to emit -- for a Shopify
+ * store running the pixel and the Conversions API that is a flat 3x.
+ *
+ * So: take the widest family that is present, and stop there.
+ */
+function actionPick(list: unknown, types: string[]): number | null {
+  if (!Array.isArray(list) || list.length === 0) return null;
+  for (const t of types) {
+    let total = 0, found = false;
+    for (const a of list as ActionEntry[]) {
+      if (a.action_type !== t) continue;
+      const v = Number(a.value);
+      if (Number.isFinite(v)) { total += v; found = true; }
+    }
+    if (found) return total;
+  }
+  return null;
+}
+
+/** Widest family first. The order is the precedence, not a set to add up. */
 const PURCHASE = ["omni_purchase", "purchase", "offsite_conversion.fb_pixel_purchase"];
 const ATC = ["omni_add_to_cart", "add_to_cart", "offsite_conversion.fb_pixel_add_to_cart"];
 
@@ -204,7 +232,7 @@ Deno.serve(async (req) => {
         };
         const cur: Record<string, unknown> = prev ?? {
           user_id: acc.user_id, brand_id: acc.brand_id, ad_id: adId, ad_name: r.ad_name, date: r.date_start,
-          source: "api", metrics_version: 1, legacy_ambiguous: false,
+          source: "api", metrics_version: 2, legacy_ambiguous: false,
           status: ad ? String((ad.effective_status ?? "")).toLowerCase() : null,
           adset_id: r.adset_id ?? null, adset_name: r.adset_name ?? null,
           campaign_id: r.campaign_id ?? null, campaign_name: r.campaign_name ?? null,
@@ -223,9 +251,9 @@ Deno.serve(async (req) => {
         cur.freq = (cur.impressions as number) > 0 && f != null
           ? (freqPrev * impPrev + f * impressions) / (cur.impressions as number) : cur.freq;
         cur.link_clicks = add(cur.link_clicks, num(r.inline_link_clicks));
-        cur.purchases = add(cur.purchases, actionSum(r.actions, ...PURCHASE));
-        cur.revenue = add(cur.revenue, actionSum(r.action_values, ...PURCHASE));
-        cur.atc = add(cur.atc, actionSum(r.actions, ...ATC));
+        cur.purchases = add(cur.purchases, actionPick(r.actions, PURCHASE));
+        cur.revenue = add(cur.revenue, actionPick(r.action_values, PURCHASE));
+        cur.atc = add(cur.atc, actionPick(r.actions, ATC));
         cur.plays = add(cur.plays, videoView(r.video_play_actions));
         cur.v3s = add(cur.v3s, videoView(r.actions));           // 3-second video plays
         cur.thruplay = add(cur.thruplay, videoView(r.video_thruplay_watched_actions));

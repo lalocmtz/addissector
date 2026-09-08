@@ -236,6 +236,7 @@ export const en: Record<string, string> = {
   'exp.verdict.refuted': 'Refuted',
   'exp.verdict.inconclusive': 'Inconclusive',
   'exp.reason.insufficient_spend': 'Collecting spend',
+  'exp.reason.thin_variants': 'Spend too thin per variant',
   'exp.reason.no_live_variants': 'No variant live yet',
   'exp.reason.window_elapsed': 'Window elapsed',
   'exp.reason.criteria_met': 'Criteria met',

@@ -232,6 +232,7 @@ export const es: Record<string, string> = {
   'exp.verdict.refuted': 'Refutado',
   'exp.verdict.inconclusive': 'No concluyente',
   'exp.reason.insufficient_spend': 'Acumulando gasto',
+  'exp.reason.thin_variants': 'Gasto muy repartido por variante',
   'exp.reason.no_live_variants': 'Ninguna variante al aire',
   'exp.reason.window_elapsed': 'Ventana vencida',
   'exp.reason.criteria_met': 'Criterios cumplidos',

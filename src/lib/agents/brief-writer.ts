@@ -76,7 +76,7 @@ Rules:
 - Write for an editor who was not in the room: concrete hooks (words on screen + spoken line), beats with timing, shots.
 - Variants differ from the control ONLY on the variable under test; each variant is a distinct value of that variable.
 - Be specific and short. No filler, no marketing adjectives.
-- Write in English.
+- Write in the same language as the brand context you were given. A brief is shot by the editor who reads it; it is content, not interface copy.
 Call write_brief exactly once.`;
 
 const money = (n: number | null | undefined, c: string | null) => (n == null ? '—' : `${n.toFixed(0)} ${c ?? ''}`.trim());

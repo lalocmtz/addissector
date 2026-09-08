@@ -92,13 +92,15 @@ export interface VariantMetrics {
   hold_rate: number | null;
   purchases: number;
   days: number;
+  /** true when this variant carries enough of its own spend to be judged */
+  eligible: boolean;
 }
 
 export interface Evaluation {
   /** true when the criteria allow a verdict now */
   decidable: boolean;
   /** why it is not decidable yet, or why it was closed */
-  reason: 'insufficient_spend' | 'no_live_variants' | 'window_elapsed' | 'criteria_met' | 'criteria_failed';
+  reason: 'insufficient_spend' | 'thin_variants' | 'no_live_variants' | 'window_elapsed' | 'criteria_met' | 'criteria_failed';
   verdict: Verdict | null;
   spend: number;
   progress: number;                 // 0..1 of min_spend
@@ -111,11 +113,12 @@ export interface Evaluation {
 
 interface VariantLike { id: string; ad_name: string; meta_ad_id: string | null; status: string }
 
-const toMetrics = (v: VariantLike, agg: AdAggregate | undefined): VariantMetrics => ({
+const toMetrics = (v: VariantLike, agg: AdAggregate | undefined, share = 0): VariantMetrics => ({
   variant_id: v.id, ad_name: v.ad_name, ad_id: v.meta_ad_id ?? null,
   spend: agg?.spend ?? 0, roas: agg?.roas ?? null, cpa: agg?.cpa ?? null,
   hook_rate: agg?.hook_rate ?? null, hold_rate: agg?.hold_rate ?? null,
   purchases: agg?.purchases ?? 0, days: agg?.days ?? 0,
+  eligible: (agg?.spend ?? 0) >= share,
 });
 
 /**
@@ -134,14 +137,28 @@ export function evaluateExperiment(args: {
   const { criteria, variants, byAdId, controlAdId } = args;
   const now = args.now ?? new Date();
   const live = variants.filter((v) => v.meta_ad_id && !['killed'].includes(v.status));
-  const vm = live.map((v) => toMetrics(v, byAdId.get(v.meta_ad_id!)));
+
+  // min_spend is the budget for the WHOLE experiment. A variant's fair share of
+  // it is what that variant has to carry on its own before its ROAS means
+  // anything. Without this, three variants at 20 and one at 4,000 satisfy
+  // min_spend together, and the 20-peso variant with a fluke 12x wins.
+  const share = live.length > 0 ? criteria.min_spend / live.length : criteria.min_spend;
+
+  const vm = live.map((v) => toMetrics(v, byAdId.get(v.meta_ad_id!), share));
   const spend = vm.reduce((s, v) => s + v.spend, 0);
   const control = controlAdId
-    ? toMetrics({ id: 'control', ad_name: args.controlName ?? controlAdId, meta_ad_id: controlAdId, status: 'live' }, byAdId.get(controlAdId))
+    ? toMetrics({ id: 'control', ad_name: args.controlName ?? controlAdId, meta_ad_id: controlAdId, status: 'live' }, byAdId.get(controlAdId), share)
     : null;
   const daysLive = args.startedAt ? Math.max(0, Math.floor((now.getTime() - new Date(args.startedAt).getTime()) / 86_400_000)) : 0;
-  const best = vm.filter((v) => v.roas != null).sort((a, b) => (b.roas ?? 0) - (a.roas ?? 0))[0]
-    ?? vm.sort((a, b) => b.spend - a.spend)[0] ?? null;
+
+  // The winner comes from the variants that carry their own weight. If the
+  // window ran out and none of them do, fall back to the one that spent most,
+  // so the screen still shows something — but the verdict below stays
+  // inconclusive, because nothing here was actually measured.
+  const judged = vm.filter((v) => v.eligible);
+  const pool = judged.length ? judged : vm;
+  const best = pool.filter((v) => v.roas != null).sort((a, b) => (b.roas ?? 0) - (a.roas ?? 0))[0]
+    ?? [...pool].sort((a, b) => b.spend - a.spend)[0] ?? null;
 
   const base = { spend, progress: criteria.min_spend > 0 ? Math.min(1, spend / criteria.min_spend) : 1, days_live: daysLive, best, control, variants: vm };
   const noGates = { roas: null, hook: null, hold: null, cpa: null, control: null };
@@ -149,6 +166,9 @@ export function evaluateExperiment(args: {
 
   const windowElapsed = daysLive >= criteria.window_days;
   if (spend < criteria.min_spend && !windowElapsed) return { decidable: false, reason: 'insufficient_spend', verdict: null, ...base, gates: noGates };
+  // Enough money in total, but spread so thin that no single variant can be
+  // judged. Waiting is the honest answer while the window is still open.
+  if (!judged.length && !windowElapsed) return { decidable: false, reason: 'thin_variants', verdict: null, ...base, gates: noGates };
 
   // Gates on the best variant.
   const gates = {
@@ -160,7 +180,10 @@ export function evaluateExperiment(args: {
   };
   const required = [gates.roas, gates.hook, gates.hold, gates.cpa, gates.control].filter((g): g is boolean => g !== null);
   const allPass = required.every(Boolean);
-  const spentEnough = spend >= criteria.min_spend;
+  // Both conditions, and both are about the winner, not about the pile:
+  // the experiment as a whole reached its budget, AND the variant being
+  // judged reached its own share of it.
+  const spentEnough = spend >= criteria.min_spend && best?.eligible === true;
 
   let verdict: Verdict;
   if (allPass && spentEnough) verdict = 'validated';
