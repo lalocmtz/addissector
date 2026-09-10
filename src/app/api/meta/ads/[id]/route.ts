@@ -13,6 +13,10 @@ interface Body {
   dossier_meta?: string | null;
   dossier_video?: string | null;
   creative_id?: string | null;
+  /** Manual upload: path inside the creative-videos bucket + what it is. The
+   *  file becomes the ad's asset and the ad re-enters the analysis queue. */
+  asset_path?: string;
+  asset_kind?: 'video' | 'image';
 }
 
 export async function PATCH(
@@ -30,12 +34,23 @@ export async function PATCH(
   if (body.creative_id !== undefined) patch.creative_id = body.creative_id || null;
 
   const sb = getSupabase();
+  if (body.asset_path) {
+    const clean = body.asset_path.replace(/[^A-Za-z0-9._/-]/g, '');
+    if (!clean || clean.includes('..')) return NextResponse.json({ error: 'asset_path inválido' }, { status: 400 });
+    patch.asset_url = sb.storage.from('creative-videos').getPublicUrl(clean).data.publicUrl;
+    patch.asset_kind = body.asset_kind === 'image' ? 'image' : 'video';
+    patch.asset_strategy = 'manual';
+    patch.asset_error = null;
+    patch.queue_status = 'pendiente';
+    patch.queue_error = null;
+    patch.queue_attempts = 0;
+  }
   const { data, error } = await sb
     .from('meta_ads')
     .update(patch)
     .eq('id', id)
     .eq('user_id', user.id)
-    .select('id,name,dossier_meta,dossier_video,creative_id')
+    .select('id,name,dossier_meta,dossier_video,creative_id,asset_url,asset_kind,queue_status')
     .single();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ ad: data });

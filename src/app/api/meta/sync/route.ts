@@ -15,9 +15,10 @@
 // Body / query (legacy Spanish aliases still accepted):
 //   phase        numbers | creatives | all       (numeros | creativos | todo)
 //   days         window for the numbers phase (default 14, max 90)
-//   topN         top spenders per evaluated day that get a creative (default 10)
-//   windowDays   days the spend is summed over to rank them (default 3)
-//   lookbackDays how far back the ranking is re-evaluated, for backfills (default 60)
+//   topN         how many top spenders get a creative (default 30)
+//   windowDays   days the spend is summed over to rank them (default 30)
+//   lookbackDays how many end-days the ranking is re-evaluated on (default 1)
+//   → default policy: the top 30 of the last 30 days, and nothing else.
 //   creativeLimit how many creatives to resolve per run (limiteCreativos)
 // =============================================================================
 
@@ -228,7 +229,7 @@ async function syncCreatives(
       pending.push({
         ...base, video_id: vids[0] ?? null, queue_status: 'omitido',
         asset_strategy: 'sin-senal',
-        queue_error: `spend ${spend.toFixed(0)} ${acc.currency ?? ''}: never in the top ${topN} of a 3-day window — no signal, not a loser`.trim(),
+        queue_error: `spend ${spend.toFixed(0)} ${acc.currency ?? ''}: not in the top ${topN} of the last ${windowDays} days — no signal, not a loser`.trim(),
       });
       lowSpend++;
       if (pending.length >= 25) await flush();
@@ -285,7 +286,7 @@ async function syncCreatives(
       const slice = stale.slice(i, i + 500);
       const { error } = await sb.from('meta_ads').update({
         queue_status: 'omitido', asset_strategy: 'sin-senal',
-        queue_error: `never in the top ${topN} of a ${windowDays}-day window — no signal, not a loser`,
+        queue_error: `not in the top ${topN} of the last ${windowDays} days — no signal, not a loser`,
         updated_at: new Date().toISOString(),
       }).in('id', slice);
       if (error) throw new Error(`meta_ads(sin-senal): ${error.message}`);
@@ -310,11 +311,14 @@ async function run(request: NextRequest, body: Body) {
   const phase = normalizePhase(body.phase);
   const days = Math.min(Math.max(body.days ?? 14, 1), 90);
   const limit = Math.min(Math.max(body.creativeLimit ?? body.limiteCreativos ?? 60, 1), 300);
-  const topN = Math.min(Math.max(body.topN ?? 10, 0), 50);
+  const topN = Math.min(Math.max(body.topN ?? 30, 0), 100);
   // The window the top-N is measured over, and how far back we re-evaluate it.
   // Defaults are the agreed policy: top 10 of the last 3 days, backfilled 60 days.
-  const windowDays = Math.min(Math.max(body.windowDays ?? 3, 1), 30);
-  const lookbackDays = Math.min(Math.max(body.lookbackDays ?? 60, 1), 365);
+  // Policy since 10-sep-2026: the 30 ads with the most spend over the last 30
+  // days, re-evaluated on every sync. Same window the Library opens on, so the
+  // brain is fed with exactly what the account is betting on right now.
+  const windowDays = Math.min(Math.max(body.windowDays ?? 30, 1), 90);
+  const lookbackDays = Math.min(Math.max(body.lookbackDays ?? 1, 1), 365);
 
   const accounts = await targetAccounts(sb, user?.id ?? null, body.brandId);
   if (accounts.length === 0) {

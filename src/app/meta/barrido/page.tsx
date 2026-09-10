@@ -20,6 +20,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import { Play, Square, RefreshCw, CheckCircle2, AlertTriangle, Brain, ArrowLeft, Loader2 } from 'lucide-react';
 import AppHeader from '@/components/AppHeader';
+import { MetaTokenCard, MetaTop30 } from '@/components/MetaConnection';
 import { useMe } from '@/lib/use-me';
 import { extractFrames, selectFramesForAnalysis } from '@/lib/frame-extractor';
 import { extractAudioForTranscription } from '@/lib/audio-extractor';
@@ -97,6 +98,7 @@ export default function BarridoPage() {
   const [actual, setActual] = useState<string | null>(null);
   const [paso, setPaso] = useState<string>('');
   const [resumen, setResumen] = useState<Resumen | null>(null);
+  const [topRefresh, setTopRefresh] = useState(0);
   const [log, setLog] = useState<LogLine[]>([]);
   const detener = useRef(false);
 
@@ -195,6 +197,7 @@ export default function BarridoPage() {
     }
 
     setSincronizando(false);
+    setTopRefresh((n) => n + 1);
   }, [activeBrandId, apunta, cargarResumen]);
 
   // Un anuncio que NO se puede analizar por su naturaleza (catálogo) no es un
@@ -392,6 +395,7 @@ export default function BarridoPage() {
     }
 
     setCorriendo(false);
+    setTopRefresh((n) => n + 1);
     setActual(null);
     setPaso('');
   }, [activeBrandId, analizarUno, apunta, cargarResumen, refresh]);
@@ -409,9 +413,14 @@ export default function BarridoPage() {
 
         <h1 className="mt-4 text-2xl font-semibold text-ink">Barrido automático</h1>
         <p className="mt-1 text-sm text-ink-3">
-          Lee todos los anuncios de {activeBrand?.name ?? 'la marca'} directo de Meta, los analiza uno por uno
+          Trae de Meta los 30 anuncios con más gasto de los últimos 30 días, los analiza uno por uno
           y alimenta el Cerebro solo. Deja esta pestaña abierta mientras corre.
         </p>
+
+        <div className="mt-6 space-y-4">
+          <MetaTokenCard brandId={activeBrandId} />
+          <MetaTop30 brandId={activeBrandId} currency={activeBrand?.economics?.currency ?? 'MXN'} refreshKey={topRefresh} />
+        </div>
 
         <div className="mt-6 flex flex-wrap gap-3">
           <button
