@@ -339,10 +339,15 @@ async function run(request: NextRequest, body: Body) {
         try {
           r.numbers = await syncNumbers(acc.brand_id, days);
         } catch (e) {
-          if (!esLimiteDePeticiones(e)) throw e;
-          r.numbers = { rows: 0, ads: 0, limited: true };
-          r.waitMin = (e as MetaApiError).esperaMin ?? 0;
-          r.limited = true;
+          if (esLimiteDePeticiones(e)) {
+            r.numbers = { rows: 0, ads: 0, limited: true };
+            r.waitMin = (e as MetaApiError).esperaMin ?? 0;
+            r.limited = true;
+          } else {
+            // The numbers arrive hourly from pg_cron anyway. A 504 from the
+            // edge function must not stop the creatives from being fetched.
+            r.numbersError = e instanceof Error ? e.message : String(e);
+          }
         }
       }
       if (phase === 'creatives' || phase === 'all') {

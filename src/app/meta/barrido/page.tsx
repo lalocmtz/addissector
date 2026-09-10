@@ -146,7 +146,7 @@ export default function BarridoPage() {
         const r = await pedir('/api/meta/sync', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ brandId: activeBrandId, phase, days: 90, creativeLimit: 12, minSpend: 58 }),
+          body: JSON.stringify({ brandId: activeBrandId, phase, days: 14, creativeLimit: 12, minSpend: 58 }),
         }, 'Sincronización con Meta', { intentos: 3, msLimite: 280000 });
         const j = await r.json();
 
@@ -154,6 +154,7 @@ export default function BarridoPage() {
           // Una cuenta que falla NO es un barrido completo: sin esto la bitácora
           // escribía "Sync complete" en verde justo debajo del error en rojo.
           if (m.error) { apunta('err', `${m.brand}: ${m.error}`); fallo = true; continue; }
+          if (m.numbersError) apunta('err', `${m.brand}: los números no se actualizaron ahora (${m.numbersError}); llegan solos cada hora. Sigo con los creativos.`);
           if (m.numbers) apunta('ok', `${m.brand}: ${m.numbers.rows ?? 0} ad-days saved`);
           if (m.limited) limited = true;
           if (m.waitMin) waitMin = Math.max(waitMin, m.waitMin);
