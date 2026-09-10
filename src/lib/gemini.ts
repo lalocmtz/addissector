@@ -62,6 +62,7 @@ export interface GeminiFile {
   uri: string;       // the file_uri to reference in generateContent
   mimeType: string;
   state: string;     // PROCESSING | ACTIVE | FAILED
+  error?: { code?: number; message?: string } | null;
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -107,7 +108,7 @@ export async function uploadToGemini(
   const poll = opts.pollMs ?? 3_000;
   const started = Date.now();
   while (file.state !== 'ACTIVE') {
-    if (file.state === 'FAILED') throw new GeminiError('Gemini no pudo procesar el archivo');
+    if (file.state === 'FAILED') throw new GeminiError(`Gemini no pudo procesar el archivo (${mime}, ${Math.round(bytes.byteLength / 1024)} KB${file.error?.message ? `: ${file.error.message}` : ''})`);
     if (Date.now() - started > maxWait) throw new GeminiError('Gemini tardó demasiado en procesar el archivo');
     await sleep(poll);
     const r = await fetch(`${BASE}/v1beta/${file.name}?key=${encodeURIComponent(apiKey)}`, { cache: 'no-store' });

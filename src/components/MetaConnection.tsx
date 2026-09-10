@@ -19,13 +19,14 @@ import { useFormatters } from '@/lib/i18n';
 // Token
 // ---------------------------------------------------------------------------
 
-interface Check { ok: boolean; name: string | null; granted: string[]; missing: string[]; error: string | null }
+interface Check { ok: boolean; name: string | null; granted: string[]; missing: string[]; pages?: { id: string; name: string }[]; error: string | null }
 interface GeminiState { has_key: boolean; tail: string | null; from?: 'user' | 'env' | null }
 interface AccountInfo { account: { id: string; ad_account_id: string; has_token: boolean; token_tail: string | null } | null; check: Check | null; gemini?: GeminiState | null }
 
 const PERM_LABEL: Record<string, string> = {
   ads_read: 'ads_read (números de la cuenta)',
   pages_read_engagement: 'pages_read_engagement (descargar videos de la página)',
+  pages_show_list: 'pages_show_list (ver las páginas del token)',
 };
 
 export function MetaTokenCard({ brandId, onGeminiChange }: { brandId: string | null; onGeminiChange?: (hasKey: boolean) => void }) {
@@ -119,6 +120,11 @@ export function MetaTokenCard({ brandId, onGeminiChange }: { brandId: string | n
                 );
               })}
               {check.name && <li className="text-ink-4">Usuario del token: {check.name}</li>}
+              <li className={`block ${check.pages && check.pages.length ? 'text-ok' : 'text-danger'}`}>
+                {check.pages && check.pages.length
+                  ? `Páginas que ve este token: ${check.pages.map((p) => p.name).join(', ')}`
+                  : 'Este token no ve ninguna Página. Los videos de la página no van a bajar: en Business Settings asigna la Página al usuario del sistema (Contenido) y genera el token de nuevo marcando pages_read_engagement y pages_show_list.'}
+              </li>
             </ul>
           ))}
         </div>

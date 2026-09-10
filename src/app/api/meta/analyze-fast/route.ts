@@ -82,6 +82,13 @@ export async function POST(request: NextRequest) {
     }
 
     const headerMime = (opened.upstream.headers.get('content-type') ?? '').split(';')[0].trim();
+    // A CDN answering with a page instead of the media is an expired/blocked
+    // URL that still said 200. Gemini would fail on it in seconds.
+    const head = Buffer.from(bytes.subarray(0, 64)).toString('latin1').trimStart();
+    if (headerMime.startsWith('text/') || headerMime.includes('json') || head.startsWith('<') || head.startsWith('{')) {
+      await sb.from('meta_ads').update({ asset_url: null, asset_error: `El CDN devolvió ${headerMime || 'texto'} en vez del archivo (URL caducada)`, updated_at: now() }).eq('id', row.id);
+      return fallar('La URL del creativo caducó y Meta devolvió una página en vez del archivo; se volverá a resolver en la próxima sincronización', 502);
+    }
     const kind: CreativeKind = row.asset_kind === 'image' || headerMime.startsWith('image/') ? 'image' : 'video';
     const mime = headerMime && (headerMime.startsWith('image/') || headerMime.startsWith('video/'))
       ? headerMime

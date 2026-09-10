@@ -22,26 +22,33 @@ import { GEMINI_SETTING_KEY } from '@/lib/gemini';
 
 export const runtime = 'nodejs';
 
-const NEEDED = ['ads_read', 'pages_read_engagement'] as const;
+const NEEDED = ['ads_read', 'pages_read_engagement', 'pages_show_list'] as const;
 
 interface Check {
   ok: boolean;
   name: string | null;
   granted: string[];
   missing: string[];
+  /** Pages the token can act on (/me/accounts). Empty = no Page assigned to this user/token. */
+  pages: { id: string; name: string }[];
   error: string | null;
 }
 
 async function checkToken(token: string): Promise<Check> {
   try {
     const me = (await (await fetch(`https://graph.facebook.com/${GRAPH_VERSION}/me?fields=name&access_token=${encodeURIComponent(token)}`, { cache: 'no-store' })).json()) as { name?: string; error?: { message?: string } };
-    if (me.error) return { ok: false, name: null, granted: [], missing: [...NEEDED], error: me.error.message ?? 'Token rechazado' };
+    if (me.error) return { ok: false, name: null, granted: [], missing: [...NEEDED], pages: [], error: me.error.message ?? 'Token rechazado' };
     const perms = (await (await fetch(`https://graph.facebook.com/${GRAPH_VERSION}/me/permissions?access_token=${encodeURIComponent(token)}`, { cache: 'no-store' })).json()) as { data?: { permission: string; status: string }[] };
     const granted = (perms.data ?? []).filter((p) => p.status === 'granted').map((p) => p.permission);
     const missing = NEEDED.filter((p) => !granted.includes(p));
-    return { ok: missing.length === 0, name: me.name ?? null, granted, missing, error: null };
+    let pages: { id: string; name: string }[] = [];
+    try {
+      const acc = (await (await fetch(`https://graph.facebook.com/${GRAPH_VERSION}/me/accounts?fields=id,name&limit=50&access_token=${encodeURIComponent(token)}`, { cache: 'no-store' })).json()) as { data?: { id: string; name: string }[] };
+      pages = (acc.data ?? []).map((p) => ({ id: p.id, name: p.name }));
+    } catch { /* optional */ }
+    return { ok: missing.length === 0, name: me.name ?? null, granted, missing, pages, error: null };
   } catch (e) {
-    return { ok: false, name: null, granted: [], missing: [...NEEDED], error: e instanceof Error ? e.message : 'No se pudo consultar a Meta' };
+    return { ok: false, name: null, granted: [], missing: [...NEEDED], pages: [], error: e instanceof Error ? e.message : 'No se pudo consultar a Meta' };
   }
 }
 
