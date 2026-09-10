@@ -21,7 +21,7 @@ import { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
-  Scan, ChevronDown, Check, Plus, LogOut, BarChart3, Library, Brain, Film, SunMoon, FlaskConical, Settings, Menu, X,
+  Scan, ChevronDown, Check, Plus, LogOut, BarChart3, Library, Brain, Film, SunMoon, FlaskConical, Settings, Menu, X, LayoutDashboard,
 } from 'lucide-react';
 import type { MeData, BrandRow } from '@/lib/use-me';
 import { useT, useLocale, setLocaleCookie, type Locale } from '@/lib/i18n';
@@ -34,6 +34,7 @@ interface AppHeaderProps {
 
 const WORK = [
   { href: '/biblioteca', key: 'nav.library', icon: Library },
+  { href: '/canvas', key: 'nav.canvas', icon: LayoutDashboard },
   { href: '/workshop', key: 'nav.workshop', icon: FlaskConical },
   { href: '/cerebro', key: 'nav.brain', icon: Brain },
   { href: '/meta', key: 'nav.meta', icon: BarChart3 },

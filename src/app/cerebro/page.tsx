@@ -15,6 +15,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import {
   Loader2, Send, Trash2, Plus, X, Brain, Lightbulb, ChevronDown, ChevronRight, Save,
   FileText, Upload, Users, Compass, Zap, CheckCircle2, Globe, Search, Sparkles, PenLine,
+  Copy, ArrowLeftRight,
 } from 'lucide-react';
 import AppHeader from '@/components/AppHeader';
 import { useMe } from '@/lib/use-me';
@@ -1000,93 +1001,365 @@ function AngleCard({ angle: a, stats, statsLoading, eco, currency, personas, onP
 }
 
 // ===========================================================================
-// 4 · HOOKS — los primeros 3 segundos que sí detuvieron el scroll.
+// 4 · HOOKS — los primeros segundos, palabra por palabra, con sus números.
 // ===========================================================================
 
+type HookKind = 'voz' | 'headline';
+
+interface HookAd {
+  meta_id: string; ad_id: string | null; name: string | null; thumbnail_url: string | null;
+  asset_kind: string | null; spend: number; purchases: number | null; roas: number | null;
+  cpa: number | null; hook_rate: number | null; hold_rate: number | null;
+}
+
+interface HookItem {
+  id: string; title: string | null; body: string | null; hook_type: string | null;
+  status: string | null; source: string | null; evidence: string | null;
+  ad_ids: string[] | null; created_at: string;
+  kind: HookKind; ads: HookAd[]; spend: number;
+}
+
+const HOOK_KIND: Record<HookKind, { label: string; cls: string }> = {
+  voz: { label: 'Voz', cls: 'border-accent/40 bg-accent-soft text-accent' },
+  headline: { label: 'Headline', cls: 'border-warn/40 bg-warn-soft text-warn' },
+};
+
+const HOOK_BODY_PREFIX = /^texto en pantalla del hook\.?\s*/i;
+
+/** Igual que useBank, pero además guarda economics/currency que manda /api/plan/hooks. */
+function useHookBank(brandId: string | null) {
+  const url = '/api/plan/hooks';
+  const [items, setItems] = useState<HookItem[]>([]);
+  const [eco, setEco] = useState<Economics>(() => resolveEconomics(null));
+  const [currency, setCurrency] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(async () => {
+    await Promise.resolve();
+    if (!brandId) { setItems([]); setLoading(false); return; }
+    try {
+      const r = await fetch(`${url}?brand=${brandId}`);
+      const d = (await r.json().catch(() => ({}))) as { items?: unknown; economics?: unknown; currency?: unknown };
+      setItems(Array.isArray(d.items) ? (d.items as HookItem[]) : []);
+      setEco(resolveEconomics(d.economics));
+      setCurrency(typeof d.currency === 'string' ? d.currency : null);
+    } catch {
+      setItems([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [brandId]);
+
+  // La carga va dentro de un microtask: así el efecto nunca hace setState síncrono.
+  useEffect(() => { void Promise.resolve().then(load); }, [load]);
+
+  const create = async (payload: Record<string, unknown>) => {
+    if (!brandId) return;
+    await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ brandId, ...payload }),
+    });
+    await load();
+  };
+
+  const patch = async (id: string, payload: Record<string, unknown>) => {
+    setItems((prev) => prev.map((it) => {
+      if (it.id !== id) return it;
+      const next = { ...it, ...payload } as HookItem;
+      if (typeof payload.hook_type === 'string') next.kind = payload.hook_type === 'headline' ? 'headline' : 'voz';
+      return next;
+    }));
+    await fetch(url, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, ...payload }),
+    });
+  };
+
+  const remove = async (id: string) => {
+    setItems((prev) => prev.filter((it) => it.id !== id));
+    await fetch(`${url}?id=${id}`, { method: 'DELETE' });
+  };
+
+  return { items, eco, currency, loading, create, patch, remove };
+}
+
+/** Botón segmentado chico (Todos / Voz / Headline…). */
+function Segmented<T extends string>({ value, options, onChange }: {
+  value: T;
+  options: { id: T; label: string }[];
+  onChange: (v: T) => void;
+}) {
+  return (
+    <div className="inline-flex rounded-lg border border-line bg-canvas p-0.5 max-w-full overflow-x-auto">
+      {options.map((o) => (
+        <button
+          key={o.id}
+          onClick={() => onChange(o.id)}
+          className={`px-2.5 py-1 text-[11px] rounded-md whitespace-nowrap ${
+            value === o.id ? 'bg-surface text-ink font-medium shadow-sm border border-line' : 'text-ink-3 hover:text-ink'
+          }`}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+const fmtPct = (n: number | null) => (n == null ? '—' : `${n.toFixed(1)}%`);
+
+function roasCls(r: number | null, eco: Economics): string {
+  if (r == null) return 'text-ink-4';
+  if (r >= eco.target) return 'text-ok';
+  if (r >= eco.breakeven) return 'text-warn';
+  return 'text-danger';
+}
+
+/** Un anuncio que corrió este hook: miniatura + nombre + números mono. */
+function HookAdRow({ ad, eco, currency }: { ad: HookAd; eco: Economics; currency: string | null }) {
+  const hasData = ad.spend > 0;
+  return (
+    <div className="flex items-start gap-2.5 min-w-0">
+      {ad.thumbnail_url ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={ad.thumbnail_url} alt="" className="w-9 h-11 rounded-md object-cover bg-inset shrink-0" />
+      ) : (
+        <div className="w-9 h-11 rounded-md bg-inset flex items-center justify-center shrink-0">
+          <Zap className="w-3.5 h-3.5 text-ink-4" />
+        </div>
+      )}
+      <div className="flex-1 min-w-0">
+        <p className="text-xs text-ink truncate" title={ad.name ?? undefined}>{ad.name ?? ad.ad_id ?? 'Anuncio'}</p>
+        {hasData ? (
+          <p className="text-[11px] text-ink-3 font-[family-name:var(--font-mono)] tabular-nums break-words leading-snug">
+            {fmtMoney(ad.spend, currency)}
+            {' · '}{ad.purchases ?? 0} compra{(ad.purchases ?? 0) === 1 ? '' : 's'}
+            {' · CPA '}{ad.cpa == null ? '—' : fmtMoney(ad.cpa, currency)}
+            {' · ROAS '}<span className={roasCls(ad.roas, eco)}>{fmtRoas(ad.roas)}</span>
+            {' · Hook '}{fmtPct(ad.hook_rate)}
+            {' · Hold '}{fmtPct(ad.hold_rate)}
+          </p>
+        ) : (
+          <p className="text-[11px] text-ink-4">Sin gasto en los últimos 30 días</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function HookCard({ h, eco, currency, onPatch, onRemove }: {
+  h: HookItem;
+  eco: Economics;
+  currency: string | null;
+  onPatch: (payload: Record<string, unknown>) => void;
+  onRemove: () => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const kind = HOOK_KIND[h.kind];
+  const why = (h.body ?? '').replace(HOOK_BODY_PREFIX, '').trim();
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(h.title ?? '');
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1200);
+    } catch { /* sin portapapeles: nada que hacer */ }
+  };
+
+  return (
+    <div className="rounded-xl border border-line bg-surface p-4 space-y-3 min-w-0">
+      {/* Pills */}
+      <div className="flex flex-wrap items-center gap-1.5 min-w-0">
+        <span className={`text-[10px] uppercase tracking-wide px-2 py-0.5 rounded border font-medium shrink-0 ${kind.cls}`}>
+          {kind.label}
+        </span>
+        <SourceChip source={h.source} />
+        {h.ads.length > 0 && (
+          <span className="text-[10px] text-ink-4 font-[family-name:var(--font-mono)] tabular-nums">
+            {h.ads.length} anuncio{h.ads.length === 1 ? '' : 's'} · {fmtMoney(h.spend, currency)}
+          </span>
+        )}
+      </div>
+
+      {/* La línea literal */}
+      {editing ? (
+        <Field
+          value={h.title}
+          placeholder={h.kind === 'voz' ? 'Lo que se dijo, palabra por palabra' : 'Lo que se leyó en pantalla'}
+          rows={2}
+          onSave={(v) => { onPatch({ title: v }); setEditing(false); }}
+        />
+      ) : (
+        <p className="text-base leading-snug text-ink break-words font-[family-name:var(--font-serif)]">
+          “{h.title?.trim() || 'Sin texto'}”
+        </p>
+      )}
+
+      {why && (
+        <p className="text-[11px] text-ink-3 leading-snug break-words">
+          <span className="text-ink-4">Por qué detiene:</span> {why}
+        </p>
+      )}
+
+      {/* Anuncios que lo corrieron */}
+      {h.ads.length > 0 ? (
+        <div className="rounded-lg border border-line bg-canvas px-3 py-2 space-y-2 min-w-0">
+          {h.ads.map((ad) => <HookAdRow key={ad.meta_id} ad={ad} eco={eco} currency={currency} />)}
+        </div>
+      ) : (
+        <p className="text-[11px] text-ink-4">
+          {h.evidence ? h.evidence : 'Sin anuncio ligado todavía'}
+        </p>
+      )}
+
+      {/* Acciones */}
+      <div className="flex flex-wrap items-center gap-1 pt-1 border-t border-line">
+        <button onClick={copy} className="flex items-center gap-1 text-[11px] px-2 py-1 rounded-md text-ink-3 hover:text-ink hover:bg-inset">
+          {copied ? <CheckCircle2 className="w-3 h-3 text-ok" /> : <Copy className="w-3 h-3" />} {copied ? 'Copiado' : 'Copiar'}
+        </button>
+        <button onClick={() => setEditing((v) => !v)} className="flex items-center gap-1 text-[11px] px-2 py-1 rounded-md text-ink-3 hover:text-ink hover:bg-inset">
+          <PenLine className="w-3 h-3" /> {editing ? 'Cerrar' : 'Editar'}
+        </button>
+        <button
+          onClick={() => onPatch({ hook_type: h.kind === 'voz' ? 'headline' : 'voz' })}
+          className="flex items-center gap-1 text-[11px] px-2 py-1 rounded-md text-ink-3 hover:text-ink hover:bg-inset"
+          title="Cambiar entre voz y headline"
+        >
+          <ArrowLeftRight className="w-3 h-3" /> {h.kind === 'voz' ? 'Era headline' : 'Era voz'}
+        </button>
+        <button onClick={onRemove} className="ml-auto flex items-center gap-1 text-[11px] px-2 py-1 rounded-md text-ink-4 hover:text-danger hover:bg-inset" title="Eliminar">
+          <Trash2 className="w-3 h-3" /> Eliminar
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function HooksTab({ brandId }: { brandId: string | null }) {
-  const { items: hooks, loading, create, patch, remove } = useBank<Note>('/api/plan/hooks', brandId);
+  const { items: hooks, eco, currency, loading, create, patch, remove } = useHookBank(brandId);
+
+  const [kindFilter, setKindFilter] = useState<'todos' | HookKind>('todos');
+  const [originFilter, setOriginFilter] = useState<'todos' | 'ia' | 'manual'>('todos');
 
   const [title, setTitle] = useState('');
-  const [body, setBody] = useState('');
-  const [source, setSource] = useState('');
+  const [kind, setKind] = useState<HookKind>('voz');
+  const [saving, setSaving] = useState(false);
 
   const add = async () => {
-    if (!title.trim()) return;
-    await create({ title: title.trim(), body: body.trim() || null, source: source.trim() || 'manual' });
-    setTitle(''); setBody(''); setSource('');
+    if (!title.trim() || saving) return;
+    setSaving(true);
+    try {
+      await create({ title: title.trim(), hook_type: kind, source: 'manual' });
+      setTitle('');
+    } finally {
+      setSaving(false);
+    }
   };
+
+  const summary = useMemo(() => {
+    const voz = hooks.filter((h) => h.kind === 'voz').length;
+    const adIds = new Set<string>();
+    for (const h of hooks) for (const a of h.ads) adIds.add(a.meta_id);
+    return { total: hooks.length, voz, headline: hooks.length - voz, ads: adIds.size };
+  }, [hooks]);
+
+  // El servidor ya manda gasto desc con los sin anuncio al final; aquí solo filtramos.
+  const visible = useMemo(() => hooks.filter((h) => {
+    if (kindFilter !== 'todos' && h.kind !== kindFilter) return false;
+    if (originFilter === 'ia' && !isAiSource(h.source)) return false;
+    if (originFilter === 'manual' && isAiSource(h.source)) return false;
+    return true;
+  }), [hooks, kindFilter, originFilter]);
 
   return (
     <div>
       <TabHead
         title="Hooks"
-        hint="Los primeros segundos que sí detuvieron el scroll. Guárdalos literales, palabra por palabra."
+        hint="Los primeros segundos, palabra por palabra: lo que se dijo (voz) y lo que se leyó en pantalla (headline), con los números del anuncio que los corrió."
       />
 
-      <div className="rounded-xl border border-line bg-surface p-4 mb-5 space-y-2 min-w-0">
-        <p className="text-[10px] uppercase tracking-wide text-ink-4">Nuevo hook</p>
-        <input
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          placeholder="El hook, palabra por palabra…"
-          className="w-full rounded-lg border border-line bg-canvas px-3 py-2 text-sm text-ink placeholder:text-ink-4 focus:border-accent outline-none"
-        />
-        <div className="grid sm:grid-cols-2 gap-2">
+      {/* Nuevo hook: una sola fila */}
+      <div className="rounded-xl border border-line bg-surface p-3 mb-4 min-w-0">
+        <p className="text-[10px] uppercase tracking-wide text-ink-4 mb-1.5">Nuevo hook</p>
+        <div className="flex flex-col sm:flex-row gap-2 min-w-0">
           <input
-            value={body}
-            onChange={(e) => setBody(e.target.value)}
-            placeholder="¿Por qué funcionó?"
-            className={INPUT_CLS}
-          />
-          <input
-            value={source}
-            onChange={(e) => setSource(e.target.value)}
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') add(); }}
-            placeholder="¿De qué anuncio salió?"
-            className={INPUT_CLS}
+            placeholder="El hook, palabra por palabra…"
+            className="flex-1 min-w-0 rounded-lg border border-line bg-canvas px-3 py-2 text-sm text-ink placeholder:text-ink-4 focus:border-accent outline-none"
           />
-        </div>
-        <div className="flex justify-end">
+          <select
+            value={kind}
+            onChange={(e) => setKind(e.target.value === 'headline' ? 'headline' : 'voz')}
+            className="rounded-lg border border-line bg-canvas px-2.5 py-2 text-xs text-ink focus:border-accent outline-none sm:w-40 shrink-0"
+          >
+            <option value="voz">Voz (se dijo)</option>
+            <option value="headline">Headline (se leyó)</option>
+          </select>
           <button
             onClick={add}
-            disabled={!brandId || !title.trim()}
-            className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg gradient-blue text-on-accent disabled:opacity-50"
+            disabled={!brandId || !title.trim() || saving}
+            className="flex items-center justify-center gap-1.5 text-xs px-3 py-2 rounded-lg gradient-blue text-on-accent disabled:opacity-50 shrink-0"
           >
-            <Plus className="w-3.5 h-3.5" /> Guardar hook
+            {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />} Guardar
           </button>
         </div>
       </div>
 
       {loading ? <Loading /> : hooks.length === 0 ? (
         <Empty>
-          Un hook que funcionó es un activo, no un accidente. Cópialo tal cual del anuncio ganador
-          y anota por qué crees que jaló — eso es lo que vas a reciclar el mes que viene.
+          Aquí aparecen los hooks tal cual salieron de los anuncios analizados: la frase que se dijo
+          y el texto que se leyó. Corre el análisis de tus videos o escribe uno a mano arriba.
         </Empty>
       ) : (
-        <div className="grid md:grid-cols-2 gap-3">
-          {hooks.map((n) => (
-            <div key={n.id} className="rounded-xl border border-line bg-surface p-4 space-y-2.5 min-w-0">
-              <div className="flex items-start gap-2 min-w-0">
-                <Zap className="w-3.5 h-3.5 text-warn mt-1.5 shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <Field value={n.title} placeholder="El hook literal" onSave={(v) => patch(n.id, { title: v })} />
-                </div>
-                <button
-                  onClick={() => { if (confirm('¿Eliminar este hook?')) remove(n.id); }}
-                  className="text-ink-4 hover:text-danger mt-1.5 shrink-0"
-                  title="Eliminar"
+        <>
+          {/* Resumen + filtros */}
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-3 min-w-0">
+            <p className="text-xs text-ink-3 font-[family-name:var(--font-mono)] tabular-nums break-words">
+              {summary.total} hook{summary.total === 1 ? '' : 's'} · {summary.voz} de voz · {summary.headline} headline{summary.headline === 1 ? '' : 's'} · de {summary.ads} anuncio{summary.ads === 1 ? '' : 's'} analizado{summary.ads === 1 ? '' : 's'}
+            </p>
+            <div className="flex flex-wrap items-center gap-2 min-w-0">
+              <Segmented
+                value={kindFilter}
+                onChange={setKindFilter}
+                options={[{ id: 'todos', label: 'Todos' }, { id: 'voz', label: 'Voz' }, { id: 'headline', label: 'Headline' }]}
+              />
+              <label className="flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-ink-4">
+                Origen
+                <select
+                  value={originFilter}
+                  onChange={(e) => setOriginFilter(e.target.value as 'todos' | 'ia' | 'manual')}
+                  className="rounded-lg border border-line bg-canvas px-2 py-1 text-[11px] normal-case tracking-normal text-ink focus:border-accent outline-none"
                 >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              </div>
-              <IaMark source={n.source} evidence={n.evidence} />
-              <Field label="Por qué funcionó" value={n.body} rows={2} placeholder="Qué tensión abre, qué promete" onSave={(v) => patch(n.id, { body: v })} />
-              {!isAiSource(n.source) && (
-                <Field label="De qué anuncio salió" value={n.source} placeholder="Nombre del anuncio" onSave={(v) => patch(n.id, { source: v })} />
-              )}
+                  <option value="todos">Todos</option>
+                  <option value="ia">De los anuncios (IA)</option>
+                  <option value="manual">Manuales</option>
+                </select>
+              </label>
             </div>
-          ))}
-        </div>
+          </div>
+
+          {visible.length === 0 ? (
+            <Empty>No hay hooks con ese filtro.</Empty>
+          ) : (
+            <div className="grid md:grid-cols-2 gap-3">
+              {visible.map((h) => (
+                <HookCard
+                  key={h.id}
+                  h={h}
+                  eco={eco}
+                  currency={currency}
+                  onPatch={(payload) => patch(h.id, payload)}
+                  onRemove={() => { if (confirm('¿Eliminar este hook?')) remove(h.id); }}
+                />
+              ))}
+            </div>
+          )}
+        </>
       )}
     </div>
   );

@@ -63,6 +63,15 @@ function useCopied() {
   return { copied, copy };
 }
 
+// Prefill desde /canvas (?new=1&name=&angle=&hook=&format=): abre la Nueva tanda ya llenada.
+interface Prefill { name: string; angle: string; hook: string; format: string }
+function readPrefill(): Prefill | null {
+  if (typeof window === 'undefined') return null;
+  const q = new URLSearchParams(window.location.search);
+  if (q.get('new') !== '1') return null;
+  return { name: q.get('name') ?? '', angle: q.get('angle') ?? '', hook: q.get('hook') ?? '', format: q.get('format') ?? '' };
+}
+
 // ---------------------------------------------------------------------------
 export default function WorkshopPage() {
   const { me, activeBrand, setActiveBrandId } = useMe();
@@ -71,7 +80,13 @@ export default function WorkshopPage() {
 
   const [data, setData] = useState<Data | null>(null);
   const [loading, setLoading] = useState(true);
-  const [creating, setCreating] = useState(false);
+  const [prefill] = useState<Prefill | null>(readPrefill);
+  const [creating, setCreating] = useState(() => prefill != null);
+
+  // Limpia la query para que un refresh no vuelva a abrir el modal.
+  useEffect(() => {
+    if (prefill) window.history.replaceState(null, '', '/workshop');
+  }, [prefill]);
   const [err, setErr] = useState<string | null>(null);
   const [guide, setGuide] = useState(false);
 
@@ -144,7 +159,7 @@ export default function WorkshopPage() {
       </main>
 
       {creating && data && brandId && (
-        <NewBatchModal data={data} brandId={brandId} t={t} onClose={() => setCreating(false)} onDone={() => { setCreating(false); void load(); }} />
+        <NewBatchModal data={data} brandId={brandId} t={t} prefill={prefill} onClose={() => setCreating(false)} onDone={() => { setCreating(false); void load(); }} />
       )}
     </div>
   );
@@ -478,15 +493,30 @@ function CloseForm({ b, brandId, t, onDone, onCancel }: { b: BatchView; brandId:
 interface Draft { format: string; hook: string }
 const emptyRows = (): Draft[] => Array.from({ length: 4 }, () => ({ format: 'static', hook: '' }));
 
-function NewBatchModal({ data, brandId, t, onClose, onDone }: {
-  data: Data; brandId: string; t: T; onClose: () => void; onDone: () => void;
+function matchAngle(angles: Angle[], text: string): string {
+  const q = text.trim().toLowerCase();
+  if (!q) return angles[0]?.id ?? '';
+  const hit = angles.find((a) => a.name.toLowerCase().includes(q) || (a.code ?? '').toLowerCase().includes(q) || q.includes(a.name.toLowerCase()));
+  return hit?.id ?? angles[0]?.id ?? '';
+}
+
+function NewBatchModal({ data, brandId, t, prefill, onClose, onDone }: {
+  data: Data; brandId: string; t: T; prefill?: Prefill | null; onClose: () => void; onDone: () => void;
 }) {
-  const [angleId, setAngleId] = useState(data.angles[0]?.id ?? '');
+  const [angleId, setAngleId] = useState(() => matchAngle(data.angles, prefill?.angle ?? ''));
   const [variable, setVariable] = useState<string>('hook');
-  const [name, setName] = useState('');
-  const [nameTouched, setNameTouched] = useState(false);
+  const [name, setName] = useState(prefill?.name ?? '');
+  const [nameTouched, setNameTouched] = useState(Boolean(prefill?.name));
   const [awareness, setAwareness] = useState('');
-  const [rows, setRows] = useState<Draft[]>(emptyRows);
+  const [rows, setRows] = useState<Draft[]>(() => {
+    const rs = emptyRows();
+    if (prefill) {
+      const f = prefill.format.trim().toLowerCase();
+      const format = PIECE_FORMATS.find((pf) => pf === f || t(`ws.format.${pf}`).toLowerCase() === f) ?? 'static';
+      rs[0] = { format, hook: prefill.hook };
+    }
+    return rs;
+  });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [minted, setMinted] = useState<string[] | null>(null);

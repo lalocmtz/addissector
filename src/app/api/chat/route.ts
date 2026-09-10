@@ -16,6 +16,9 @@ import { buildBrandContext } from '@/lib/brand-context';
 export const runtime = 'nodejs';
 export const maxDuration = 120;
 
+/** Tope del contexto extra que manda el Canvas (POST.extra). */
+const MAX_EXTRA = 12_000;
+
 export async function GET(request: NextRequest) {
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: 'No autenticado' }, { status: 401 });
@@ -49,8 +52,10 @@ export async function POST(request: NextRequest) {
 
   if (!anthropicApiKey()) return NextResponse.json({ error: 'Anthropic API key is not configured' }, { status: 500 });
 
-  const { brandId, message } = (await request.json()) as { brandId: string; message: string };
+  const { brandId, message, extra } = (await request.json()) as { brandId: string; message: string; extra?: string };
   if (!brandId || !message?.trim()) return NextResponse.json({ error: 'Faltan datos' }, { status: 400 });
+  // Contexto opcional del Canvas (lo que el usuario está planeando ahora), acotado.
+  const canvasExtra = typeof extra === 'string' && extra.trim() ? extra.trim().slice(0, MAX_EXTRA) : '';
 
   const sb = getSupabase();
 
@@ -74,7 +79,7 @@ Reglas:
 - Si detectas un patrón nuevo digno de recordarse, termina con una línea "💡 Aprendizaje sugerido: ..." (una sola frase).
 - Responde siempre en español.
 
-${context}`;
+${context}${canvasExtra ? `\n\n## CONTEXTO DEL CANVAS (lo que el usuario está planeando ahora)\n${canvasExtra}` : ''}`;
 
   const client = anthropic();
   const messages: Anthropic.MessageParam[] = [

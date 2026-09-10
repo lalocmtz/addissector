@@ -418,6 +418,9 @@ export async function ingestCreative(opts: IngestOptions): Promise<IngestSummary
       brand_id: brandId,
       title: txt(h.title).slice(0, 400),
       body: txt(h.body) || null,
+      // headline = the text on screen (read before anything is heard); voz = the spoken line.
+      hook_type: /texto en pantalla|on-screen|overlay|headline/i.test(txt(h.body) + ' ' + txt(h.source ?? '')) ? 'headline' : 'voz',
+      literal: true,
       source: 'ia',
       evidence: candidates.hooks[0]?.evidence ?? adName,
       // No performance criterion yet: the ingest marks it 'testing', never 'validated'.

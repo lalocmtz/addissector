@@ -131,6 +131,7 @@ export default function BarridoPage() {
     // se espera y se retoma donde se quedo.
     let phase: 'all' | 'creatives' = 'all';
     let totalResolved = 0;
+    let lastRemaining = -1;
 
     for (let round = 0; round < 60 && !detener.current; round++) {
       let cre: { remaining?: number; limited?: boolean; resolved?: number;
@@ -194,6 +195,12 @@ export default function BarridoPage() {
         apunta('ok', `Sync complete. ${totalResolved} creatives discovered.`);
         break;
       }
+      // A round that found nothing new and left the same remainder is a loop, not progress.
+      if ((cre.queued ?? 0) === 0 && (cre.deduped ?? 0) === 0 && cre.remaining === lastRemaining) {
+        apunta('err', `Meta no entrega ${cre.blocked ?? cre.remaining} videos con este token. Están marcados "Súbelo tú" en el tablero de arriba: súbelos ahí y sigue con el barrido.`);
+        break;
+      }
+      lastRemaining = cre.remaining ?? -1;
       await esperar(1500);
     }
 

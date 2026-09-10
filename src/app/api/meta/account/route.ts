@@ -74,7 +74,7 @@ export async function PATCH(request: NextRequest) {
   const check = await checkToken(token);
   if (check.error) return NextResponse.json({ error: `Meta rechazó el token: ${check.error}`, check }, { status: 400 });
   const sb = getSupabase();
-  const { error } = await sb.from('ad_account').update({ access_token: token }).eq('id', acc.id);
+  const { error } = await sb.from('ad_account').update({ access_token: token, updated_at: new Date().toISOString() }).eq('id', acc.id);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ ok: true, token_tail: token.slice(-4), check });
 }

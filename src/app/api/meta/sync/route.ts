@@ -57,6 +57,7 @@ interface AccountRow {
   ad_account_id: string;
   currency: string | null;
   access_token: string | null;
+  updated_at?: string | null;
   brand: { name: string } | { name: string }[] | null;
 }
 
@@ -70,7 +71,7 @@ function normalizePhase(p: string | undefined): Phase {
 
 /** Accounts to sync: the requested brand's, or every active account. */
 async function targetAccounts(sb: ReturnType<typeof getSupabase>, userId: string | null, brandId?: string): Promise<AccountRow[]> {
-  let q = sb.from('ad_account').select('id,brand_id,user_id,ad_account_id,currency,access_token,brand:brands(name)').eq('active', true);
+  let q = sb.from('ad_account').select('id,brand_id,user_id,ad_account_id,currency,access_token,updated_at,brand:brands(name)').eq('active', true);
   if (brandId) q = q.eq('brand_id', brandId);
   if (userId) q = q.eq('user_id', userId);
   const { data } = await q;
@@ -174,7 +175,7 @@ async function syncCreatives(
 
   const { data: rows2 } = await sb
     .from('meta_ads')
-    .select('id,name,ad_id,asset_kind,asset_url,queue_status,creative_id,asset_strategy')
+    .select('id,name,ad_id,asset_kind,asset_url,queue_status,creative_id,asset_strategy,updated_at')
     .eq('brand_id', brandId);
   const byAdId = new Map((rows2 ?? []).map((r) => [r.ad_id as string, r]));
 
@@ -202,7 +203,12 @@ async function syncCreatives(
     // An ad skipped for low spend earlier is reconsidered once it passes the gate.
     // Retryable skips: parked for spend, or blocked by a permission the token
     // did not have at the time (a new token is exactly why it gets retried).
-    const skippedForSpend = prev?.queue_status === 'omitido' && (prev?.asset_strategy === 'poco-gasto' || prev?.asset_strategy === 'sin-senal' || prev?.asset_strategy === 'video-bloqueado' || prev?.asset_kind === 'none');
+    // A blocked video is retried ONCE per token: only if the block was recorded
+    // before the current token was saved. Otherwise every round re-asks Meta
+    // for the same 12 videos and the barrido never ends.
+    const tokenSavedAt = acc.updated_at ?? '';
+    const blockedBeforeToken = (prev?.asset_strategy === 'video-bloqueado' || prev?.asset_kind === 'none') && String(prev?.updated_at ?? '') < tokenSavedAt;
+    const skippedForSpend = prev?.queue_status === 'omitido' && (prev?.asset_strategy === 'poco-gasto' || prev?.asset_strategy === 'sin-senal' || blockedBeforeToken);
     const alreadyDone = Boolean(prev?.asset_url) || prev?.queue_status === 'listo' || (prev?.queue_status === 'omitido' && !(skippedForSpend && passesGate(ad.id)));
     if (alreadyDone) continue;
     if (resolved >= limit || limited) { remaining++; continue; }
