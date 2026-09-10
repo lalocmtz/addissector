@@ -1,221 +1,171 @@
 'use client';
 
 // =============================================================================
-// Library — every ad the account has spent on, as a visual mosaic: the creative
-// itself (thumbnail, video on hover), what it cost, what it returned, and the
-// tags that describe it. A card opens a drawer with the full picture. Reads
-// GET /api/library?brand= (already sorted by spend); everything else — totals,
-// filters, sort — is computed here from the rows.
+// Biblioteca — what ran on Meta in a reporting window and what it returned.
+// Reads GET /api/library?brand=&window=. Two tabs: Creativos (the cards, with
+// filters and a detail modal) and Desglose (cost per purchase by tag, compared
+// against the account baseline). Everything after the fetch is computed here.
+// Numbers are Meta's; the AI analysis lives elsewhere and is only linked.
 // =============================================================================
 
 import { useState, useEffect, useCallback, useMemo, useRef, useSyncExternalStore } from 'react';
 import Link from 'next/link';
-import {
-  Loader2, Film, Image as ImageIcon, Library, Search, X, LayoutGrid, List, Check, Copy, ExternalLink, CheckCircle2,
-} from 'lucide-react';
+import { Loader2, Film, Image as ImageIcon, Library, Search, X, LayoutGrid, List, Check, Copy, RefreshCw, Play } from 'lucide-react';
 import AppHeader from '@/components/AppHeader';
 import { useMe } from '@/lib/use-me';
 import { useT, useFormatters } from '@/lib/i18n';
-import { DEFAULT_ECONOMICS, type Economics } from '@/lib/meta';
+import { DEFAULT_ECONOMICS, type Economics, type VerdictId } from '@/lib/meta';
 
-type VerdictId = 'ganador' | 'prometedor' | 'dejar' | 'apagar' | 'sin_datos';
+// ---------------------------------------------------------------------------
+// Types (mirror of the API response)
+// ---------------------------------------------------------------------------
 
-const VERDICT_KEY: Record<VerdictId, string> = {
-  ganador: 'verdict.winner',
-  prometedor: 'verdict.promising',
-  dejar: 'verdict.cut',
-  apagar: 'verdict.kill',
-  sin_datos: 'verdict.noData',
-};
-
-const VERDICT_CLASS: Record<VerdictId, string> = {
-  ganador: 'bg-ok-soft text-ok',
-  prometedor: 'bg-accent-soft text-accent',
-  dejar: 'bg-warn-soft text-warn',
-  apagar: 'bg-danger-soft text-danger',
-  sin_datos: 'bg-inset text-ink-4',
-};
-
-const VERDICT_ORDER: VerdictId[] = ['ganador', 'prometedor', 'dejar', 'apagar', 'sin_datos'];
+type AdStatus = 'active' | 'paused' | 'adset_paused' | 'campaign_paused' | 'with_issues' | 'disapproved' | 'unknown';
+type Kind = 'video' | 'image';
 
 interface LibraryAd {
   ad_id: string;
   ad_name: string;
-  status: string | null;
-  first_date: string | null;
-  last_date: string | null;
-  days: number;
+  campaign_name: string | null;
+  adset_name: string | null;
+  status: AdStatus;
+  delivered: boolean;
   spend: number;
   revenue: number;
   purchases: number;
   roas: number | null;
   cpa: number | null;
+  impressions: number | null;
+  link_clicks: number | null;
+  ctr: number | null;
+  cpm: number | null;
+  freq: number | null;
   hook_rate: number | null;
   hold_rate: number | null;
-  ret75: number | null;
   cvr: number | null;
-  recent: { spend: number; roas: number | null; hook_rate: number | null } | null;
+  daily: { date: string; spend: number; purchases: number }[];
   verdict: VerdictId;
-  asset_kind: string | null;
+  kind: Kind;
+  asset_type: string | null;
   asset_url: string | null;
   thumbnail_url: string | null;
   duration: number | null;
   creative_id: string | null;
   creative_type: string | null;
   analyzed: boolean;
-  has_dossier: boolean;
-  persona_id: string | null;
-  angle_id: string | null;
-  concept_id: string | null;
   persona: string | null;
   angle: string | null;
+  angle_code: string | null;
+  angle_id: string | null;
   concept: string | null;
-  taxonomy_source: string | null;
-  taxonomy_confidence: number | null;
-  experiment_id: string | null;
   dimensions: Record<string, string>;
 }
 
-interface Named { id: string; name: string; code?: string | null }
+interface Totals {
+  spend: number; impressions: number; purchases: number; revenue: number; link_clicks: number;
+  roas: number | null; cpa: number | null; cpm: number | null; ctr: number | null;
+}
 
 interface LibraryResponse {
+  window?: { id: string; from: string; to: string };
   ads?: LibraryAd[];
+  totals?: Totals;
   currency?: string | null;
   economics?: Partial<Economics> | null;
-  memoryTo?: string | null;
-  personas?: Named[];
-  angles?: Named[];
-  concepts?: Named[];
   error?: string;
 }
 
-type SortKey = 'spend' | 'roas' | 'cpa' | 'hook_rate' | 'hold_rate' | 'cvr' | 'recent';
-type ViewMode = 'grid' | 'list';
+type WindowId = 'last_7d' | 'last_14d' | 'last_30d' | 'last_90d' | 'this_month' | 'last_month';
+type Delivery = 'all' | 'delivered' | 'active';
+type SortKey = 'spend' | 'cpa' | 'roas' | 'ctr' | 'hook_rate';
+type Tab = 'creatives' | 'breakdown';
+type T = ReturnType<typeof useT>;
+type F = ReturnType<typeof useFormatters>;
 
-const SORT_ORDER: SortKey[] = ['spend', 'roas', 'cpa', 'hook_rate', 'hold_rate', 'cvr', 'recent'];
+const WINDOWS: WindowId[] = ['last_7d', 'last_14d', 'last_30d', 'last_90d', 'this_month', 'last_month'];
+const SORTS: SortKey[] = ['spend', 'cpa', 'roas', 'ctr', 'hook_rate'];
+const VERDICTS: VerdictId[] = ['ganador', 'prometedor', 'dejar', 'apagar', 'sin_datos'];
+const VERDICT_KEY: Record<VerdictId, string> = {
+  ganador: 'verdict.winner', prometedor: 'verdict.promising', dejar: 'verdict.cut', apagar: 'verdict.kill', sin_datos: 'verdict.noData',
+};
+const VERDICT_CLASS: Record<VerdictId, string> = {
+  ganador: 'bg-ok-soft text-ok', prometedor: 'bg-accent-soft text-accent', dejar: 'bg-warn-soft text-warn', apagar: 'bg-danger-soft text-danger', sin_datos: 'bg-inset text-ink-4',
+};
+/** Tags shown in the modal, in reading order (after Tipo / Formato / Ángulo / Persona / Concepto). */
+const TAG_ORDER = ['awareness_level', 'proof_type', 'offer', 'cta', 'hook', 'emotional_driver', 'narrative_structure', 'visual_style', 'creator', 'pacing', 'duration_bucket'];
+/** Dimension chips on a card, after the angle code (max 4 in total). */
+const CARD_DIMS = ['awareness_level', 'proof_type', 'offer'];
 
-/** Dimensions shown in the drawer, in reading order; anything else tagged follows. */
-const DIMENSION_ORDER = [
-  'format', 'awareness_level', 'creator', 'emotional_driver', 'narrative_structure', 'proof_type',
-  'offer', 'cta', 'visual_style', 'pacing', 'duration_bucket',
-];
-
-/** Dimensions that earn a chip on the card, in priority order (max 4 after the angle code). */
-const CARD_DIMENSIONS = ['awareness_level', 'proof_type', 'offer', 'emotional_driver'];
-
-const VIEW_KEY = 'addna-library-view';
-
-const input =
-  'rounded-md border border-line bg-surface px-2.5 py-1.5 text-sm text-ink placeholder:text-ink-4 focus:outline-none focus:border-accent';
-const chip = 'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium';
-const tag = 'inline-flex items-center rounded-md border border-line bg-inset px-1.5 py-0.5 text-[10px] text-ink-2 truncate max-w-[140px]';
-const num = 'font-[family-name:var(--font-mono)] tabular-nums whitespace-nowrap';
-const mono = 'font-[family-name:var(--font-mono)]';
+const mono = 'font-[family-name:var(--font-mono)] tabular-nums';
+const label = 'text-[10px] uppercase tracking-wide text-ink-4';
+const select = 'rounded-md border border-line bg-surface px-2 py-1.5 text-xs text-ink focus:outline-none focus:border-accent max-w-full';
+const pill = 'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide';
+const overlayPill = `${pill} bg-surface/90 text-ink shadow-sm`;
+const chip = 'inline-flex items-center rounded-md border border-line bg-inset px-1.5 py-0.5 text-[10px] text-ink-2 truncate max-w-[140px]';
+const btn = 'inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-md border border-line text-ink-2 hover:text-ink hover:border-line-strong';
 
 // ---------------------------------------------------------------------------
-// View mode lives in localStorage; read through an external store so the
-// server render (always grid) and the first client render agree.
+// localStorage-backed preferences (window, view) via useSyncExternalStore so
+// the server render and the first client render agree.
 // ---------------------------------------------------------------------------
 
-const viewListeners = new Set<() => void>();
-
-function readView(): ViewMode {
-  try {
-    return window.localStorage.getItem(VIEW_KEY) === 'list' ? 'list' : 'grid';
-  } catch {
-    return 'grid';
-  }
+const listeners = new Set<() => void>();
+function readPref(key: string, fallback: string): string {
+  try { return window.localStorage.getItem(key) ?? fallback; } catch { return fallback; }
 }
-
-function writeView(v: ViewMode) {
-  try {
-    window.localStorage.setItem(VIEW_KEY, v);
-  } catch {
-    // Storage may be unavailable (private mode); the toggle still works for the session.
-  }
-  viewListeners.forEach((l) => l());
+function writePref(key: string, v: string) {
+  try { window.localStorage.setItem(key, v); } catch { /* private mode: still works for the session */ }
+  listeners.forEach((l) => l());
 }
-
-function subscribeView(cb: () => void) {
-  viewListeners.add(cb);
+function subscribe(cb: () => void) {
+  listeners.add(cb);
   window.addEventListener('storage', cb);
-  return () => {
-    viewListeners.delete(cb);
-    window.removeEventListener('storage', cb);
-  };
+  return () => { listeners.delete(cb); window.removeEventListener('storage', cb); };
+}
+function usePref<V extends string>(key: string, fallback: V, valid: readonly V[]): [V, (v: V) => void] {
+  const raw = useSyncExternalStore(subscribe, () => readPref(key, fallback), () => fallback);
+  const v = (valid as readonly string[]).includes(raw) ? (raw as V) : fallback;
+  return [v, (next: V) => writePref(key, next)];
 }
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Video kind for an ad, tolerant of the several shapes Meta and the library use. */
-function isVideo(ad: LibraryAd): boolean {
-  const k = `${ad.asset_kind ?? ''}${ad.creative_type ?? ''}`.toLowerCase();
-  return k.includes('video') || Boolean(ad.duration);
-}
-
-/** The format we filter by: the tagged dimension when there is one, else the media kind. */
-function formatOf(ad: LibraryAd): string {
-  return ad.dimensions?.format ?? (isVideo(ad) ? 'video' : 'image');
-}
-
-function labelOf(x: Named): string {
-  return x.code ? `${x.code} ${x.name}` : x.name;
-}
-
-/** ROAS against the brand's economics: above target, above break-even, or below. */
 function roasClass(roas: number | null, eco: Economics): string {
   if (roas == null) return 'text-ink-4';
   if (roas >= eco.target) return 'text-ok';
   if (roas >= eco.breakeven) return 'text-warn';
   return 'text-danger';
 }
-
-function statusClass(status: string | null): string {
-  const s = (status ?? '').toUpperCase();
-  if (s === 'ACTIVE') return 'bg-ok-soft text-ok';
-  if (s === 'PAUSED') return 'bg-warn-soft text-warn';
-  return 'bg-inset text-ink-3';
+function statusClass(s: AdStatus): string {
+  return s === 'active' ? 'bg-ok-soft text-ok' : s === 'with_issues' || s === 'disapproved' ? 'bg-danger-soft text-danger' : 'bg-surface-2 text-ink-3';
 }
-
-function analysisHref(ad: LibraryAd): string | null {
-  if (!ad.creative_id) return null;
-  return `${ad.creative_type === 'image' ? '/analyze-image' : '/analyze'}?id=${ad.creative_id}`;
-}
-
-type T = (key: string, vars?: Record<string, string | number | null | undefined>) => string;
-type F = ReturnType<typeof useFormatters>;
-
-/** Translates a dictionary-shaped key, falling back to the raw value when it has no entry. */
+/** Translates a value-shaped key, falling back to the raw value. */
 function tOr(t: T, key: string, raw: string): string {
   const s = t(key);
   return s === key ? raw : s;
 }
+const assetTypeLabel = (t: T, v: string) => tOr(t, `library.assetType.${v.toLowerCase()}`, v);
+/** A tagged value the way a person would say it: 'problem_aware' → 'Sabe el problema', anything unknown → 'Problem aware'. */
+const dimValue = (t: T, v: string) => tOr(t, `library.val.${v.toLowerCase()}`, v.replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase()));
+const tagLabel = (t: T, k: string) => tOr(t, `library.tag.${k}`, k.replace(/_/g, ' '));
+const money0 = (f: F, n: number | null | undefined, cur: string | null) => (n == null ? '–' : f.money(n, cur));
 
-function statusLabel(t: T, status: string | null): string {
-  if (!status) return '—';
-  return tOr(t, `library.status.${status.toUpperCase()}`, status);
+/** The AI analysis screen for this ad, when one exists. */
+function analysisHref(ad: LibraryAd): string | null {
+  if (!ad.creative_id) return null;
+  return `${ad.creative_type === 'image' ? '/analyze-image' : '/analyze'}?id=${ad.creative_id}`;
 }
-
-function dimLabel(t: T, dim: string): string {
-  return tOr(t, `library.dim.${dim}`, dim.replace(/_/g, ' '));
+function cardChips(ad: LibraryAd, t: T): string[] {
+  const out: string[] = [];
+  if (ad.angle_code) out.push(ad.angle_code);
+  for (const d of CARD_DIMS) if (ad.dimensions[d]) out.push(dimValue(t, ad.dimensions[d]));
+  return out.slice(0, 4);
 }
-
-function formatLabel(t: T, fmt: string): string {
-  return tOr(t, `library.format.${fmt}`, fmt);
-}
-
-/** Spend-weighted mean of a per-ad rate, ignoring ads without the rate. */
-function weighted(rows: LibraryAd[], pick: (a: LibraryAd) => number | null): number | null {
-  let w = 0, acc = 0;
-  for (const a of rows) {
-    const v = pick(a);
-    if (v == null || a.spend <= 0) continue;
-    w += a.spend;
-    acc += v * a.spend;
-  }
-  return w > 0 ? acc / w : null;
+function haystack(ad: LibraryAd): string {
+  return [ad.ad_name, ad.campaign_name, ad.adset_name, ad.angle, ad.persona, ad.concept, ad.asset_type, ...Object.values(ad.dimensions)]
+    .filter(Boolean).join(' ').toLowerCase();
 }
 
 // ---------------------------------------------------------------------------
@@ -227,752 +177,665 @@ export default function LibraryPage() {
   const f = useFormatters();
   const { me, activeBrand, activeBrandId, setActiveBrandId } = useMe();
 
-  const [ads, setAds] = useState<LibraryAd[]>([]);
-  const [currency, setCurrency] = useState<string | null>(null);
-  const [economics, setEconomics] = useState<Economics>(DEFAULT_ECONOMICS);
-  const [memoryTo, setMemoryTo] = useState<string | null>(null);
-  const [personas, setPersonas] = useState<Named[]>([]);
-  const [angles, setAngles] = useState<Named[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [windowId, setWindowId] = usePref<WindowId>('addna-library-window', 'last_30d', WINDOWS);
+  const [view, setView] = usePref<'grid' | 'list'>('addna-library-view', 'grid', ['grid', 'list']);
 
+  // One result per (brand, window): loading is derived, so no setState in the effect body.
+  const [result, setResult] = useState<{ key: string; data: LibraryResponse | null; error: string | null } | null>(null);
+  const fetchKey = `${activeBrandId ?? ''}|${windowId}`;
+  const data = result?.key === fetchKey ? result.data : null;
+  const error = result?.key === fetchKey ? result.error : null;
+  const loading = Boolean(activeBrandId) && result?.key !== fetchKey;
+
+  const [tab, setTab] = useState<Tab>('creatives');
   const [q, setQ] = useState('');
+  const [delivery, setDelivery] = useState<Delivery>('delivered');
   const [sort, setSort] = useState<SortKey>('spend');
-  const [type, setType] = useState('');
-  const [analyzed, setAnalyzed] = useState('');
-  const [verdict, setVerdict] = useState('');
-  const [persona, setPersona] = useState('');
+  const [kind, setKind] = useState('');
+  const [analysis, setAnalysis] = useState('');
+  const [assetType, setAssetType] = useState('');
   const [angle, setAngle] = useState('');
-  const [format, setFormat] = useState('');
-  const [awareness, setAwareness] = useState('');
-  const [proof, setProof] = useState('');
-  const [onlySpend, setOnlySpend] = useState(true);
+  const [verdict, setVerdict] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
-  const view = useSyncExternalStore(subscribeView, readView, () => 'grid' as ViewMode);
-
-  const load = useCallback(async () => {
-    if (!activeBrandId) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await fetch(`/api/library?brand=${activeBrandId}`);
-      const data: LibraryResponse = await res.json();
-      if (data.error) setError(data.error);
-      setAds(Array.isArray(data.ads) ? data.ads : []);
-      setCurrency(data.currency ?? null);
-      setEconomics({ ...DEFAULT_ECONOMICS, ...(data.economics ?? {}) });
-      setMemoryTo(data.memoryTo ?? null);
-      setPersonas(Array.isArray(data.personas) ? data.personas : []);
-      setAngles(Array.isArray(data.angles) ? data.angles : []);
-    } catch {
-      setError(t('library.error'));
-    } finally {
-      setLoading(false);
-    }
-  }, [activeBrandId, t]);
-
   useEffect(() => {
-    load();
-  }, [load]);
+    if (!activeBrandId) return;
+    let cancelled = false;
+    const key = fetchKey;
+    fetch(`/api/library?brand=${activeBrandId}&window=${windowId}`)
+      .then((r) => r.json() as Promise<LibraryResponse>)
+      .then((d) => { if (!cancelled) setResult({ key, data: d, error: d.error ?? null }); })
+      .catch(() => { if (!cancelled) setResult({ key, data: null, error: t('library.error') }); });
+    return () => { cancelled = true; };
+  }, [activeBrandId, windowId, fetchKey, t]);
 
-  // Option lists come from what is actually tagged, so a filter never offers an empty result.
+  const ads = useMemo(() => data?.ads ?? [], [data]);
+  const currency = data?.currency ?? null;
+  const eco = useMemo<Economics>(() => ({ ...DEFAULT_ECONOMICS, ...(data?.economics ?? {}) }), [data]);
+  const totals = data?.totals ?? null;
+
+  // The delivery segment and Tipo apply to both tabs; the rest only to Creativos.
+  const base = useMemo(() => ads.filter((ad) => {
+    if (delivery === 'delivered' && !ad.delivered) return false;
+    if (delivery === 'active' && ad.status !== 'active') return false;
+    if (kind && ad.kind !== kind) return false;
+    return true;
+  }), [ads, delivery, kind]);
+
   const options = useMemo(() => {
-    const formats = new Set<string>(), awarenessSet = new Set<string>(), proofSet = new Set<string>();
+    const types = new Set<string>(), angles = new Map<string, string>();
     for (const ad of ads) {
-      formats.add(formatOf(ad));
-      if (ad.dimensions?.awareness_level) awarenessSet.add(ad.dimensions.awareness_level);
-      if (ad.dimensions?.proof_type) proofSet.add(ad.dimensions.proof_type);
+      if (ad.asset_type) types.add(ad.asset_type);
+      if (ad.angle_id && ad.angle) angles.set(ad.angle_id, ad.angle);
     }
-    return { formats: [...formats].sort(), awareness: [...awarenessSet].sort(), proof: [...proofSet].sort() };
+    return { types: [...types].sort(), angles: [...angles.entries()].sort((a, b) => a[1].localeCompare(b[1])) };
   }, [ads]);
-
-  const angleCode = useMemo(() => new Map(angles.map((a) => [a.id, a.code ?? null])), [angles]);
 
   const rows = useMemo(() => {
     const needle = q.trim().toLowerCase();
-    const filtered = ads.filter((ad) => {
-      if (onlySpend && !(ad.spend > 0)) return false;
-      if (needle && !ad.ad_name.toLowerCase().includes(needle)) return false;
-      if (type === 'video' && !isVideo(ad)) return false;
-      if (type === 'image' && isVideo(ad)) return false;
-      if (analyzed === 'yes' && !ad.analyzed) return false;
-      if (analyzed === 'no' && ad.analyzed) return false;
-      if (verdict && ad.verdict !== verdict) return false;
-      if (persona && ad.persona_id !== persona) return false;
+    const list = base.filter((ad) => {
+      if (needle && !haystack(ad).includes(needle)) return false;
+      if (analysis === 'yes' && !ad.analyzed) return false;
+      if (analysis === 'no' && ad.analyzed) return false;
+      if (assetType && ad.asset_type !== assetType) return false;
       if (angle && ad.angle_id !== angle) return false;
-      if (format && formatOf(ad) !== format) return false;
-      if (awareness && ad.dimensions?.awareness_level !== awareness) return false;
-      if (proof && ad.dimensions?.proof_type !== proof) return false;
+      if (verdict && ad.verdict !== verdict) return false;
       return true;
     });
-    if (sort === 'spend') return filtered;
-    const dir = sort === 'cpa' ? 1 : -1;
-    const pick = (a: LibraryAd): number | null => (sort === 'recent' ? a.recent?.spend ?? null : a[sort]);
-    return [...filtered].sort((a, b) => {
-      const av = pick(a), bv = pick(b);
-      if (av == null && bv == null) return 0;
+    const dir = sort === 'cpa' ? 1 : -1; // cost: lower first; everything else: higher first
+    return list.sort((a, b) => {
+      const av = sort === 'cpa' && a.purchases === 0 ? null : a[sort];
+      const bv = sort === 'cpa' && b.purchases === 0 ? null : b[sort];
+      if (av == null && bv == null) return b.spend - a.spend;
       if (av == null) return 1;
       if (bv == null) return -1;
-      return (av - bv) * dir;
+      return (av - bv) * dir || b.spend - a.spend;
     });
-  }, [ads, q, sort, type, analyzed, verdict, persona, angle, format, awareness, proof, onlySpend]);
+  }, [base, q, analysis, assetType, angle, verdict, sort]);
 
-  const totals = useMemo(() => {
-    const spend = rows.reduce((s, a) => s + a.spend, 0);
-    const revenue = rows.reduce((s, a) => s + a.revenue, 0);
-    const purchases = rows.reduce((s, a) => s + a.purchases, 0);
-    return {
-      spend,
-      purchases,
-      cpa: purchases > 0 ? spend / purchases : null,
-      roas: spend > 0 ? revenue / spend : null,
-      hook: weighted(rows, (a) => a.hook_rate),
-      hold: weighted(rows, (a) => a.hold_rate),
-      count: rows.length,
-    };
-  }, [rows]);
-
-  const dirty = Boolean(q || type || analyzed || verdict || persona || angle || format || awareness || proof || !onlySpend);
-
-  const clear = () => {
-    setQ('');
-    setType('');
-    setAnalyzed('');
-    setVerdict('');
-    setPersona('');
-    setAngle('');
-    setFormat('');
-    setAwareness('');
-    setProof('');
-    setOnlySpend(true);
-  };
-
-  const selected = useMemo(() => (selectedId ? ads.find((a) => a.ad_id === selectedId) ?? null : null), [ads, selectedId]);
+  const notAnalyzed = rows.filter((a) => !a.analyzed).length;
+  const selected = selectedId ? ads.find((a) => a.ad_id === selectedId) ?? null : null;
   const close = useCallback(() => setSelectedId(null), []);
 
-  const stats: { label: string; value: string; cls?: string }[] = [
-    { label: t('meta.col.spend'), value: f.money(totals.spend, currency, { compact: true }) },
-    { label: t('meta.col.purchases'), value: f.num(totals.purchases) },
-    { label: t('meta.col.cpa'), value: totals.cpa == null ? '—' : f.money(totals.cpa, currency) },
-    { label: t('meta.col.roas'), value: f.ratio(totals.roas), cls: roasClass(totals.roas, economics) },
-    { label: t('meta.col.hook'), value: f.pct(totals.hook) },
-    { label: t('meta.col.hold'), value: f.pct(totals.hold) },
-    { label: t('library.totals.creatives'), value: f.num(totals.count) },
-  ];
+  const stats = totals ? [
+    { label: t('library.totals.spend'), value: f.money(totals.spend, currency), sub: t('library.totals.impressions', { n: f.num(totals.impressions) }) },
+    { label: t('library.totals.purchases'), value: f.num(totals.purchases) },
+    { label: t('library.totals.cpa'), value: money0(f, totals.cpa, currency) },
+    { label: t('library.totals.roas'), value: totals.roas == null ? '–' : f.ratio(totals.roas), cls: roasClass(totals.roas, eco) },
+    { label: t('library.totals.ctr'), value: totals.ctr == null ? '–' : f.pct(totals.ctr, 2) },
+    { label: t('library.totals.cpm'), value: money0(f, totals.cpm, currency) },
+  ] : [];
+
+  const segBtn = (on: boolean) => `px-2.5 py-1 rounded text-xs whitespace-nowrap ${on ? 'bg-surface text-ink shadow-sm' : 'text-ink-3 hover:text-ink'}`;
 
   return (
     <main className="flex-1">
       <AppHeader me={me} activeBrand={activeBrand} onBrandChange={setActiveBrandId} />
-
-      <section className="px-6 py-8">
-        <div className="max-w-[1400px] mx-auto">
-          <div className="flex flex-wrap items-end justify-between gap-3 mb-6">
-            <div>
-              <h1 className={`text-2xl font-bold tracking-tight ${mono}`}>
-                {t('library.title')}
-                {activeBrand ? ` · ${activeBrand.name}` : ''}
-              </h1>
-              <p className="text-sm text-ink-4 mt-1">{t('library.subtitle')}</p>
-            </div>
-            {memoryTo && (
-              <p className={`text-xs text-ink-4 ${mono}`}>{t('library.memoryTo', { date: f.date(memoryTo) })}</p>
+      <section className="max-w-[1400px] mx-auto px-4 sm:px-6 py-6">
+        {/* Header */}
+        <div className="flex flex-wrap items-start justify-between gap-4 mb-5">
+          <div className="min-w-0">
+            <h1 className="text-2xl font-semibold tracking-tight font-[family-name:var(--font-serif)]">{t('library.title')}</h1>
+            <p className="text-sm text-ink-3 mt-1">{t('library.subtitle')}</p>
+            {data?.window && (
+              <p className={`text-xs text-ink-4 mt-1.5 ${mono}`}>
+                {t('library.subline', {
+                  n: ads.length, brand: activeBrand?.name ?? '', window: t(`library.window.${data.window.id}`),
+                  from: f.date(data.window.from), to: f.date(data.window.to),
+                })}
+              </p>
             )}
           </div>
+          <div className="flex flex-wrap items-end gap-2">
+            <label className="flex flex-col gap-1">
+              <span className={label}>{t('library.window.label')}</span>
+              <select value={windowId} onChange={(e) => setWindowId(e.target.value as WindowId)} className={select}>
+                {WINDOWS.map((w) => <option key={w} value={w}>{t(`library.window.${w}`)}</option>)}
+              </select>
+            </label>
+            <Link href="/meta" className={btn}><RefreshCw className="w-3.5 h-3.5" />{t('library.sync')}</Link>
+          </div>
+        </div>
 
-          {!activeBrandId ? (
-            <div className="rounded-xl border border-line bg-surface p-8 text-center text-sm text-ink-3">
-              {t('library.noBrand')}
+        {!activeBrandId ? (
+          <div className="rounded-xl border border-line bg-surface p-8 text-center text-sm text-ink-3">{t('library.noBrand')}</div>
+        ) : loading ? (
+          <div className="flex items-center justify-center py-24"><Loader2 className="w-8 h-8 text-accent animate-spin" /></div>
+        ) : (
+          <>
+            {/* Totals strip */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 mb-5">
+              {stats.map((s) => (
+                <div key={s.label} className="rounded-xl border border-line bg-surface px-3 py-2.5 min-w-0">
+                  <p className={label}>{s.label}</p>
+                  <p className={`text-lg font-semibold truncate ${mono} ${s.cls ?? 'text-ink'}`}>{s.value}</p>
+                  {s.sub && <p className={`text-[11px] text-ink-4 truncate ${mono}`}>{s.sub}</p>}
+                </div>
+              ))}
             </div>
-          ) : loading ? (
-            <div className="flex items-center justify-center py-24">
-              <Loader2 className="w-8 h-8 text-accent animate-spin" />
-            </div>
-          ) : ads.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-line bg-surface p-12 text-center">
-              <Library className="w-10 h-10 text-line-strong mx-auto mb-4" />
-              <p className="text-ink font-medium">{t('library.empty')}</p>
-              <p className="text-sm text-ink-4 mt-2">{t('library.empty.help')}</p>
-            </div>
-          ) : (
-            <>
-              {/* Totals of what is on screen — the filters decide the denominator */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2 mb-5">
-                {stats.map((s) => (
-                  <div key={s.label} className="rounded-lg border border-line bg-surface px-3 py-2.5">
-                    <p className="text-[10px] uppercase tracking-wide text-ink-4">{s.label}</p>
-                    <p className={`text-lg font-semibold ${num} ${s.cls ?? 'text-ink'}`}>{s.value}</p>
-                  </div>
-                ))}
-              </div>
 
-              {/* Toolbar */}
-              <div className="flex flex-wrap items-center gap-2 mb-4">
-                <div className="relative">
+            {/* Tabs */}
+            <div className="flex gap-1 border-b border-line mb-4">
+              {(['creatives', 'breakdown'] as Tab[]).map((k) => (
+                <button key={k} onClick={() => setTab(k)} className={`px-3 py-2 text-sm -mb-px border-b-2 ${tab === k ? 'border-accent text-ink font-medium' : 'border-transparent text-ink-3 hover:text-ink'}`}>
+                  {t(`library.tab.${k}`)}
+                </button>
+              ))}
+            </div>
+
+            {/* Toolbar (shared) */}
+            <div className="flex flex-wrap items-center gap-2 mb-3">
+              {tab === 'creatives' && (
+                <div className="relative w-full sm:w-64">
                   <Search className="w-3.5 h-3.5 text-ink-4 absolute left-2.5 top-1/2 -translate-y-1/2" />
-                  <input
-                    value={q}
-                    onChange={(e) => setQ(e.target.value)}
-                    placeholder={t('library.search')}
-                    className={`${input} pl-8 w-56`}
-                  />
-                </div>
-
-                <select value={sort} onChange={(e) => setSort(e.target.value as SortKey)} className={input}>
-                  {SORT_ORDER.map((k) => (
-                    <option key={k} value={k}>{t(`library.sort.${k}`)}</option>
-                  ))}
-                </select>
-
-                <select value={type} onChange={(e) => setType(e.target.value)} className={input}>
-                  <option value="">{t('library.filter.type')}</option>
-                  <option value="video">{t('library.format.video')}</option>
-                  <option value="image">{t('library.format.image')}</option>
-                </select>
-
-                <select value={analyzed} onChange={(e) => setAnalyzed(e.target.value)} className={input}>
-                  <option value="">{t('library.filter.analyzed')}</option>
-                  <option value="yes">{t('library.analyzed.yes')}</option>
-                  <option value="no">{t('library.analyzed.no')}</option>
-                </select>
-
-                <select value={verdict} onChange={(e) => setVerdict(e.target.value)} className={input}>
-                  <option value="">{t('library.filter.verdict')}</option>
-                  {VERDICT_ORDER.map((v) => (
-                    <option key={v} value={v}>{t(VERDICT_KEY[v])}</option>
-                  ))}
-                </select>
-
-                <select value={persona} onChange={(e) => setPersona(e.target.value)} className={input}>
-                  <option value="">{t('library.filter.persona')}</option>
-                  {personas.map((p) => (
-                    <option key={p.id} value={p.id}>{labelOf(p)}</option>
-                  ))}
-                </select>
-
-                <select value={angle} onChange={(e) => setAngle(e.target.value)} className={input}>
-                  <option value="">{t('library.filter.angle')}</option>
-                  {angles.map((a) => (
-                    <option key={a.id} value={a.id}>{labelOf(a)}</option>
-                  ))}
-                </select>
-
-                <select value={format} onChange={(e) => setFormat(e.target.value)} className={input}>
-                  <option value="">{t('library.filter.format')}</option>
-                  {options.formats.map((x) => (
-                    <option key={x} value={x}>{formatLabel(t, x)}</option>
-                  ))}
-                </select>
-
-                {options.awareness.length > 0 && (
-                  <select value={awareness} onChange={(e) => setAwareness(e.target.value)} className={input}>
-                    <option value="">{t('library.filter.awareness')}</option>
-                    {options.awareness.map((x) => (
-                      <option key={x} value={x}>{x}</option>
-                    ))}
-                  </select>
-                )}
-
-                {options.proof.length > 0 && (
-                  <select value={proof} onChange={(e) => setProof(e.target.value)} className={input}>
-                    <option value="">{t('library.filter.proof')}</option>
-                    {options.proof.map((x) => (
-                      <option key={x} value={x}>{x}</option>
-                    ))}
-                  </select>
-                )}
-
-                <label className="inline-flex items-center gap-1.5 text-xs text-ink-2 px-1 cursor-pointer select-none">
-                  <input
-                    type="checkbox"
-                    checked={onlySpend}
-                    onChange={(e) => setOnlySpend(e.target.checked)}
-                    className="accent-accent"
-                  />
-                  {t('library.onlySpend')}
-                </label>
-
-                {dirty && (
-                  <button
-                    onClick={clear}
-                    className="inline-flex items-center gap-1 text-xs text-ink-3 hover:text-ink px-2 py-1.5"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                    {t('library.clear')}
-                  </button>
-                )}
-
-                <div className="ml-auto flex items-center gap-3">
-                  <p className={`text-xs text-ink-4 ${mono}`}>
-                    {t('library.showing', { n: totals.count, spend: f.money(totals.spend, currency, { compact: true }) })}
-                  </p>
-                  <div className="inline-flex rounded-md border border-line bg-surface p-0.5">
-                    <button
-                      onClick={() => writeView('grid')}
-                      title={t('library.view.grid')}
-                      aria-pressed={view === 'grid'}
-                      className={`p-1.5 rounded ${view === 'grid' ? 'bg-surface-2 text-ink' : 'text-ink-4 hover:text-ink-2'}`}
-                    >
-                      <LayoutGrid className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={() => writeView('list')}
-                      title={t('library.view.list')}
-                      aria-pressed={view === 'list'}
-                      className={`p-1.5 rounded ${view === 'list' ? 'bg-surface-2 text-ink' : 'text-ink-4 hover:text-ink-2'}`}
-                    >
-                      <List className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              {rows.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-line bg-surface p-12 text-center text-sm text-ink-3">
-                  {t('library.emptyFiltered')}
-                </div>
-              ) : view === 'grid' ? (
-                <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
-                  {rows.map((ad) => (
-                    <Card
-                      key={ad.ad_id}
-                      ad={ad}
-                      currency={currency}
-                      eco={economics}
-                      angleCode={ad.angle_id ? angleCode.get(ad.angle_id) ?? null : null}
-                      t={t}
-                      f={f}
-                      onOpen={() => setSelectedId(ad.ad_id)}
-                    />
-                  ))}
-                </div>
-              ) : (
-                <div className="rounded-xl border border-line bg-surface overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="text-[11px] uppercase tracking-wide text-ink-4 border-b border-line">
-                        <th className="text-left font-medium px-3 py-2">{t('library.col.creative')}</th>
-                        <th className="text-right font-medium px-3 py-2">{t('meta.col.spend')}</th>
-                        <th className="text-right font-medium px-3 py-2">{t('meta.col.purchases')}</th>
-                        <th className="text-right font-medium px-3 py-2">{t('meta.col.cpa')}</th>
-                        <th className="text-right font-medium px-3 py-2">{t('meta.col.roas')}</th>
-                        <th className="text-right font-medium px-3 py-2">{t('meta.col.hook')}</th>
-                        <th className="text-right font-medium px-3 py-2">{t('meta.col.hold')}</th>
-                        <th className="text-right font-medium px-3 py-2">{t('meta.col.cvr')}</th>
-                        <th className="text-left font-medium px-3 py-2">{t('meta.col.verdict')}</th>
-                        <th className="text-left font-medium px-3 py-2">{t('library.col.tags')}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {rows.map((ad) => (
-                        <Row
-                          key={ad.ad_id}
-                          ad={ad}
-                          currency={currency}
-                          eco={economics}
-                          angleCode={ad.angle_id ? angleCode.get(ad.angle_id) ?? null : null}
-                          t={t}
-                          f={f}
-                          onOpen={() => setSelectedId(ad.ad_id)}
-                        />
-                      ))}
-                    </tbody>
-                  </table>
+                  <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t('library.search')} className={`${select} w-full pl-8 py-1.5`} />
                 </div>
               )}
-            </>
-          )}
+              <div className="inline-flex rounded-md border border-line bg-inset p-0.5">
+                {(['all', 'delivered', 'active'] as Delivery[]).map((d) => (
+                  <button key={d} onClick={() => setDelivery(d)} className={segBtn(delivery === d)}>{t(`library.delivery.${d}`)}</button>
+                ))}
+              </div>
+              {tab === 'creatives' && (
+                <div className="ml-auto inline-flex rounded-md border border-line bg-surface p-0.5">
+                  <button onClick={() => setView('grid')} title={t('library.view.grid')} aria-pressed={view === 'grid'} className={`p-1.5 rounded ${view === 'grid' ? 'bg-surface-2 text-ink' : 'text-ink-4 hover:text-ink-2'}`}><LayoutGrid className="w-4 h-4" /></button>
+                  <button onClick={() => setView('list')} title={t('library.view.list')} aria-pressed={view === 'list'} className={`p-1.5 rounded ${view === 'list' ? 'bg-surface-2 text-ink' : 'text-ink-4 hover:text-ink-2'}`}><List className="w-4 h-4" /></button>
+                </div>
+              )}
+            </div>
 
-          {error && (
-            <div className="mt-6 rounded-lg border border-danger/40 bg-danger-soft px-3 py-2 text-xs text-danger">{error}</div>
-          )}
-        </div>
+            {/* Filter row */}
+            <div className="flex flex-wrap items-end gap-2 mb-4">
+              {tab === 'creatives' && (
+                <Field label={t('library.sort')}>
+                  <select value={sort} onChange={(e) => setSort(e.target.value as SortKey)} className={select}>
+                    {SORTS.map((k) => <option key={k} value={k}>{t(`library.sort.${k}`)}</option>)}
+                  </select>
+                </Field>
+              )}
+              <Field label={t('library.filter.type')}>
+                <select value={kind} onChange={(e) => setKind(e.target.value)} className={select}>
+                  <option value="">{t('library.filter.all')}</option>
+                  <option value="image">{t('library.kind.image')}</option>
+                  <option value="video">{t('library.kind.video')}</option>
+                </select>
+              </Field>
+              {tab === 'creatives' && (
+                <>
+                  <Field label={t('library.filter.analysis')}>
+                    <select value={analysis} onChange={(e) => setAnalysis(e.target.value)} className={select}>
+                      <option value="">{t('library.filter.all')}</option>
+                      <option value="yes">{t('library.analysis.yes')}</option>
+                      <option value="no">{t('library.analysis.no')}</option>
+                    </select>
+                  </Field>
+                  <Field label={t('library.filter.format')}>
+                    <select value={assetType} onChange={(e) => setAssetType(e.target.value)} className={select}>
+                      <option value="">{t('library.filter.all')}</option>
+                      {options.types.map((x) => <option key={x} value={x}>{assetTypeLabel(t, x)}</option>)}
+                    </select>
+                  </Field>
+                  <Field label={t('library.filter.angle')}>
+                    <select value={angle} onChange={(e) => setAngle(e.target.value)} className={select}>
+                      <option value="">{t('library.filter.all')}</option>
+                      {options.angles.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+                    </select>
+                  </Field>
+                  <Field label={t('library.filter.verdict')}>
+                    <select value={verdict} onChange={(e) => setVerdict(e.target.value)} className={select}>
+                      <option value="">{t('library.filter.all')}</option>
+                      {VERDICTS.map((v) => <option key={v} value={v}>{t(VERDICT_KEY[v])}</option>)}
+                    </select>
+                  </Field>
+                  <p className={`text-xs text-ink-4 sm:ml-auto ${mono}`}>{t('library.showing', { x: rows.length, y: ads.length })}</p>
+                </>
+              )}
+            </div>
+
+            {ads.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-line bg-surface p-12 text-center">
+                <Library className="w-10 h-10 text-line-strong mx-auto mb-4" />
+                <p className="text-ink font-medium">{t('library.empty')}</p>
+                <p className="text-sm text-ink-4 mt-2">{t('library.empty.help')}</p>
+              </div>
+            ) : tab === 'breakdown' ? (
+              <Breakdown ads={base} baseline={totals?.cpa ?? null} currency={currency} t={t} f={f} />
+            ) : (
+              <>
+                {notAnalyzed > 0 && (
+                  <div className="mb-4 rounded-lg border border-line bg-accent-soft px-3 py-2 text-xs text-ink-2 flex flex-wrap items-center gap-x-1.5">
+                    <span>{t('library.banner', { n: notAnalyzed })}</span>
+                    <Link href="/meta/barrido" className="text-accent font-medium hover:underline">{t('library.banner.link')}</Link>
+                  </div>
+                )}
+                {rows.length === 0 ? (
+                  <div className="rounded-xl border border-dashed border-line bg-surface p-12 text-center text-sm text-ink-3">{t('library.emptyFiltered')}</div>
+                ) : view === 'grid' ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
+                    {rows.map((ad) => <Card key={ad.ad_id} ad={ad} currency={currency} eco={eco} t={t} f={f} onOpen={() => setSelectedId(ad.ad_id)} />)}
+                  </div>
+                ) : (
+                  <ListTable rows={rows} currency={currency} eco={eco} t={t} f={f} onOpen={setSelectedId} />
+                )}
+              </>
+            )}
+          </>
+        )}
+
+        {error && <div className="mt-6 rounded-lg border border-danger/40 bg-danger-soft px-3 py-2 text-xs text-danger">{error}</div>}
       </section>
 
-      {selected && (
-        <Drawer ad={selected} currency={currency} eco={economics} t={t} f={f} onClose={close} />
+      {selected && data?.window && (
+        <Detail ad={selected} range={data.window} currency={currency} eco={eco} t={t} f={f} onClose={close} />
       )}
     </main>
   );
 }
 
+function Field({ label: l, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label className="flex flex-col gap-1 min-w-0">
+      <span className={label}>{l}</span>
+      {children}
+    </label>
+  );
+}
+
 // ---------------------------------------------------------------------------
-// Media box — thumbnail that becomes the muted, looping video while hovered,
-// so the creative can be judged without opening anything.
+// Media — thumbnail; a video plays muted on hover. No word for the kind here:
+// the badge below the media says it (never "Imagen" for a video).
 // ---------------------------------------------------------------------------
 
 function Media({ ad, className }: { ad: LibraryAd; className: string }) {
   const [hover, setHover] = useState(false);
-  const videoRef = useRef<HTMLVideoElement | null>(null);
-  const video = isVideo(ad) && Boolean(ad.asset_url);
-
+  const ref = useRef<HTMLVideoElement | null>(null);
+  const playable = ad.kind === 'video' && Boolean(ad.asset_url);
   return (
-    <div
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => {
-        setHover(false);
-        videoRef.current?.pause();
-      }}
-      className={`relative overflow-hidden bg-canvas ${className}`}
-    >
+    <div onMouseEnter={() => setHover(true)} onMouseLeave={() => { setHover(false); ref.current?.pause(); }} className={`relative overflow-hidden bg-inset ${className}`}>
       {ad.thumbnail_url ? (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={ad.thumbnail_url} alt={ad.ad_name} loading="lazy" className="w-full h-full object-cover" />
+        <img src={ad.thumbnail_url} alt="" loading="lazy" className="w-full h-full object-cover" />
       ) : (
         <div className="w-full h-full flex items-center justify-center text-line-strong">
-          {isVideo(ad) ? <Film className="w-6 h-6" /> : <ImageIcon className="w-6 h-6" />}
+          {ad.kind === 'video' ? <Film className="w-7 h-7" /> : <ImageIcon className="w-7 h-7" />}
         </div>
       )}
-      {video && hover && (
-        <video
-          ref={videoRef}
-          src={ad.asset_url ?? undefined}
-          muted
-          loop
-          playsInline
-          autoPlay
-          className="absolute inset-0 w-full h-full object-cover"
-        />
+      {playable && hover && (
+        <video ref={ref} src={ad.asset_url ?? undefined} muted loop playsInline autoPlay className="absolute inset-0 w-full h-full object-cover" />
       )}
     </div>
   );
 }
 
-/** The tag chips a card and a row share: angle code first, then the telling dimensions. */
-function cardTags(ad: LibraryAd, angleCode: string | null): string[] {
-  const out: string[] = [];
-  const code = angleCode ?? (ad.angle ? ad.angle.split(' ')[0] : null);
-  if (code) out.push(code);
-  for (const d of CARD_DIMENSIONS) {
-    const v = ad.dimensions?.[d];
-    if (v) out.push(v);
-  }
-  return out.slice(0, 5);
+function StatusPill({ status, t }: { status: AdStatus; t: T }) {
+  return <span className={`${pill} ${statusClass(status)}`}>{t(`library.status.${status}`)}</span>;
 }
 
-// ---------------------------------------------------------------------------
-// Card — one tile of the mosaic.
-// ---------------------------------------------------------------------------
-
-interface ItemProps {
-  ad: LibraryAd;
-  currency: string | null;
-  eco: Economics;
-  angleCode: string | null;
-  t: T;
-  f: F;
-  onOpen: () => void;
-}
-
-function Card({ ad, currency, eco, angleCode, t, f, onOpen }: ItemProps) {
-  const tags = cardTags(ad, angleCode);
-  const metrics: { label: string; value: string; cls?: string }[] = [
-    { label: t('meta.col.spend'), value: f.money(ad.spend, currency) },
-    { label: t('meta.col.purchases'), value: f.num(ad.purchases) },
-    { label: t('meta.col.cpa'), value: ad.cpa == null ? '—' : f.money(ad.cpa, currency) },
-    { label: t('meta.col.roas'), value: f.ratio(ad.roas), cls: roasClass(ad.roas, eco) },
-    { label: t('meta.col.hook'), value: f.pct(ad.hook_rate) },
-    { label: t('meta.col.hold'), value: f.pct(ad.hold_rate) },
-  ];
-
+function KindBadge({ kind, t }: { kind: Kind; t: T }) {
   return (
-    <button
-      onClick={onOpen}
-      className="text-left rounded-xl border border-line bg-surface overflow-hidden hover:border-line-strong hover:shadow-sm transition-all focus:outline-none focus:border-accent"
+    <span className={`${overlayPill} normal-case tracking-normal font-medium`}>
+      {kind === 'video' ? <Play className="w-2.5 h-2.5 fill-current" /> : <ImageIcon className="w-2.5 h-2.5" />}
+      {t(`library.kind.${kind}`)}
+    </span>
+  );
+}
+
+function VerdictPill({ v, t }: { v: VerdictId; t: T }) {
+  return <span className={`${pill} ${VERDICT_CLASS[v]}`}>{t(VERDICT_KEY[v])}</span>;
+}
+
+// ---------------------------------------------------------------------------
+// Card + list row
+// ---------------------------------------------------------------------------
+
+interface ItemProps { ad: LibraryAd; currency: string | null; eco: Economics; t: T; f: F; onOpen: () => void }
+
+/** The four numbers a card shows. "–" when there is nothing to divide by. */
+function adMetrics(ad: LibraryAd, currency: string | null, eco: Economics, t: T, f: F) {
+  const has = ad.purchases > 0;
+  return [
+    { label: t('library.m.spend'), value: f.money(ad.spend, currency) },
+    { label: t('library.m.purchases'), value: f.num(ad.purchases) },
+    { label: t('library.m.cpa'), value: has ? money0(f, ad.cpa, currency) : '–' },
+    { label: t('library.m.roas'), value: has && ad.roas != null ? f.ratio(ad.roas) : '–', cls: has ? roasClass(ad.roas, eco) : 'text-ink-4' },
+  ];
+}
+
+function Card({ ad, currency, eco, t, f, onOpen }: ItemProps) {
+  const chips = cardChips(ad, t);
+  return (
+    <article
+      role="button" tabIndex={0} onClick={onOpen}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(); } }}
+      className="cursor-pointer rounded-xl border border-line bg-surface overflow-hidden hover:border-line-strong hover:shadow-sm transition-all focus:outline-none focus:border-accent min-w-0"
     >
       <div className="relative">
         <Media ad={ad} className="aspect-[4/5] w-full" />
-        {ad.status && (
-          <span className={`${chip} absolute top-2 left-2 ${statusClass(ad.status)}`}>{statusLabel(t, ad.status)}</span>
-        )}
-        <span className={`${chip} absolute top-2 right-2 bg-overlay/70 text-on-accent`}>
-          {formatLabel(t, formatOf(ad))}
-        </span>
-        {ad.duration != null && (
-          <span className={`absolute bottom-2 right-2 px-1.5 py-0.5 rounded bg-overlay/70 text-[10px] text-on-accent ${mono}`}>
-            {Math.round(ad.duration)}s
-          </span>
+        <div className="absolute top-2 left-2"><StatusPill status={ad.status} t={t} /></div>
+        {ad.asset_type && <span className={`${overlayPill} absolute top-2 right-2 max-w-[45%] truncate`}>{assetTypeLabel(t, ad.asset_type)}</span>}
+        <div className="absolute bottom-2 left-2"><KindBadge kind={ad.kind} t={t} /></div>
+        {ad.duration != null && ad.kind === 'video' && (
+          <span className={`${overlayPill} absolute bottom-2 right-2 normal-case ${mono}`}>{Math.round(ad.duration)}s</span>
         )}
       </div>
-
-      <div className="p-3">
-        <div className="flex items-start gap-2">
-          <p className="text-sm font-medium text-ink leading-snug line-clamp-2 flex-1" title={ad.ad_name}>{ad.ad_name}</p>
-          {ad.analyzed && (
-            <CheckCircle2 className="w-4 h-4 text-ok shrink-0" aria-label={t('library.analyzed.yes')} />
-          )}
-        </div>
-
-        <dl className="mt-2.5 grid grid-cols-2 gap-x-3 gap-y-1">
-          {metrics.map((m) => (
+      <div className="p-3 min-w-0">
+        <p className="text-sm font-semibold text-ink leading-snug line-clamp-2 break-words" title={ad.ad_name}>{ad.ad_name}</p>
+        <p className="text-[11px] text-ink-4 truncate mt-0.5" title={ad.campaign_name ?? ''}>{ad.campaign_name ?? '–'}</p>
+        <dl className="mt-2.5 space-y-1">
+          {adMetrics(ad, currency, eco, t, f).map((m) => (
             <div key={m.label} className="flex items-baseline justify-between gap-2 text-xs">
-              <dt className="text-ink-4">{m.label}</dt>
-              <dd className={`${num} ${m.cls ?? 'text-ink'}`}>{m.value}</dd>
+              <dt className="text-ink-4 truncate">{m.label}</dt>
+              <dd className={`${mono} ${m.cls ?? 'text-ink'}`}>{m.value}</dd>
             </div>
           ))}
         </dl>
-
-        {(tags.length > 0 || ad.verdict !== 'sin_datos') && (
-          <div className="mt-2.5 flex flex-wrap items-center gap-1">
-            {ad.verdict !== 'sin_datos' && (
-              <span className={`${chip} ${VERDICT_CLASS[ad.verdict]}`}>{t(VERDICT_KEY[ad.verdict])}</span>
-            )}
-            {tags.map((x, i) => (
-              <span key={`${i}-${x}`} className={tag} title={x}>{x}</span>
-            ))}
-          </div>
-        )}
+        <div className="mt-2.5 flex flex-wrap items-center gap-1">
+          <VerdictPill v={ad.verdict} t={t} />
+          {chips.map((x, i) => <span key={`${i}-${x}`} className={chip} title={x}>{x}</span>)}
+        </div>
       </div>
-    </button>
+    </article>
   );
 }
 
-// ---------------------------------------------------------------------------
-// Row — the same ad as one compact line in the list view.
-// ---------------------------------------------------------------------------
-
-function Row({ ad, currency, eco, angleCode, t, f, onOpen }: ItemProps) {
-  const tags = cardTags(ad, angleCode);
-  const cell = `px-3 py-2 text-right ${num}`;
-
+function ListTable({ rows, currency, eco, t, f, onOpen }: { rows: LibraryAd[]; currency: string | null; eco: Economics; t: T; f: F; onOpen: (id: string) => void }) {
+  const th = 'font-medium px-3 py-2 whitespace-nowrap';
+  const td = `px-3 py-2 text-right whitespace-nowrap ${mono}`;
   return (
-    <tr onClick={onOpen} className="border-b border-line last:border-0 hover:bg-inset/60 transition-colors cursor-pointer">
-      <td className="px-3 py-2">
-        <div className="flex items-center gap-3 min-w-[240px]">
-          <Media ad={ad} className="w-12 h-[60px] shrink-0 rounded-md border border-line" />
-          <div className="min-w-0">
-            <p className="font-medium text-ink truncate max-w-[280px]" title={ad.ad_name}>{ad.ad_name}</p>
-            <p className={`text-[11px] text-ink-4 ${mono}`}>
-              {statusLabel(t, ad.status)} · {f.date(ad.first_date)} → {f.date(ad.last_date)} · {t('common.days', { n: ad.days })}
-              {ad.analyzed && <CheckCircle2 className="inline w-3 h-3 text-ok ml-1 align-[-2px]" aria-label={t('library.analyzed.yes')} />}
-            </p>
-          </div>
-        </div>
-      </td>
-      <td className={cell}>{f.money(ad.spend, currency)}</td>
-      <td className={cell}>{f.num(ad.purchases)}</td>
-      <td className={cell}>{ad.cpa == null ? '—' : f.money(ad.cpa, currency)}</td>
-      <td className={`${cell} ${roasClass(ad.roas, eco)}`}>{f.ratio(ad.roas)}</td>
-      <td className={cell}>{f.pct(ad.hook_rate)}</td>
-      <td className={cell}>{f.pct(ad.hold_rate)}</td>
-      <td className={cell}>{f.pct(ad.cvr)}</td>
-      <td className="px-3 py-2">
-        <span className={`${chip} ${VERDICT_CLASS[ad.verdict]}`}>{t(VERDICT_KEY[ad.verdict])}</span>
-      </td>
-      <td className="px-3 py-2">
-        <div className="flex flex-wrap gap-1 min-w-[160px]">
-          {tags.length === 0 ? (
-            <span className="text-xs text-ink-4">{t('library.unclassified')}</span>
-          ) : (
-            tags.map((x, i) => <span key={`${i}-${x}`} className={tag} title={x}>{x}</span>)
-          )}
-        </div>
-      </td>
-    </tr>
+    <div className="rounded-xl border border-line bg-surface overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className={`${label} border-b border-line`}>
+            <th className={`${th} text-left`}>{t('library.col.creative')}</th>
+            <th className={`${th} text-left`}>{t('library.col.status')}</th>
+            <th className={`${th} text-right`}>{t('library.m.spend')}</th>
+            <th className={`${th} text-right`}>{t('library.m.purchases')}</th>
+            <th className={`${th} text-right`}>{t('library.m.cpa')}</th>
+            <th className={`${th} text-right`}>{t('library.m.roas')}</th>
+            <th className={`${th} text-right`}>{t('library.m.ctr')}</th>
+            <th className={`${th} text-right`}>{t('library.m.hook')}</th>
+            <th className={`${th} text-left`}>{t('library.col.tags')}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((ad) => {
+            const m = adMetrics(ad, currency, eco, t, f);
+            return (
+              <tr key={ad.ad_id} onClick={() => onOpen(ad.ad_id)} className="border-b border-line last:border-0 hover:bg-inset/60 cursor-pointer">
+                <td className="px-3 py-2">
+                  <div className="flex items-center gap-3 min-w-[240px]">
+                    <Media ad={ad} className="w-10 h-[50px] shrink-0 rounded-md border border-line" />
+                    <div className="min-w-0">
+                      <p className="font-medium text-ink truncate max-w-[280px]" title={ad.ad_name}>{ad.ad_name}</p>
+                      <p className="text-[11px] text-ink-4 truncate max-w-[280px]">
+                        {t(`library.kind.${ad.kind}`)}{ad.asset_type ? ` · ${assetTypeLabel(t, ad.asset_type)}` : ''}{ad.campaign_name ? ` · ${ad.campaign_name}` : ''}
+                      </p>
+                    </div>
+                  </div>
+                </td>
+                <td className="px-3 py-2"><StatusPill status={ad.status} t={t} /></td>
+                <td className={td}>{m[0].value}</td>
+                <td className={td}>{m[1].value}</td>
+                <td className={td}>{m[2].value}</td>
+                <td className={`${td} ${m[3].cls}`}>{m[3].value}</td>
+                <td className={td}>{ad.ctr == null ? '–' : f.pct(ad.ctr, 2)}</td>
+                <td className={td}>{ad.hook_rate == null ? '–' : f.pct(ad.hook_rate)}</td>
+                <td className="px-3 py-2">
+                  <div className="flex flex-wrap gap-1 min-w-[160px]">
+                    <VerdictPill v={ad.verdict} t={t} />
+                    {cardChips(ad, t).map((x, i) => <span key={`${i}-${x}`} className={chip} title={x}>{x}</span>)}
+                  </div>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
 // ---------------------------------------------------------------------------
-// Drawer — the whole picture of one ad, on the right, over a translucent veil.
+// Detail modal — media · tags + daily spend · Meta metrics.
 // ---------------------------------------------------------------------------
 
-function Drawer({
-  ad, currency, eco, t, f, onClose,
-}: { ad: LibraryAd; currency: string | null; eco: Economics; t: T; f: F; onClose: () => void }) {
-  const [copied, setCopied] = useState<'name' | 'id' | null>(null);
-  const video = isVideo(ad) && Boolean(ad.asset_url);
+function Detail({ ad, range, currency, eco, t, f, onClose }: { ad: LibraryAd; range: { from: string; to: string }; currency: string | null; eco: Economics; t: T; f: F; onClose: () => void }) {
+  const [copied, setCopied] = useState(false);
   const href = analysisHref(ad);
 
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { window.removeEventListener('keydown', onKey); document.body.style.overflow = prev; };
   }, [onClose]);
 
-  const copy = async (what: 'name' | 'id') => {
-    try {
-      await navigator.clipboard.writeText(what === 'name' ? ad.ad_name : ad.ad_id);
-      setCopied(what);
-      setTimeout(() => setCopied(null), 1500);
-    } catch {
-      // Clipboard can be denied; the button simply does nothing visible.
-    }
+  const copy = async () => {
+    try { await navigator.clipboard.writeText(ad.ad_id); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch { /* clipboard denied */ }
   };
 
+  const tags: { label: string; value: string }[] = [
+    { label: t('library.tag.kind'), value: t(`library.kind.${ad.kind}`) },
+    ...(ad.asset_type ? [{ label: t('library.tag.format'), value: assetTypeLabel(t, ad.asset_type) }] : []),
+    ...(ad.angle ? [{ label: t('library.tag.angle'), value: ad.angle }] : []),
+    ...(ad.persona ? [{ label: t('library.tag.persona'), value: ad.persona }] : []),
+    ...(ad.concept ? [{ label: t('library.tag.concept'), value: ad.concept }] : []),
+    ...TAG_ORDER.filter((k) => ad.dimensions[k]).map((k) => ({ label: tagLabel(t, k), value: dimValue(t, ad.dimensions[k]) })),
+  ];
+
+  const has = ad.purchases > 0;
   const metrics: { label: string; value: string; cls?: string }[] = [
-    { label: t('meta.col.spend'), value: f.money(ad.spend, currency) },
-    { label: t('meta.col.revenue'), value: f.money(ad.revenue, currency) },
-    { label: t('meta.col.purchases'), value: f.num(ad.purchases) },
-    { label: t('meta.col.cpa'), value: ad.cpa == null ? '—' : f.money(ad.cpa, currency) },
-    { label: t('meta.col.roas'), value: f.ratio(ad.roas), cls: roasClass(ad.roas, eco) },
-    { label: t('meta.col.hook'), value: f.pct(ad.hook_rate) },
-    { label: t('meta.col.hold'), value: f.pct(ad.hold_rate) },
-    { label: t('meta.col.ret75'), value: f.pct(ad.ret75) },
-    { label: t('meta.col.cvr'), value: f.pct(ad.cvr) },
+    { label: t('library.m.spend'), value: f.money(ad.spend, currency) },
+    { label: t('library.m.purchases'), value: f.num(ad.purchases) },
+    { label: t('library.m.cpa'), value: has ? money0(f, ad.cpa, currency) : '–' },
+    { label: t('library.m.roas'), value: has && ad.roas != null ? f.ratio(ad.roas) : '–', cls: has ? roasClass(ad.roas, eco) : undefined },
+    { label: t('library.m.revenue'), value: f.money(ad.revenue, currency) },
+    { label: t('library.m.impressions'), value: ad.impressions == null ? '–' : f.num(ad.impressions) },
+    { label: t('library.m.clicks'), value: ad.link_clicks == null ? '–' : f.num(ad.link_clicks) },
+    { label: t('library.m.ctr'), value: ad.ctr == null ? '–' : f.pct(ad.ctr, 2) },
+    { label: t('library.m.cpm'), value: money0(f, ad.cpm, currency) },
+    { label: t('library.m.freq'), value: ad.freq == null ? '–' : f.ratio(ad.freq, 2) },
+    { label: t('library.m.hook'), value: ad.hook_rate == null ? '–' : f.pct(ad.hook_rate) },
+    { label: t('library.m.hold'), value: ad.hold_rate == null ? '–' : f.pct(ad.hold_rate) },
+    { label: t('library.m.cvr'), value: ad.cvr == null ? '–' : f.pct(ad.cvr) },
   ];
 
-  const recent: { label: string; value: string; cls?: string }[] = [
-    { label: t('meta.col.spend'), value: f.money(ad.recent?.spend ?? null, currency) },
-    { label: t('meta.col.roas'), value: f.ratio(ad.recent?.roas ?? null), cls: ad.recent ? roasClass(ad.recent.roas, eco) : undefined },
-    { label: t('meta.col.hook'), value: f.pct(ad.recent?.hook_rate ?? null) },
-  ];
-
-  const taxonomy: { label: string; value: string }[] = [
-    { label: t('library.detail.persona'), value: ad.persona ?? '—' },
-    { label: t('library.detail.angle'), value: ad.angle ?? '—' },
-    { label: t('library.detail.concept'), value: ad.concept ?? '—' },
-    {
-      label: t('library.detail.source'),
-      value: ad.taxonomy_source
-        ? `${tOr(t, `library.source.${ad.taxonomy_source}`, ad.taxonomy_source)}${ad.taxonomy_confidence != null ? ` · ${f.pct(ad.taxonomy_confidence * 100, 0)}` : ''}`
-        : '—',
-    },
-  ];
-
-  const dims = ad.dimensions ?? {};
-  const dimKeys = [
-    ...DIMENSION_ORDER.filter((k) => dims[k]),
-    ...Object.keys(dims).filter((k) => k !== 'hook' && !DIMENSION_ORDER.includes(k) && dims[k]).sort(),
-  ];
-
-  const btn = 'inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-md border border-line text-ink-2 hover:text-ink hover:border-line-strong';
+  const meaning = t(`library.meaning.${ad.verdict}`, {
+    target: f.ratio(eco.target), breakeven: f.ratio(eco.breakeven), kill: f.money(eco.kill, currency),
+  });
 
   return (
-    <div className="fixed inset-0 z-[60] flex justify-end">
+    <div className="fixed inset-0 z-[60] flex items-start sm:items-center justify-center p-2 sm:p-6" role="dialog" aria-modal="true" aria-label={ad.ad_name}>
       <div className="absolute inset-0 bg-overlay/60" onClick={onClose} />
-      <aside
-        role="dialog"
-        aria-modal="true"
-        aria-label={ad.ad_name}
-        className="relative w-full max-w-2xl h-full overflow-y-auto bg-canvas border-l border-line"
-      >
-        <div className="sticky top-0 z-10 flex items-start justify-between gap-3 px-5 py-4 bg-canvas/95 backdrop-blur border-b border-line">
+      <div className="relative w-full max-w-5xl max-h-full overflow-y-auto rounded-xl border border-line bg-canvas shadow-xl">
+        {/* Header */}
+        <div className="sticky top-0 z-10 flex items-start justify-between gap-3 px-4 sm:px-5 py-3.5 bg-canvas/95 backdrop-blur border-b border-line">
           <div className="min-w-0">
-            <h2 className="text-base font-semibold text-ink break-words">{ad.ad_name}</h2>
-            <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-              {ad.status && <span className={`${chip} ${statusClass(ad.status)}`}>{statusLabel(t, ad.status)}</span>}
-              {ad.verdict !== 'sin_datos' && (
-                <span className={`${chip} ${VERDICT_CLASS[ad.verdict]}`}>{t(VERDICT_KEY[ad.verdict])}</span>
+            <div className="flex flex-wrap items-center gap-2 mb-1">
+              <StatusPill status={ad.status} t={t} />
+              <span className={`text-[11px] text-ink-3 ${mono}`}>{f.date(range.from)} – {f.date(range.to)}</span>
+            </div>
+            <h2 className="text-base font-semibold text-ink break-words leading-snug">{ad.ad_name}</h2>
+            <p className="text-xs text-ink-4 truncate">{[ad.campaign_name, ad.adset_name].filter(Boolean).join(' · ') || '–'}</p>
+            <div className="flex flex-wrap items-center gap-2 mt-2">
+              <button onClick={copy} className={btn}>
+                {copied ? <Check className="w-3.5 h-3.5 text-ok" /> : <Copy className="w-3.5 h-3.5" />}
+                {copied ? t('library.detail.copied') : t('library.detail.copyId')}
+              </button>
+              {href ? (
+                <Link href={href} className={`${btn} bg-accent-soft text-accent border-transparent hover:text-accent`}>{t('library.detail.viewAnalysis')}</Link>
+              ) : (
+                <Link href="/meta/barrido" className={btn}>{t('library.detail.analyze')}</Link>
               )}
-              {ad.analyzed && (
-                <span className={`${chip} bg-ok-soft text-ok`}><Check className="w-3 h-3" />{t('library.analyzed.yes')}</span>
-              )}
-              <span className={`text-[10px] text-ink-3 ${mono}`}>
-                {f.date(ad.first_date)} → {f.date(ad.last_date)} · {t('common.days', { n: ad.days })} · {ad.ad_id}
-              </span>
             </div>
           </div>
-          <button onClick={onClose} title={t('common.close')} className="p-1.5 rounded-md text-ink-2 hover:text-ink hover:bg-surface-2 shrink-0">
-            <X className="w-4 h-4" />
-          </button>
+          <button onClick={onClose} title={t('common.close')} className="p-1.5 rounded-md text-ink-2 hover:text-ink hover:bg-surface-2 shrink-0"><X className="w-4 h-4" /></button>
         </div>
 
-        <div className="px-5 py-4 space-y-5">
-          {/* Preview */}
-          <div className="rounded-lg border border-line overflow-hidden bg-overlay">
-            {video ? (
-              <video
-                src={ad.asset_url ?? undefined}
-                poster={ad.thumbnail_url ?? undefined}
-                controls
-                playsInline
-                preload="metadata"
-                className="w-full max-h-[440px] object-contain"
-              />
+        {/* Body */}
+        <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)_minmax(0,1fr)] gap-4 px-4 sm:px-5 py-4">
+          <div className="rounded-lg border border-line overflow-hidden bg-inset self-start">
+            {ad.kind === 'video' && ad.asset_url ? (
+              <video src={ad.asset_url} poster={ad.thumbnail_url ?? undefined} controls playsInline preload="metadata" className="w-full max-h-[480px] object-contain bg-overlay" />
             ) : ad.thumbnail_url ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={ad.thumbnail_url} alt={ad.ad_name} className="w-full max-h-[440px] object-contain" />
+              <img src={ad.thumbnail_url} alt="" className="w-full max-h-[480px] object-contain" />
             ) : (
-              <div className="h-48 flex items-center justify-center text-ink-4">
-                {isVideo(ad) ? <Film className="w-8 h-8" /> : <ImageIcon className="w-8 h-8" />}
+              <div className="aspect-[4/5] flex items-center justify-center text-line-strong">
+                {ad.kind === 'video' ? <Film className="w-8 h-8" /> : <ImageIcon className="w-8 h-8" />}
               </div>
             )}
           </div>
 
-          {/* Actions */}
-          <div className="flex flex-wrap items-center gap-2">
-            {href ? (
-              <Link href={href} className={`${btn} bg-accent-soft text-accent border-transparent hover:text-accent`}>
-                <ExternalLink className="w-3.5 h-3.5" />
-                {t('library.detail.openAnalysis')}
-              </Link>
-            ) : (
-              <button disabled title={t('library.analyzed.no')} className={`${btn} opacity-50 cursor-not-allowed`}>
-                <ExternalLink className="w-3.5 h-3.5" />
-                {t('library.detail.openAnalysis')}
-                <span className="text-[10px] text-ink-4">· {t('library.detail.notAnalyzed')}</span>
-              </button>
-            )}
-            <button onClick={() => copy('name')} className={btn}>
-              {copied === 'name' ? <Check className="w-3.5 h-3.5 text-ok" /> : <Copy className="w-3.5 h-3.5" />}
-              {t('library.detail.copyName')}
-            </button>
-            <button onClick={() => copy('id')} className={btn}>
-              {copied === 'id' ? <Check className="w-3.5 h-3.5 text-ok" /> : <Copy className="w-3.5 h-3.5" />}
-              {t('library.detail.copyId')}
-            </button>
+          <div className="space-y-4 min-w-0">
+            <section className="rounded-xl border border-line bg-surface p-4">
+              <h3 className={`${label} mb-2`}>{t('library.detail.tags')}</h3>
+              <dl className="grid grid-cols-2 gap-x-3 gap-y-2">
+                {tags.map((x) => (
+                  <div key={x.label} className="min-w-0">
+                    <dt className="text-[10px] text-ink-4">{x.label}</dt>
+                    <dd className="text-xs text-ink break-words">{x.value}</dd>
+                  </div>
+                ))}
+              </dl>
+              <div className="mt-3 pt-3 border-t border-line flex flex-wrap items-center gap-2">
+                <VerdictPill v={ad.verdict} t={t} />
+                <span className="text-xs text-ink-3">{meaning}</span>
+              </div>
+            </section>
+            <section className="rounded-xl border border-line bg-surface p-4">
+              <h3 className={`${label} mb-2`}>{t('library.detail.dailySpend')}</h3>
+              <SpendChart daily={ad.daily} currency={currency} f={f} />
+            </section>
           </div>
 
-          {/* Metrics */}
-          <section>
-            <h3 className="text-[11px] uppercase tracking-wide text-ink-4 mb-2">{t('library.detail.metrics')}</h3>
-            <div className="grid grid-cols-3 gap-2">
+          <section className="rounded-xl border border-line bg-surface p-4 min-w-0">
+            <h3 className={`${label} mb-2`}>{t('library.detail.metrics')}</h3>
+            <dl className="divide-y divide-line">
               {metrics.map((m) => (
-                <div key={m.label} className="rounded-lg border border-line bg-surface px-3 py-2">
-                  <p className="text-[10px] uppercase tracking-wide text-ink-4">{m.label}</p>
-                  <p className={`text-sm font-semibold ${num} ${m.cls ?? 'text-ink'}`}>{m.value}</p>
-                </div>
-              ))}
-            </div>
-            <p className="text-[11px] text-ink-4 mt-3 mb-1.5">{t('library.detail.recent')}</p>
-            <div className="grid grid-cols-3 gap-2">
-              {recent.map((m) => (
-                <div key={m.label} className="rounded-lg border border-line bg-surface-2 px-3 py-2">
-                  <p className="text-[10px] uppercase tracking-wide text-ink-4">{m.label}</p>
-                  <p className={`text-sm font-semibold ${num} ${m.cls ?? 'text-ink'}`}>{m.value}</p>
-                </div>
-              ))}
-            </div>
-          </section>
-
-          {/* Taxonomy */}
-          <section>
-            <h3 className="text-[11px] uppercase tracking-wide text-ink-4 mb-2">{t('library.detail.taxonomy')}</h3>
-            <dl className="rounded-lg border border-line bg-surface divide-y divide-line">
-              {taxonomy.map((row) => (
-                <div key={row.label} className="flex items-baseline justify-between gap-3 px-3 py-1.5 text-xs">
-                  <dt className="text-ink-4 shrink-0">{row.label}</dt>
-                  <dd className="text-ink-2 text-right break-words">{row.value}</dd>
+                <div key={m.label} className="flex items-baseline justify-between gap-3 py-1.5 text-xs">
+                  <dt className="text-ink-4 truncate">{m.label}</dt>
+                  <dd className={`${mono} ${m.cls ?? 'text-ink'}`}>{m.value}</dd>
                 </div>
               ))}
             </dl>
           </section>
-
-          {/* Dimensions */}
-          <section>
-            <h3 className="text-[11px] uppercase tracking-wide text-ink-4 mb-2">{t('library.detail.dimensions')}</h3>
-            {dims.hook && (
-              <blockquote className="mb-2 rounded-lg border-l-2 border-accent bg-accent-soft/60 px-3 py-2 text-sm text-ink-2 italic">
-                “{dims.hook}”
-              </blockquote>
-            )}
-            {dimKeys.length === 0 ? (
-              <p className="text-xs text-ink-4">{t('library.detail.noDimensions')}</p>
-            ) : (
-              <dl className="rounded-lg border border-line bg-surface divide-y divide-line">
-                {dimKeys.map((k) => (
-                  <div key={k} className="flex items-baseline justify-between gap-3 px-3 py-1.5 text-xs">
-                    <dt className="text-ink-4 shrink-0 capitalize">{dimLabel(t, k)}</dt>
-                    <dd className="text-ink-2 text-right break-words">{dims[k]}</dd>
-                  </div>
-                ))}
-              </dl>
-            )}
-          </section>
         </div>
-      </aside>
+      </div>
+    </div>
+  );
+}
+
+/** Bar chart in plain divs: one bar per day of the window, height proportional to spend. */
+function SpendChart({ daily, currency, f }: { daily: LibraryAd['daily']; currency: string | null; f: F }) {
+  const max = Math.max(0, ...daily.map((d) => d.spend));
+  if (daily.length === 0 || max === 0) return <p className="text-xs text-ink-4">–</p>;
+  const step = Math.max(1, Math.ceil(daily.length / 6));
+  return (
+    <div className="min-w-0">
+      <div className="flex items-end gap-px h-24">
+        {daily.map((d) => (
+          <div key={d.date} className="flex-1 min-w-0 h-full flex items-end" title={`${f.date(d.date)} · ${f.money(d.spend, currency)} · ${f.num(d.purchases)}`}>
+            <div className="w-full rounded-sm bg-accent" style={{ height: `${Math.max(2, (d.spend / max) * 100)}%` }} />
+          </div>
+        ))}
+      </div>
+      <div className="flex justify-between mt-1">
+        {daily.filter((_, i) => i % step === 0 || i === daily.length - 1).map((d) => (
+          <span key={d.date} className={`text-[10px] text-ink-4 ${mono}`}>{f.date(d.date)}</span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Desglose — cost per purchase by tag, against the account baseline.
+// Rows ranked by CPA ascending; rows without purchases go last.
+// ---------------------------------------------------------------------------
+
+interface BreakRow { value: string; n: number; spend: number; purchases: number; impressions: number; clicks: number }
+
+function groupBy(ads: LibraryAd[], pick: (a: LibraryAd) => string | null): BreakRow[] {
+  const by = new Map<string, BreakRow>();
+  for (const a of ads) {
+    const v = pick(a);
+    if (!v) continue;
+    const r = by.get(v) ?? { value: v, n: 0, spend: 0, purchases: 0, impressions: 0, clicks: 0 };
+    r.n++; r.spend += a.spend; r.purchases += a.purchases; r.impressions += a.impressions ?? 0; r.clicks += a.link_clicks ?? 0;
+    by.set(v, r);
+  }
+  const cpa = (r: BreakRow) => (r.purchases > 0 ? r.spend / r.purchases : Infinity);
+  return [...by.values()].sort((a, b) => cpa(a) - cpa(b) || b.spend - a.spend);
+}
+
+function Breakdown({ ads, baseline, currency, t, f }: { ads: LibraryAd[]; baseline: number | null; currency: string | null; t: T; f: F }) {
+  const dims: { key: string; pick: (a: LibraryAd) => string | null; render?: (v: string) => string }[] = [
+    { key: 'angle', pick: (a) => a.angle },
+    { key: 'kind', pick: (a) => a.kind, render: (v) => t(`library.kind.${v}`) },
+    { key: 'asset_type', pick: (a) => a.asset_type, render: (v) => assetTypeLabel(t, v) },
+    { key: 'awareness_level', pick: (a) => a.dimensions.awareness_level ?? null, render: (v) => dimValue(t, v) },
+    { key: 'proof_type', pick: (a) => a.dimensions.proof_type ?? null, render: (v) => dimValue(t, v) },
+    { key: 'offer', pick: (a) => a.dimensions.offer ?? null, render: (v) => dimValue(t, v) },
+    { key: 'verdict', pick: (a) => a.verdict, render: (v) => t(VERDICT_KEY[v as VerdictId]) },
+  ];
+  const all = dims.map((d) => ({ ...d, rows: groupBy(ads, d.pick) }));
+  const cards = all.filter((d) => d.rows.length > 0);
+  const untagged = all.filter((d) => d.rows.length === 0).map((d) => t(`library.breakdown.dim.${d.key}`));
+
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-ink-3">{t('library.breakdown.intro', { cpa: money0(f, baseline, currency) })}</p>
+      {cards.length > 0 && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {cards.map((d) => (
+            <div key={d.key} className="rounded-xl border border-line bg-surface p-4 min-w-0">
+              <h3 className="text-sm font-semibold text-ink mb-2">{t(`library.breakdown.dim.${d.key}`)}</h3>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className={`${label} border-b border-line`}>
+                      <th className="text-left font-medium py-1.5 pr-2">{t('library.breakdown.col.value')}</th>
+                      <th className="text-right font-medium py-1.5 px-2 whitespace-nowrap">{t('library.breakdown.col.purchases')}</th>
+                      <th className="text-right font-medium py-1.5 px-2 whitespace-nowrap">{t('library.breakdown.col.cpa')}</th>
+                      <th className="text-right font-medium py-1.5 pl-2 whitespace-nowrap">{t('library.breakdown.col.vs')}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {d.rows.map((r) => {
+                      const cpa = r.purchases > 0 ? r.spend / r.purchases : null;
+                      const ctr = r.impressions > 0 ? (r.clicks / r.impressions) * 100 : null;
+                      const diff = cpa != null && baseline ? ((baseline - cpa) / baseline) * 100 : null;
+                      return (
+                        <tr key={r.value} className="border-b border-line last:border-0 align-top">
+                          <td className="py-2 pr-2 min-w-[160px]">
+                            <p className="text-ink font-medium break-words">
+                              {d.render ? d.render(r.value) : r.value}
+                              {r.purchases < 5 && <span className={`${pill} ml-1.5 bg-warn-soft text-warn`}>{t('library.breakdown.small')}</span>}
+                            </p>
+                            <p className={`text-[11px] text-ink-4 ${mono}`}>
+                              {t('library.breakdown.sub', { n: r.n, spend: f.money(r.spend, currency), ctr: ctr == null ? '–' : f.pct(ctr, 2) })}
+                            </p>
+                          </td>
+                          <td className={`py-2 px-2 text-right ${mono}`}>{f.num(r.purchases)}</td>
+                          <td className={`py-2 px-2 text-right ${mono}`}>{money0(f, cpa, currency)}</td>
+                          <td className={`py-2 pl-2 text-right whitespace-nowrap ${mono} ${diff == null ? 'text-ink-4' : diff >= 0 ? 'text-ok' : 'text-danger'}`}>
+                            {diff == null ? t('library.breakdown.noRef') : diff >= 0 ? t('library.breakdown.better', { pct: Math.round(diff) }) : t('library.breakdown.worse', { pct: Math.round(-diff) })}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {untagged.length > 0 && (
+        <p className="text-xs text-ink-4">{t('library.breakdown.none')}: {untagged.join(' · ')}</p>
+      )}
     </div>
   );
 }

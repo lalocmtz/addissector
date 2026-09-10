@@ -1,9 +1,10 @@
 // =============================================================================
 // /api/workshop
-//   GET  ?brand=&window=    the whole screen in one call: core, live batch,
-//                           bench, closed, volume plan and coverage
+//   GET  ?brand=&window=    the whole screen in one call: batches (live, bench,
+//                           closed) with pieces and numbers, angles, members
 //   POST                    create a batch — angle and ONE variable are required
 //   PATCH                   update a batch / move its status
+//                           status:'ready' = "marked as uploaded" (piece-level)
 // =============================================================================
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabase } from '@/lib/supabase';
@@ -105,6 +106,26 @@ export async function PATCH(request: NextRequest) {
     const v = body[k];
     patch[k] = typeof v === 'string' ? (v.trim() || null) : v;
   }
+  const sb = getSupabase();
+
+  // "Marcar como subida". The batch table has no `ready` status (check
+  // constraint: draft/planned/producing/live/evaluating/closed/archived), so
+  // "every piece is produced and uploaded" is stored on the pieces themselves;
+  // loadWorkshop reads it back as stage = 'waiting'. The batch flips to `live`
+  // on its own the day one of those names shows up in ad_daily.
+  if (body.status === 'ready') {
+    const { data: batch } = await sb.from('experiment').select('id,status').eq('id', id).eq('user_id', user.id).maybeSingle();
+    if (!batch) return NextResponse.json({ error: 'Batch not found' }, { status: 404 });
+    if (!['draft', 'planned', 'producing'].includes(batch.status)) {
+      return NextResponse.json({ error: 'Batch is already in test or closed' }, { status: 409 });
+    }
+    const { error: perr } = await sb.from('experiment_variant')
+      .update({ status: 'uploaded', uploaded_at: patch.updated_at, updated_at: patch.updated_at })
+      .eq('experiment_id', id).eq('user_id', user.id).in('status', ['planned', 'producing', 'ready']);
+    if (perr) return NextResponse.json({ error: perr.message }, { status: 500 });
+    delete body.status;
+  }
+
   if (typeof body.status === 'string') {
     if (!(EXPERIMENT_STATUSES as readonly string[]).includes(body.status)) {
       return NextResponse.json({ error: 'Unknown status' }, { status: 400 });
@@ -116,7 +137,6 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ error: 'Unknown variable' }, { status: 400 });
   }
 
-  const sb = getSupabase();
   const { data, error } = await sb.from('experiment').update(patch)
     .eq('id', id).eq('user_id', user.id).select(BATCH_SELECT).single();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });

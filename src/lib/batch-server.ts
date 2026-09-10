@@ -58,6 +58,12 @@ export interface BatchView {
   persona_name: string | null;
   owner_id: string | null; owner_name: string | null;
   status: string; impression_cap: number;
+  /**
+   * What the screen groups by. `testing` = at least one piece is on Meta,
+   * `waiting` = every piece is produced/uploaded and none has appeared on Meta
+   * yet, `producing` = still being made, `closed` = closed or archived.
+   */
+  stage: BatchStage;
   planned_for: string | null; started_at: string | null; closed_at: string | null;
   close_reason: string | null; closed_note: string | null; learning_id: string | null;
   brief: unknown; hypothesis_doc: unknown; notes: string | null;
@@ -66,6 +72,8 @@ export interface BatchView {
   /** Share of pieces that have reached the cap. The batch is readable at 1. */
   progress: number;
 }
+
+export type BatchStage = 'testing' | 'waiting' | 'producing' | 'closed';
 
 /** One ad in the core, with what to do about it. */
 export interface CoreAd {
@@ -152,9 +160,18 @@ export async function loadWorkshop(
     if (!ids || ids.size !== 1) return;
     const adId = [...ids][0];
     p.meta_ad_id = adId; p.matched_at = now;
-    if (p.status === 'planned' || p.status === 'ready') p.status = 'live';
+    if (['planned', 'producing', 'ready', 'uploaded'].includes(p.status)) p.status = 'live';
     await sb.from('experiment_variant').update({ meta_ad_id: adId, matched_at: now, status: p.status, updated_at: now }).eq('id', p.id);
   }));
+
+  // A batch with one piece on Meta is in test. Nobody flips this by hand.
+  const matchedBatchIds = new Set(pieces.filter((p) => p.meta_ad_id && p.experiment_id).map((p) => p.experiment_id as string));
+  await Promise.all(batches
+    .filter((b) => matchedBatchIds.has(b.id as string) && ['draft', 'planned', 'producing'].includes(String(b.status)))
+    .map(async (b) => {
+      b.status = 'live'; b.started_at = (b.started_at as string | null) ?? now;
+      await sb.from('experiment').update({ status: 'live', started_at: b.started_at, updated_at: now }).eq('id', b.id as string);
+    }));
   const medianSpend = median(aggregates.filter((a) => a.spend > 0).map((a) => a.spend));
 
   const totalSpend = aggregates.reduce((s, a) => s + a.spend, 0);
@@ -185,6 +202,12 @@ export async function loadWorkshop(
     const cap = Number(b.impression_cap ?? 1500);
     const mine = pieces.filter((p) => p.experiment_id === b.id).map((p) => shapePiece(p, cap));
     const angle = b.angle_id ? angleById.get(b.angle_id as string) ?? null : null;
+    const status = String(b.status ?? 'draft');
+    const stage: BatchStage =
+      status === 'closed' || status === 'archived' ? 'closed'
+      : status === 'live' || status === 'evaluating' ? 'testing'
+      : mine.length > 0 && mine.every((p) => ['ready', 'uploaded'].includes(p.status)) ? 'waiting'
+      : 'producing';
     return {
       id: b.id as string, number: Number(b.number ?? 0), code: String(b.code ?? ''), name: String(b.name ?? ''),
       hypothesis: (b.hypothesis as string) ?? null, variable: String(b.variable ?? ''),
@@ -193,7 +216,7 @@ export async function loadWorkshop(
       persona_name: angle?.personas?.name ?? null,
       owner_id: (b.owner_id as string) ?? null,
       owner_name: b.owner_id ? members.get(b.owner_id as string) ?? null : null,
-      status: String(b.status ?? 'draft'), impression_cap: cap,
+      status, stage, impression_cap: cap,
       planned_for: (b.planned_for as string) ?? null, started_at: (b.started_at as string) ?? null,
       closed_at: (b.closed_at as string) ?? null, close_reason: (b.close_reason as string) ?? null,
       closed_note: (b.closed_note as string) ?? null, learning_id: (b.learning_id as string) ?? null,

@@ -1,46 +1,67 @@
 'use client';
 
 // =============================================================================
-// Workshop — the one screen. Three columns, three questions:
+// Producción — one list of tandas (batches).
 //
-//   CORE   what is carrying revenue, and what to do about each ad
-//   LIVE   the single batch in test, scored at equal impressions
-//   BENCH  what is briefed and waiting
+// A tanda is one angle, ONE thing that changes between pieces, and 4–8 pieces.
+// The platform mints a code per piece; the team uploads the piece to Meta with
+// that exact code as the ad name and the numbers fill themselves in.
 //
-// It replaces Strategy and Experiments. Those asked the strategist to fill
-// seven objects before anything could be made; this asks for an angle, one
-// variable and a literal hook, and mints the ad name itself.
+//   Crear tanda → Copiar códigos → Producir → Subir a Meta → En prueba → Veredicto
 // =============================================================================
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Plus, Loader2, X, Copy, Check, Trash2, TrendingUp, RefreshCw, Anchor, Archive, AlertTriangle, BookOpen, Download, FileText } from 'lucide-react';
+import { Plus, Loader2, X, Copy, Check, Trash2, BookOpen, Download, FileText, ChevronDown, ChevronRight, ExternalLink } from 'lucide-react';
 import AppHeader from '@/components/AppHeader';
 import { useMe } from '@/lib/use-me';
 import { useT, useFormatters } from '@/lib/i18n';
-import {
-  BATCH_VARIABLES, AWARENESS_STAGES, PIECE_FORMATS, VERDICT_ACTION,
-  type Verdict,
-} from '@/lib/batch';
-import type { Workshop, BatchView, PieceView, CoreAd } from '@/lib/batch-server';
+import { BATCH_VARIABLES, AWARENESS_STAGES, PIECE_FORMATS, VERDICT_ACTION, type Verdict } from '@/lib/batch';
+import type { Workshop, BatchView, PieceView, BatchStage } from '@/lib/batch-server';
 
 interface Member { id: string; name: string; role: string; is_ai: boolean }
 interface Angle { id: string; code: string | null; name: string; awareness_stage: string | null; personas: { name: string } | null }
 interface Data extends Workshop { members: Member[]; angles: Angle[] }
 
+type T = (k: string, v?: Record<string, string | number>) => string;
 type Fmt = ReturnType<typeof useFormatters>;
 
-const PRODUCTION_ROLES = new Set(['image_editor', 'video_editor', 'ugc_creator', 'designer', 'editor']);
+const WINDOW_DAYS = 30;
+const STAGES: BatchStage[] = ['testing', 'waiting', 'producing', 'closed'];
+
+const STAGE_STYLE: Record<BatchStage, string> = {
+  testing: 'bg-ok-soft text-ok',
+  waiting: 'bg-warn-soft text-warn',
+  producing: 'bg-accent-soft text-accent',
+  closed: 'bg-surface-2 text-ink-3',
+};
 
 const VERDICT_STYLE: Record<Verdict, string> = {
-  breakthrough: 'bg-ok-soft text-ok border-ok/40 font-semibold',
-  kpi_winner: 'bg-accent-soft text-accent border-accent/40 font-medium',
-  spend_winner: 'bg-warn-soft text-warn border-warn/40',
-  loser: 'bg-surface-2 text-ink-4 border-line',
+  breakthrough: 'bg-ok-soft text-ok font-semibold',
+  kpi_winner: 'bg-accent-soft text-accent font-medium',
+  spend_winner: 'bg-warn-soft text-warn',
+  loser: 'bg-surface-2 text-ink-4',
 };
 
 const input = 'w-full rounded-md border border-line bg-surface px-2.5 py-1.5 text-sm text-ink placeholder:text-ink-4 focus:outline-none focus:border-accent';
 const label = 'block text-[11px] uppercase tracking-wide text-ink-3 mb-1';
+const hint = 'text-[11px] text-ink-4 mt-1';
+const btn = 'inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-line bg-surface text-xs text-ink-2 hover:text-ink disabled:opacity-50';
+const btnPrimary = 'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-accent text-on-accent text-sm font-medium disabled:opacity-40';
 const card = 'rounded-xl border border-line bg-surface';
+
+async function copyText(text: string) {
+  try { await navigator.clipboard.writeText(text); } catch { /* clipboard unavailable */ }
+}
+
+function useCopied() {
+  const [copied, setCopied] = useState<string | null>(null);
+  const copy = useCallback(async (key: string, text: string) => {
+    await copyText(text);
+    setCopied(key);
+    setTimeout(() => setCopied(null), 1500);
+  }, []);
+  return { copied, copy };
+}
 
 // ---------------------------------------------------------------------------
 export default function WorkshopPage() {
@@ -50,8 +71,6 @@ export default function WorkshopPage() {
 
   const [data, setData] = useState<Data | null>(null);
   const [loading, setLoading] = useState(true);
-  const [windowDays, setWindowDays] = useState(30);
-  const [openBatch, setOpenBatch] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [guide, setGuide] = useState(false);
@@ -60,9 +79,8 @@ export default function WorkshopPage() {
 
   const load = useCallback(async () => {
     if (!brandId) return;
-    setLoading(true);
     try {
-      const res = await fetch(`/api/workshop?brand=${brandId}&window=${windowDays}`);
+      const res = await fetch(`/api/workshop?brand=${brandId}&window=${WINDOW_DAYS}`);
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? 'Failed');
       setData(json as Data);
@@ -72,583 +90,532 @@ export default function WorkshopPage() {
     } finally {
       setLoading(false);
     }
-  }, [brandId, windowDays]);
+  }, [brandId]);
 
-  useEffect(() => { void load(); }, [load]);
+  // Kick the fetch off a microtask so no state is set synchronously inside the effect.
+  useEffect(() => { void Promise.resolve().then(load); }, [load]);
 
-  const batch = useMemo(
-    () => (openBatch && data ? [...data.live, ...data.bench, ...data.closed].find((b) => b.id === openBatch) ?? null : null),
-    [openBatch, data],
-  );
+  const groups = useMemo(() => {
+    const all = data ? [...data.live, ...data.bench, ...data.closed] : [];
+    return STAGES.map((stage) => ({ stage, batches: all.filter((b) => b.stage === stage) }));
+  }, [data]);
+  const total = groups.reduce((n, g) => n + g.batches.length, 0);
 
   return (
     <div className="min-h-screen bg-canvas">
       <AppHeader me={me} activeBrand={activeBrand} onBrandChange={setActiveBrandId} />
 
-      <main className="max-w-[1600px] mx-auto px-4 sm:px-6 py-6">
+      <main className="max-w-[1400px] mx-auto px-4 sm:px-6 py-6">
         <div className="flex items-start justify-between gap-4 flex-wrap mb-5">
-          <div>
+          <div className="min-w-0">
             <h1 className="text-xl font-semibold text-ink font-[family-name:var(--font-serif)]">{t('ws.title')}</h1>
             <p className="text-sm text-ink-3 mt-0.5">{t('ws.subtitle')}</p>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             <button onClick={() => setGuide((g) => !g)}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border text-sm ${guide ? 'border-accent bg-accent-soft text-accent' : 'border-line bg-surface text-ink-2 hover:text-ink'}`}>
+              className={`${btn} ${guide ? 'border-accent bg-accent-soft text-accent' : ''}`}>
               <BookOpen className="w-4 h-4" />{t('ws.guide.button')}
             </button>
             {brandId && (
-              <a href={`/api/export/brain?brand=${brandId}&window=${Math.max(windowDays, 60)}`}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-line bg-surface text-sm text-ink-2 hover:text-ink" title={t('ws.export.help')}>
+              <a href={`/api/export/brain?brand=${brandId}&window=60`} className={btn} title={t('ws.export.help')}>
                 <Download className="w-4 h-4" />{t('ws.export.button')}
               </a>
             )}
-            <select value={windowDays} onChange={(e) => setWindowDays(Number(e.target.value))}
-              className="rounded-md border border-line bg-surface px-2.5 py-1.5 text-sm text-ink">
-              {[7, 14, 30, 60, 90].map((n) => <option key={n} value={n}>{t('ws.window.days', { n })}</option>)}
-            </select>
-            <button onClick={() => void load()} className="p-2 rounded-md border border-line bg-surface text-ink-2 hover:text-ink">
-              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            <button onClick={() => setCreating(true)} disabled={!data} className={btnPrimary}>
+              <Plus className="w-4 h-4" />{t('ws.batch.new')}
             </button>
           </div>
         </div>
 
         {err && <div className="mb-4 px-3 py-2 rounded-lg border border-danger/40 bg-danger-soft text-danger text-sm">{err}</div>}
-
         {guide && <GuidePanel t={t} />}
-
-        {data && <PlanStrip data={data} t={t} fmt={fmt} />}
 
         {loading && !data ? (
           <div className="flex items-center justify-center py-24 text-ink-3"><Loader2 className="w-5 h-5 animate-spin" /></div>
+        ) : data && total === 0 ? (
+          <EmptyState t={t} onNew={() => setCreating(true)} />
         ) : data ? (
-          <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 mt-4">
-            <CoreColumn data={data} t={t} fmt={fmt} />
-            <LiveColumn data={data} t={t} fmt={fmt} onOpen={setOpenBatch} onChanged={load} brandId={brandId!} />
-            <BenchColumn data={data} t={t} onOpen={setOpenBatch} onNew={() => setCreating(true)} onChanged={load} />
+          <div className="space-y-6">
+            {groups.map(({ stage, batches }) => (
+              <StageGroup key={stage} stage={stage} batches={batches} data={data} t={t} fmt={fmt} onChanged={load} brandId={brandId!} />
+            ))}
           </div>
         ) : null}
       </main>
 
-      {creating && data && (
-        <NewBatchModal data={data} brandId={brandId!} t={t}
-          onClose={() => setCreating(false)}
-          onCreated={(id) => { setCreating(false); setOpenBatch(id); void load(); }} />
-      )}
-
-      {batch && data && (
-        <BatchDrawer batch={batch} data={data} t={t} fmt={fmt}
-          onClose={() => setOpenBatch(null)} onChanged={load} />
+      {creating && data && brandId && (
+        <NewBatchModal data={data} brandId={brandId} t={t} onClose={() => setCreating(false)} onDone={() => { setCreating(false); void load(); }} />
       )}
     </div>
   );
 }
 
 // ---------------------------------------------------------------------------
-// The vocabulary, on the screen where it is used. Eight words; if a strategist
-// has to leave the page to remember what a concept is, the page failed.
-const GUIDE_TERMS = ['persona', 'awareness', 'angle', 'concept', 'hook', 'format', 'batch', 'brief', 'name'] as const;
+const STEPS = [1, 2, 3, 4] as const;
+const TERMS = ['angle', 'variable', 'hook', 'batch', 'code'] as const;
 
-function GuidePanel({ t }: { t: (k: string) => string }) {
+function GuidePanel({ t }: { t: T }) {
   return (
-    <div className={`${card} p-4 mb-4`}>
-      <div className="flex items-start justify-between gap-3 mb-3">
-        <div>
-          <h2 className="text-sm font-semibold text-ink">{t('ws.guide.title')}</h2>
-          <p className="text-xs text-ink-3 mt-0.5">{t('ws.guide.sub')}</p>
-        </div>
-      </div>
-      <dl className="grid grid-cols-1 md:grid-cols-3 gap-x-6 gap-y-3">
-        {GUIDE_TERMS.map((k) => (
-          <div key={k}>
-            <dt className="text-xs font-semibold text-ink">{t(`ws.guide.${k}`)}</dt>
-            <dd className="text-xs text-ink-3 mt-0.5 leading-relaxed">{t(`ws.guide.${k}.def`)}</dd>
-          </div>
-        ))}
-      </dl>
-      <ol className="mt-4 grid grid-cols-1 md:grid-cols-4 gap-2 text-xs text-ink-2">
-        {[1, 2, 3, 4].map((n) => (
+    <div className={`${card} p-4 mb-5`}>
+      <h2 className="text-sm font-semibold text-ink">{t('ws.guide.title')}</h2>
+      <ol className="mt-3 grid grid-cols-1 md:grid-cols-4 gap-2 text-xs text-ink-2">
+        {STEPS.map((n) => (
           <li key={n} className="rounded-lg border border-line bg-surface-2 px-3 py-2">
-            <span className="text-[11px] uppercase tracking-wide text-ink-4">{t('ws.guide.step')} {n}</span>
+            <span className="text-[10px] uppercase tracking-wide text-ink-4">{t('ws.guide.step')} {n}</span>
             <p className="mt-0.5">{t(`ws.guide.step${n}`)}</p>
           </li>
         ))}
       </ol>
+      <dl className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-x-6 gap-y-2">
+        {TERMS.map((k) => (
+          <div key={k}>
+            <dt className="text-xs font-semibold text-ink">{t(`ws.guide.${k}`)}</dt>
+            <dd className="text-xs text-ink-3 mt-0.5 leading-relaxed break-words">{t(`ws.guide.${k}.def`)}</dd>
+          </div>
+        ))}
+      </dl>
     </div>
   );
 }
 
-function PlanStrip({ data, t, fmt }: { data: Data; t: (k: string, v?: Record<string, string | number>) => string; fmt: Fmt }) {
-  const v = data.volume;
+function EmptyState({ t, onNew }: { t: T; onNew: () => void }) {
   return (
-    <div className={`${card} p-4`}>
-      <div className="flex flex-wrap items-center gap-x-8 gap-y-3">
-        <Stat value={String(v.concepts_per_week)} label={t('ws.plan.concepts')} />
-        <Stat value={String(v.pieces_per_week)} label={t('ws.plan.pieces')} />
-        <Stat value={fmt.ratio(v.expected_winners_per_month, 1)} label={t('ws.plan.expected')} />
-        <Stat value={String(data.winners_30d)} label={t('ws.plan.winners', { days: data.window_days })} accent />
-        <p className="text-xs text-ink-4 max-w-md">{t('ws.plan.explain')}</p>
-      </div>
-      {data.unmapped_spend_pct >= 20 && (
-        <div className="mt-3 flex items-start gap-2 px-3 py-2 rounded-lg border border-warn/40 bg-warn-soft text-warn text-xs">
-          <AlertTriangle className="w-4 h-4 shrink-0 mt-px" />
-          <span>{t('ws.coverage.warn', { pct: data.unmapped_spend_pct.toFixed(0) })}</span>
+    <div className={`${card} p-6 text-center`}>
+      <p className="text-sm font-medium text-ink">{t('ws.empty.title')}</p>
+      <ol className="mt-3 mx-auto max-w-md text-left text-xs text-ink-2 space-y-1.5 list-decimal pl-5">
+        {STEPS.map((n) => <li key={n}>{t(`ws.guide.step${n}`)}</li>)}
+      </ol>
+      <button onClick={onNew} className={`${btnPrimary} mt-4`}><Plus className="w-4 h-4" />{t('ws.batch.new')}</button>
+    </div>
+  );
+}
+
+function StageGroup({ stage, batches, data, t, fmt, onChanged, brandId }: {
+  stage: BatchStage; batches: BatchView[]; data: Data; t: T; fmt: Fmt; onChanged: () => void; brandId: string;
+}) {
+  const [open, setOpen] = useState(stage !== 'closed');
+  return (
+    <section>
+      <button onClick={() => setOpen((o) => !o)} className="flex items-center gap-2 mb-2 text-left">
+        {open ? <ChevronDown className="w-4 h-4 text-ink-4" /> : <ChevronRight className="w-4 h-4 text-ink-4" />}
+        <h2 className="text-sm font-semibold text-ink">{t(`ws.stage.${stage}`)}</h2>
+        <span className="text-xs text-ink-4 font-[family-name:var(--font-mono)] tabular-nums">{batches.length}</span>
+      </button>
+      {open && batches.length === 0 && <p className="text-xs text-ink-4 pl-6">{t(`ws.stage.${stage}.empty`)}</p>}
+      {open && (
+        <div className="space-y-3">
+          {batches.map((b) => <BatchCard key={b.id} b={b} data={data} t={t} fmt={fmt} onChanged={onChanged} brandId={brandId} />)}
         </div>
       )}
-    </div>
+    </section>
   );
 }
 
-function Stat({ value, label: lbl, accent }: { value: string; label: string; accent?: boolean }) {
-  return (
-    <div>
-      <div className={`text-2xl font-semibold tabular-nums ${accent ? 'text-accent' : 'text-ink'}`}>{value}</div>
-      <div className="text-[11px] uppercase tracking-wide text-ink-3">{lbl}</div>
-    </div>
-  );
+// ---------------------------------------------------------------------------
+function StagePill({ stage, t }: { stage: BatchStage; t: T }) {
+  return <span className={`inline-flex px-2 py-0.5 rounded-full text-[11px] font-medium ${STAGE_STYLE[stage]}`}>{t(`ws.stage.${stage}`)}</span>;
 }
 
-function VerdictChip({ v, t }: { v: Verdict | null; t: (k: string) => string }) {
-  if (!v) return <span className="text-[11px] text-ink-4">{t('ws.piece.unreadable')}</span>;
+function VerdictChip({ v, t }: { v: Verdict | null; t: T }) {
+  if (!v) return <span className="text-[11px] text-ink-4 whitespace-nowrap">{t('ws.verdict.none')}</span>;
   return (
-    <span className={`inline-flex items-center px-1.5 py-0.5 rounded border text-[11px] ${VERDICT_STYLE[v]}`} title={t(`ws.verdict.${v}.help`)}>
-      {t(`ws.verdict.${v}`)}
+    <span className={`inline-flex px-1.5 py-0.5 rounded text-[11px] whitespace-nowrap ${VERDICT_STYLE[v]}`} title={t(`ws.verdict.${v}.help`)}>
+      {t(`ws.action.${VERDICT_ACTION[v]}`)}
     </span>
   );
 }
 
-// ---------------------------------------------------------------------------
-function CoreColumn({ data, t, fmt }: { data: Data; t: (k: string) => string; fmt: Fmt }) {
+function pieceStatusKey(p: PieceView): string {
+  if (p.meta_ad_id) return p.status === 'evaluated' || p.status === 'killed' ? `ws.piece.status.${p.status}` : 'ws.piece.status.live';
+  if (p.status === 'ready' || p.status === 'uploaded') return 'ws.piece.status.uploaded';
+  if (p.status === 'killed') return 'ws.piece.status.killed';
+  return 'ws.piece.status.planned';
+}
+
+function BatchCard({ b, data, t, fmt, onChanged, brandId }: {
+  b: BatchView; data: Data; t: T; fmt: Fmt; onChanged: () => void; brandId: string;
+}) {
+  const { copied, copy } = useCopied();
+  const [adding, setAdding] = useState(false);
+  const [closing, setClosing] = useState(false);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const matched = b.pieces.filter((p) => p.meta_ad_id).length;
+  const codes = b.pieces.map((p) => p.ad_name).join('\n');
+  const editable = b.stage !== 'closed';
+
+  const run = async (key: string, fn: () => Promise<Response | void>) => {
+    setBusy(key); setError(null);
+    try {
+      const res = await fn();
+      if (res && !res.ok) { const j = await res.json().catch(() => ({})); throw new Error(j.error ?? 'Failed'); }
+      onChanged();
+    } catch (e) { setError(e instanceof Error ? e.message : 'Failed'); }
+    finally { setBusy(null); }
+  };
+
+  const copyBrief = async () => {
+    setBusy('brief');
+    try {
+      const res = await fetch(`/api/workshop/brief?batch=${b.id}&format=json`);
+      const json = await res.json();
+      if (res.ok && json.markdown) await copy('brief', json.markdown);
+    } finally { setBusy(null); }
+  };
+
+  const markUploaded = () => run('ready', () => fetch('/api/workshop', {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: b.id, status: 'ready' }),
+  }));
+  const removePiece = (id: string) => run(`rm-${id}`, () => fetch(`/api/workshop/piece?id=${id}`, { method: 'DELETE' }));
+
   return (
-    <section className={`${card} overflow-hidden`}>
-      <header className="px-4 py-3 border-b border-line">
-        <h2 className="text-sm font-semibold text-ink flex items-center gap-2"><Anchor className="w-4 h-4 text-ink-3" />{t('ws.core.title')}</h2>
-        <p className="text-xs text-ink-3 mt-0.5">{t('ws.core.sub')}</p>
-      </header>
-      <div className="max-h-[70vh] overflow-y-auto divide-y divide-line">
-        {data.core.length === 0 && <p className="p-4 text-sm text-ink-3">{t('ws.core.empty')}</p>}
-        {data.core.map((a: CoreAd) => (
-          <div key={a.ad_id} className="px-4 py-2.5 hover:bg-surface-2/50">
-            <div className="flex items-start justify-between gap-2">
-              <div className="min-w-0">
-                <p className="text-sm text-ink truncate" title={a.ad_name}>{a.ad_name}</p>
-                <p className="text-[11px] text-ink-4 mt-0.5">
-                  {a.angle_code ?? <span className="text-warn">{t('ws.core.unmapped')}</span>}
-                  {a.batch_number ? ` · T${String(a.batch_number).padStart(2, '0')}` : ''}
-                </p>
-              </div>
-              <div className="text-right shrink-0">
-                <div className="text-sm tabular-nums text-ink">{fmt.ratio(a.roas)}x</div>
-                <div className="text-[11px] text-ink-4 tabular-nums">{fmt.money(a.spend, data.currency, { compact: true })}</div>
-              </div>
-            </div>
-            <div className="flex items-center gap-2 mt-1.5">
-              <VerdictChip v={a.verdict} t={t} />
-              {a.verdict && <span className="text-[11px] text-ink-3">→ {t(`ws.action.${VERDICT_ACTION[a.verdict]}`)}</span>}
-            </div>
+    <article className={`${card} p-4 min-w-0`}>
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs font-[family-name:var(--font-mono)] text-ink-3">{b.code}{b.angle_code ? ` · ${b.angle_code}` : ''}</span>
+            <StagePill stage={b.stage} t={t} />
           </div>
-        ))}
+          <h3 className="text-base font-semibold text-ink break-words">{b.name}</h3>
+          <p className="text-xs text-ink-3 mt-0.5 break-words">
+            {t('ws.card.angle')} {b.angle_name ?? b.angle_code ?? '—'} · {t('ws.card.changes')} {t(`ws.var.${b.variable}`)}
+            {b.awareness ? ` · ${t('ws.card.awareness')} ${t(`ws.aware.${b.awareness}`)}` : ''}
+            {' · '}{t('ws.card.pieces', { n: b.pieces.length })} · {t('ws.card.spend')} <span className="font-[family-name:var(--font-mono)] tabular-nums">{fmt.money(b.spend, data.currency)}</span>
+          </p>
+        </div>
+        <div className="text-right shrink-0">
+          <p className="text-xs text-ink-2 font-[family-name:var(--font-mono)] tabular-nums">{t('ws.card.progress', { done: matched, total: b.pieces.length })}</p>
+          <div className="mt-1 h-1.5 w-32 rounded-full bg-surface-2 overflow-hidden ml-auto">
+            <div className="h-full bg-ok transition-all" style={{ width: `${b.pieces.length ? Math.round((matched / b.pieces.length) * 100) : 0}%` }} />
+          </div>
+        </div>
       </div>
-    </section>
+
+      {b.pieces.length === 0 ? (
+        <p className="text-sm text-ink-3 mt-3">{t('ws.piece.empty')}</p>
+      ) : (
+        <div className="mt-3 overflow-x-auto -mx-4 px-4">
+          <table className="w-full text-xs min-w-[760px]">
+            <thead>
+              <tr className="text-[10px] uppercase tracking-wide text-ink-4 border-b border-line">
+                <th className="text-left font-medium py-1.5 pr-2">{t('ws.col.code')}</th>
+                <th className="text-left font-medium py-1.5 pr-2">{t('ws.col.format')}</th>
+                <th className="text-left font-medium py-1.5 pr-2">{t('ws.col.hook')}</th>
+                <th className="text-left font-medium py-1.5 pr-2">{t('ws.col.status')}</th>
+                <th className="text-right font-medium py-1.5 pr-2">{t('ws.col.spend')}</th>
+                <th className="text-right font-medium py-1.5 pr-2">{t('ws.col.purchases')}</th>
+                <th className="text-right font-medium py-1.5 pr-2">{t('ws.col.cpa')}</th>
+                <th className="text-right font-medium py-1.5 pr-2">{t('ws.col.roas')}</th>
+                <th className="text-left font-medium py-1.5 pr-2">{t('ws.col.verdict')}</th>
+                {editable && <th className="py-1.5" />}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-line">
+              {b.pieces.map((p) => (
+                <tr key={p.id} className="align-middle">
+                  <td className="py-1.5 pr-2">
+                    <span className="inline-flex items-center gap-1">
+                      <code className="font-[family-name:var(--font-mono)] text-[11px] text-ink whitespace-nowrap" title={p.ad_name}>{p.ad_name}</code>
+                      <button onClick={() => void copy(p.id, p.ad_name)} className="p-1 rounded text-ink-4 hover:text-ink shrink-0" title={t('ws.piece.copy')}>
+                        {copied === p.id ? <Check className="w-3.5 h-3.5 text-ok" /> : <Copy className="w-3.5 h-3.5" />}
+                      </button>
+                    </span>
+                  </td>
+                  <td className="py-1.5 pr-2 text-ink-2 whitespace-nowrap">{t(`ws.format.${p.format ?? 'static'}`)}</td>
+                  <td className="py-1.5 pr-2 text-ink-2 max-w-[220px]"><span className="block truncate" title={p.hook ?? ''}>{p.hook ?? '—'}</span></td>
+                  <td className="py-1.5 pr-2 whitespace-nowrap">
+                    <span className={p.meta_ad_id ? 'text-ok' : 'text-ink-3'} title={p.meta_ad_id ? undefined : t('ws.piece.waiting')}>{t(pieceStatusKey(p))}</span>
+                  </td>
+                  <td className="py-1.5 pr-2 text-right font-[family-name:var(--font-mono)] tabular-nums text-ink">{fmt.money(p.spend, data.currency)}</td>
+                  <td className="py-1.5 pr-2 text-right font-[family-name:var(--font-mono)] tabular-nums text-ink">{p.meta_ad_id ? fmt.num(p.purchases ?? 0) : '—'}</td>
+                  <td className="py-1.5 pr-2 text-right font-[family-name:var(--font-mono)] tabular-nums text-ink">{fmt.money(p.cpa, data.currency)}</td>
+                  <td className="py-1.5 pr-2 text-right font-[family-name:var(--font-mono)] tabular-nums text-ink">{p.roas == null ? '—' : `${fmt.ratio(p.roas)}x`}</td>
+                  <td className="py-1.5 pr-2"><VerdictChip v={p.verdict ?? p.verdict_now} t={t} /></td>
+                  {editable && (
+                    <td className="py-1.5 text-right">
+                      {!p.meta_ad_id && (
+                        <button onClick={() => void removePiece(p.id)} disabled={busy === `rm-${p.id}`} className="p-1 rounded text-ink-4 hover:text-danger" title={t('ws.piece.remove')}>
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {b.closed_note && <p className="text-xs text-ink-2 mt-3 border-l-2 border-line pl-3 break-words">{b.closed_note}</p>}
+      {error && <p className="text-xs text-danger mt-3">{error}</p>}
+
+      <div className="flex items-center gap-2 flex-wrap mt-3">
+        {b.pieces.length > 0 && (
+          <button onClick={() => void copy('all', codes)} className={btn}>
+            {copied === 'all' ? <Check className="w-3.5 h-3.5 text-ok" /> : <Copy className="w-3.5 h-3.5" />}{t('ws.card.copyCodes')}
+          </button>
+        )}
+        <a href={`/api/workshop/brief?batch=${b.id}`} target="_blank" rel="noreferrer" className={btn}><FileText className="w-3.5 h-3.5" />{t('ws.brief.open')}</a>
+        <button onClick={() => void copyBrief()} disabled={busy === 'brief'} className={btn}>
+          {copied === 'brief' ? <Check className="w-3.5 h-3.5 text-ok" /> : <Copy className="w-3.5 h-3.5" />}{t('ws.brief.copy')}
+        </button>
+        {editable && (
+          <button onClick={() => { setAdding((a) => !a); setClosing(false); }} className={btn}><Plus className="w-3.5 h-3.5" />{t('ws.piece.add')}</button>
+        )}
+        {b.stage === 'producing' && b.pieces.length > 0 && (
+          <button onClick={() => void markUploaded()} disabled={busy === 'ready'} className={btn} title={t('ws.card.markUploaded.help')}>
+            <Check className="w-3.5 h-3.5" />{t('ws.card.markUploaded')}
+          </button>
+        )}
+        {editable && (
+          <button onClick={() => { setClosing((c) => !c); setAdding(false); }} className={`${btn} ml-auto`}>{t('ws.close.button')}</button>
+        )}
+      </div>
+
+      {adding && <AddPieceForm batchId={b.id} t={t} onDone={() => { setAdding(false); onChanged(); }} />}
+      {closing && <CloseForm b={b} brandId={brandId} t={t} onDone={() => { setClosing(false); onChanged(); }} onCancel={() => setClosing(false)} />}
+    </article>
   );
 }
 
 // ---------------------------------------------------------------------------
-function LiveColumn({ data, t, fmt, onOpen, onChanged, brandId }: {
-  data: Data; t: (k: string, v?: Record<string, string | number>) => string; fmt: Fmt;
-  onOpen: (id: string) => void; onChanged: () => void; brandId: string;
-}) {
-  const [closing, setClosing] = useState<string | null>(null);
-  const [notReadable, setNotReadable] = useState<string | null>(null);
+function AddPieceForm({ batchId, t, onDone }: { batchId: string; t: T; onDone: () => void }) {
+  const [format, setFormat] = useState<string>('static');
+  const [hook, setHook] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const close = async (id: string, force: boolean) => {
-    setClosing(id);
+  const submit = async () => {
+    setBusy(true); setError(null);
     try {
-      const res = await fetch('/api/workshop/close', {
+      const res = await fetch('/api/workshop/piece', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id, brandId, window: data.window_days, force }),
+        body: JSON.stringify({ batchId, hook, format }),
       });
       const json = await res.json();
-      if (res.status === 409 && json.error === 'no_readable_pieces') { setNotReadable(id); return; }
-      setNotReadable(null);
-      onChanged();
-    } finally { setClosing(null); }
+      if (!res.ok) throw new Error(json.error ?? 'Failed');
+      onDone();
+    } catch (e) { setError(e instanceof Error ? e.message : 'Failed'); }
+    finally { setBusy(false); }
   };
 
   return (
-    <section className={`${card} overflow-hidden`}>
-      <header className="px-4 py-3 border-b border-line">
-        <h2 className="text-sm font-semibold text-ink flex items-center gap-2"><TrendingUp className="w-4 h-4 text-accent" />{t('ws.live.title')}</h2>
-        <p className="text-xs text-ink-3 mt-0.5">{t('ws.live.sub')}</p>
-      </header>
-      <div className="max-h-[70vh] overflow-y-auto">
-        {data.live.length === 0 && <p className="p-4 text-sm text-ink-3">{t('ws.live.empty')}</p>}
-        {data.live.map((b) => (
-          <div key={b.id} className="p-4 border-b border-line last:border-0">
-            <button onClick={() => onOpen(b.id)} className="text-left w-full">
-              <p className="text-sm font-medium text-ink">{b.code} · {b.name}</p>
-              <p className="text-xs text-ink-3 mt-0.5">
-                {b.angle_code ?? '—'} · {t(`ws.var.${b.variable}`)} · {t('ws.live.cap', { n: b.impression_cap })}
-              </p>
-            </button>
-
-            <div className="mt-3 h-1.5 rounded-full bg-surface-2 overflow-hidden">
-              <div className="h-full bg-accent transition-all" style={{ width: `${Math.round(b.progress * 100)}%` }} />
-            </div>
-            <p className="text-[11px] text-ink-4 mt-1">
-              {t('ws.live.progress', { done: b.pieces.filter((p) => p.capped).length, total: b.pieces.length })}
-            </p>
-
-            <div className="mt-3 space-y-1.5">
-              {b.pieces.map((p) => <PieceRow key={p.id} p={p} currency={data.currency} t={t} fmt={fmt} />)}
-            </div>
-
-            {notReadable === b.id ? (
-              <div className="mt-3 px-3 py-2 rounded-lg border border-warn/40 bg-warn-soft text-warn text-xs">
-                <p>{t('ws.live.notReadable')}</p>
-                <button onClick={() => void close(b.id, true)} className="mt-1.5 underline">{t('ws.live.forceClose')}</button>
-              </div>
-            ) : (
-              <button onClick={() => void close(b.id, false)} disabled={closing === b.id}
-                className="mt-3 w-full py-1.5 rounded-md border border-line bg-surface-2 text-sm text-ink hover:border-accent/50 disabled:opacity-50">
-                {closing === b.id ? t('ws.live.closing') : t('ws.live.close')}
-              </button>
-            )}
-          </div>
-        ))}
+    <div className="mt-3 rounded-lg border border-line bg-surface-2 p-3">
+      <div className="grid grid-cols-1 sm:grid-cols-[160px_1fr_auto] gap-2 items-end">
+        <div>
+          <label className={label}>{t('ws.piece.format')}</label>
+          <select value={format} onChange={(e) => setFormat(e.target.value)} className={input}>
+            {PIECE_FORMATS.map((f) => <option key={f} value={f}>{t(`ws.format.${f}`)}</option>)}
+          </select>
+        </div>
+        <div className="min-w-0">
+          <label className={label}>{t('ws.piece.hook')}</label>
+          <input value={hook} onChange={(e) => setHook(e.target.value)} className={input} placeholder={t('ws.piece.hook.placeholder')} />
+        </div>
+        <button onClick={() => void submit()} disabled={busy || !hook.trim()} className={btnPrimary}>
+          {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : t('ws.piece.add')}
+        </button>
       </div>
-    </section>
+      <p className={hint}>{t('ws.piece.code.help')}</p>
+      {error && <p className="text-xs text-danger mt-1">{error}</p>}
+    </div>
   );
 }
 
-function PieceRow({ p, currency, t, fmt }: { p: PieceView; currency: string | null; t: (k: string) => string; fmt: Fmt }) {
+function CloseForm({ b, brandId, t, onDone, onCancel }: { b: BatchView; brandId: string; t: T; onDone: () => void; onCancel: () => void }) {
+  const [text, setText] = useState('');
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [notReadable, setNotReadable] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const submit = async (force: boolean) => {
+    setBusy(true); setError(null);
+    try {
+      const res = await fetch('/api/workshop/close', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: b.id, brandId, window: WINDOW_DAYS, force, text: text || undefined, note: note || undefined }),
+      });
+      const json = await res.json();
+      if (res.status === 409 && json.error === 'no_readable_pieces') { setNotReadable(true); return; }
+      if (!res.ok) throw new Error(json.error ?? 'Failed');
+      onDone();
+    } catch (e) { setError(e instanceof Error ? e.message : 'Failed'); }
+    finally { setBusy(false); }
+  };
+
   return (
-    <div className="flex items-center justify-between gap-2 text-xs">
-      <span className="truncate text-ink-2" title={p.hook ?? ''}>{p.variant}. {p.hook ?? p.ad_name}</span>
-      <span className="flex items-center gap-2 shrink-0">
-        <span className="tabular-nums text-ink-3">{fmt.money(p.spend, currency, { compact: true })}</span>
-        <span className="tabular-nums text-ink">{fmt.ratio(p.roas)}x</span>
-        <VerdictChip v={p.verdict_now} t={t} />
-      </span>
+    <div className="mt-3 rounded-lg border border-line bg-surface-2 p-3 space-y-2">
+      <p className="text-xs text-ink-2">{t('ws.close.help')}</p>
+      <div>
+        <label className={label}>{t('ws.close.learning')}</label>
+        <input value={text} onChange={(e) => setText(e.target.value)} className={input} placeholder={t('ws.close.learning.placeholder')} />
+      </div>
+      <div>
+        <label className={label}>{t('ws.close.note')}</label>
+        <input value={note} onChange={(e) => setNote(e.target.value)} className={input} placeholder={t('ws.close.note.placeholder')} />
+      </div>
+      {notReadable && (
+        <div className="px-3 py-2 rounded-lg border border-warn/40 bg-warn-soft text-warn text-xs">
+          <p>{t('ws.close.notReadable')}</p>
+          <button onClick={() => void submit(true)} disabled={busy} className="mt-1 underline">{t('ws.close.force')}</button>
+        </div>
+      )}
+      {error && <p className="text-xs text-danger">{error}</p>}
+      <div className="flex items-center gap-2">
+        <button onClick={() => void submit(false)} disabled={busy} className={btnPrimary}>
+          {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : t('ws.close.confirm')}
+        </button>
+        <button onClick={onCancel} className={btn}>{t('ws.cancel')}</button>
+      </div>
     </div>
   );
 }
 
 // ---------------------------------------------------------------------------
-function BenchColumn({ data, t, onOpen, onNew, onChanged }: {
-  data: Data; t: (k: string) => string; onOpen: (id: string) => void; onNew: () => void; onChanged: () => void;
-}) {
-  const launch = async (id: string) => {
-    await fetch('/api/workshop', {
-      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id, status: 'live' }),
-    });
-    onChanged();
-  };
+interface Draft { format: string; hook: string }
+const emptyRows = (): Draft[] => Array.from({ length: 4 }, () => ({ format: 'static', hook: '' }));
 
-  return (
-    <section className={`${card} overflow-hidden`}>
-      <header className="px-4 py-3 border-b border-line flex items-start justify-between gap-2">
-        <div>
-          <h2 className="text-sm font-semibold text-ink">{t('ws.bench.title')}</h2>
-          <p className="text-xs text-ink-3 mt-0.5">{t('ws.bench.sub')}</p>
-        </div>
-        <button onClick={onNew} className="shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-md bg-accent text-on-accent text-xs font-medium">
-          <Plus className="w-3.5 h-3.5" />{t('ws.batch.new')}
-        </button>
-      </header>
-      <div className="max-h-[70vh] overflow-y-auto divide-y divide-line">
-        {data.bench.length === 0 && <p className="p-4 text-sm text-ink-3">{t('ws.bench.empty')}</p>}
-        {data.bench.map((b) => (
-          <div key={b.id} className="px-4 py-3">
-            <button onClick={() => onOpen(b.id)} className="text-left w-full">
-              <p className="text-sm text-ink">{b.code} · {b.name}</p>
-              <p className="text-xs text-ink-3 mt-0.5">
-                {b.angle_code ?? '—'} · {t(`ws.var.${b.variable}`)} · {b.pieces.length} {t('ws.batch.pieces').toLowerCase()}
-              </p>
-            </button>
-            {b.pieces.length > 0 && data.live.length === 0 && (
-              <button onClick={() => void launch(b.id)} className="mt-2 text-xs text-accent hover:underline">{t('ws.bench.launch')} →</button>
-            )}
-          </div>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-// ---------------------------------------------------------------------------
-function NewBatchModal({ data, brandId, t, onClose, onCreated }: {
-  data: Data; brandId: string; t: (k: string) => string; onClose: () => void; onCreated: (id: string) => void;
+function NewBatchModal({ data, brandId, t, onClose, onDone }: {
+  data: Data; brandId: string; t: T; onClose: () => void; onDone: () => void;
 }) {
-  const [angleId, setAngleId] = useState('');
-  const [name, setName] = useState('');
+  const [angleId, setAngleId] = useState(data.angles[0]?.id ?? '');
   const [variable, setVariable] = useState<string>('hook');
+  const [name, setName] = useState('');
+  const [nameTouched, setNameTouched] = useState(false);
   const [awareness, setAwareness] = useState('');
-  const [hypothesis, setHypothesis] = useState('');
-  const [ownerId, setOwnerId] = useState('');
-  const [cap, setCap] = useState(1500);
+  const [rows, setRows] = useState<Draft[]>(emptyRows);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [minted, setMinted] = useState<string[] | null>(null);
+  const { copied, copy } = useCopied();
 
   const angle = data.angles.find((a) => a.id === angleId) ?? null;
+  const suggested = angle ? `${angle.name} · ${t(`ws.var.${variable}`)}` : '';
+  const finalName = nameTouched ? name : suggested;
+  const finalAwareness = awareness || angle?.awareness_stage || '';
+  const validRows = rows.filter((r) => r.hook.trim());
+
+  const setRow = (i: number, patch: Partial<Draft>) => setRows((rs) => rs.map((r, j) => (j === i ? { ...r, ...patch } : r)));
 
   const submit = async () => {
     setBusy(true); setError(null);
     try {
       const res = await fetch('/api/workshop', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          brandId, angle_id: angleId, name, variable,
-          awareness: awareness || angle?.awareness_stage || null,
-          hypothesis: hypothesis || null, owner_id: ownerId || null, impression_cap: cap,
-        }),
+        body: JSON.stringify({ brandId, angle_id: angleId, name: finalName.trim(), variable, awareness: finalAwareness || null }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? 'Failed');
-      onCreated(json.batch.id);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed');
-    } finally { setBusy(false); }
+      const batchId = json.batch.id as string;
+      const codes: string[] = [];
+      for (const r of validRows) {
+        const pr = await fetch('/api/workshop/piece', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ batchId, hook: r.hook.trim(), format: r.format }),
+        });
+        const pj = await pr.json();
+        if (!pr.ok) throw new Error(pj.error ?? 'Failed');
+        codes.push(pj.piece.ad_name as string);
+      }
+      setMinted(codes);
+    } catch (e) { setError(e instanceof Error ? e.message : 'Failed'); }
+    finally { setBusy(false); }
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/40 flex items-start justify-center p-4 overflow-y-auto" onClick={onClose}>
-      <div className="w-full max-w-lg mt-16 rounded-xl border border-line bg-surface p-5" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-base font-semibold text-ink">{t('ws.batch.new')}</h3>
-          <button onClick={onClose} className="text-ink-3 hover:text-ink"><X className="w-4 h-4" /></button>
+    <div className="fixed inset-0 z-50 bg-overlay/60 flex items-start justify-center p-4 overflow-y-auto" onClick={minted ? undefined : onClose}>
+      <div className="w-full max-w-2xl my-8 rounded-xl border border-line bg-surface p-5" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-1">
+          <h3 className="text-base font-semibold text-ink">{minted ? t('ws.new.done.title') : t('ws.batch.new')}</h3>
+          <button onClick={minted ? onDone : onClose} className="text-ink-3 hover:text-ink"><X className="w-4 h-4" /></button>
         </div>
 
-        <div className="space-y-3">
-          <div>
-            <label className={label}>{t('ws.batch.angle')}</label>
-            <select value={angleId} onChange={(e) => setAngleId(e.target.value)} className={input}>
-              <option value="">—</option>
-              {data.angles.map((a) => <option key={a.id} value={a.id}>{a.code ? `${a.code} · ` : ''}{a.name}</option>)}
-            </select>
-            {angle?.personas?.name && <p className="text-[11px] text-ink-4 mt-1">{t('ws.batch.persona')}: {angle.personas.name}</p>}
-            {!angleId && <p className="text-[11px] text-ink-4 mt-1">{t('ws.batch.needAngle')}</p>}
-          </div>
-
-          <div>
-            <label className={label}>{t('ws.batch.name')}</label>
-            <input value={name} onChange={(e) => setName(e.target.value)} className={input} placeholder={t('ws.batch.name.placeholder')} />
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className={label}>{t('ws.batch.variable')}</label>
-              <select value={variable} onChange={(e) => setVariable(e.target.value)} className={input}>
-                {BATCH_VARIABLES.map((v) => <option key={v} value={v}>{t(`ws.var.${v}`)}</option>)}
-              </select>
+        {minted ? (
+          <div className="mt-3 space-y-3">
+            <p className="text-sm text-ink-2">{t('ws.new.done.help')}</p>
+            <pre className="rounded-lg border border-line bg-surface-2 p-3 text-[11px] font-[family-name:var(--font-mono)] text-ink-2 overflow-x-auto whitespace-pre">{minted.join('\n') || t('ws.piece.empty')}</pre>
+            <div className="flex items-center gap-2 flex-wrap">
+              {minted.length > 0 && (
+                <button onClick={() => void copy('all', minted.join('\n'))} className={btn}>
+                  {copied === 'all' ? <Check className="w-3.5 h-3.5 text-ok" /> : <Copy className="w-3.5 h-3.5" />}{t('ws.new.done.copyAll')}
+                </button>
+              )}
+              <button onClick={onDone} className={`${btnPrimary} ml-auto`}>{t('ws.new.done.ok')}</button>
             </div>
+          </div>
+        ) : (
+          <div className="mt-3 space-y-4">
+            <p className="text-xs text-ink-3">{t('ws.new.intro')}</p>
+
             <div>
-              <label className={label}>{t('ws.batch.awareness')}</label>
-              <select value={awareness} onChange={(e) => setAwareness(e.target.value)} className={input}>
+              <label className={label}>{t('ws.new.angle')}</label>
+              <select value={angleId} onChange={(e) => setAngleId(e.target.value)} className={input}>
+                {data.angles.length === 0 && <option value="">—</option>}
+                {data.angles.map((a) => <option key={a.id} value={a.id}>{a.code ? `${a.code} · ` : ''}{a.name}</option>)}
+              </select>
+              <p className={hint}>
+                {t('ws.new.angle.help')}
+                {data.angles.length === 0 && <> <a href="/cerebro" className="text-accent underline inline-flex items-center gap-0.5">{t('ws.new.angle.link')}<ExternalLink className="w-3 h-3" /></a></>}
+                {angle?.personas?.name && <> · {t('ws.batch.persona')}: {angle.personas.name}</>}
+              </p>
+            </div>
+
+            <div>
+              <label className={label}>{t('ws.new.variable')}</label>
+              <select value={variable} onChange={(e) => setVariable(e.target.value)} className={input}>
+                {BATCH_VARIABLES.map((v) => <option key={v} value={v}>{t(`ws.var.${v}.long`)}</option>)}
+              </select>
+              <p className={hint}>{t('ws.new.variable.help')}</p>
+            </div>
+
+            <div>
+              <label className={label}>{t('ws.new.name')}</label>
+              <input value={finalName} onChange={(e) => { setNameTouched(true); setName(e.target.value); }} className={input} placeholder={t('ws.new.name.placeholder')} />
+              <p className={hint}>{t('ws.new.name.help')}</p>
+            </div>
+
+            <div>
+              <label className={label}>{t('ws.new.awareness')}</label>
+              <select value={finalAwareness} onChange={(e) => setAwareness(e.target.value)} className={input}>
                 <option value="">—</option>
                 {AWARENESS_STAGES.map((a) => <option key={a} value={a}>{t(`ws.aware.${a}`)}</option>)}
               </select>
+              <p className={hint}>{t('ws.new.awareness.help')}</p>
             </div>
-          </div>
-          <p className="text-[11px] text-ink-4 -mt-1">{t('ws.batch.variable.help')}</p>
 
-          <div>
-            <label className={label}>{t('ws.batch.hypothesis')}</label>
-            <textarea value={hypothesis} onChange={(e) => setHypothesis(e.target.value)} rows={2} className={input} placeholder={t('ws.batch.hypothesis.placeholder')} />
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className={label}>{t('ws.batch.owner')}</label>
-              <select value={ownerId} onChange={(e) => setOwnerId(e.target.value)} className={input}>
-                <option value="">—</option>
-                {data.members.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className={label}>{t('ws.batch.cap')}</label>
-              <input type="number" value={cap} onChange={(e) => setCap(Number(e.target.value))} className={input} />
-            </div>
-          </div>
-
-          {error && <p className="text-xs text-danger">{error}</p>}
-
-          <button onClick={() => void submit()} disabled={busy || !angleId || !name.trim()}
-            className="w-full py-2 rounded-md bg-accent text-on-accent text-sm font-medium disabled:opacity-40">
-            {busy ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : t('ws.batch.create')}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-function BatchDrawer({ batch, data, t, fmt, onClose, onChanged }: {
-  batch: BatchView; data: Data; t: (k: string, v?: Record<string, string | number>) => string; fmt: Fmt;
-  onClose: () => void; onChanged: () => void;
-}) {
-  const [hook, setHook] = useState('');
-  const [format, setFormat] = useState<string>('static');
-  const [ownerId, setOwnerId] = useState('');
-  const [script, setScript] = useState('');
-  const [visualNotes, setVisualNotes] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [copied, setCopied] = useState<string | null>(null);
-  const [briefBusy, setBriefBusy] = useState(false);
-
-  const copyBrief = async () => {
-    setBriefBusy(true);
-    try {
-      const res = await fetch(`/api/workshop/brief?batch=${batch.id}&format=json`);
-      const json = await res.json();
-      if (res.ok && json.markdown) { await navigator.clipboard.writeText(json.markdown); setCopied('__brief'); setTimeout(() => setCopied(null), 1500); }
-    } finally { setBriefBusy(false); }
-  };
-
-  const editors = data.members.filter((m) => PRODUCTION_ROLES.has(m.role) || m.is_ai);
-
-  const add = async () => {
-    if (!hook.trim()) return;
-    setBusy(true);
-    try {
-      await fetch('/api/workshop/piece', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ batchId: batch.id, hook, format, owner_id: ownerId || null, script: script || null, visual_notes: visualNotes || null }),
-      });
-      setHook(''); setScript(''); setVisualNotes('');
-      onChanged();
-    } finally { setBusy(false); }
-  };
-
-  const remove = async (id: string) => {
-    await fetch(`/api/workshop/piece?id=${id}`, { method: 'DELETE' });
-    onChanged();
-  };
-
-  const copy = async (name: string) => {
-    await navigator.clipboard.writeText(name);
-    setCopied(name);
-    setTimeout(() => setCopied(null), 1500);
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 bg-black/40 flex justify-end" onClick={onClose}>
-      <div className="w-full max-w-xl h-full overflow-y-auto bg-canvas border-l border-line" onClick={(e) => e.stopPropagation()}>
-        <header className="sticky top-0 bg-canvas/95 border-b border-line px-5 py-4 flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-xs text-ink-3">{batch.angle_code ?? '—'} · {t(`ws.var.${batch.variable}`)}{batch.awareness ? ` · ${t(`ws.aware.${batch.awareness}`)}` : ''}</p>
-            <h3 className="text-base font-semibold text-ink truncate">{batch.code} · {batch.name}</h3>
-            {batch.persona_name && <p className="text-xs text-ink-4 mt-0.5">{t('ws.batch.persona')}: {batch.persona_name}</p>}
-          </div>
-          <button onClick={onClose} className="text-ink-3 hover:text-ink shrink-0"><X className="w-4 h-4" /></button>
-        </header>
-
-        <div className="p-5 space-y-5">
-          {batch.hypothesis && (
-            <p className="text-sm text-ink-2 border-l-2 border-accent/50 pl-3">{batch.hypothesis}</p>
-          )}
-
-          <div className="flex items-center gap-2 flex-wrap">
-            <a href={`/api/workshop/brief?batch=${batch.id}`}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-accent text-on-accent text-xs font-medium">
-              <FileText className="w-3.5 h-3.5" />{t('ws.brief.download')}
-            </a>
-            <button onClick={() => void copyBrief()} disabled={briefBusy}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-line bg-surface text-xs text-ink-2 hover:text-ink disabled:opacity-50">
-              {copied === '__brief' ? <Check className="w-3.5 h-3.5 text-ok" /> : <Copy className="w-3.5 h-3.5" />}{t('ws.brief.copy')}
-            </button>
-            <span className="text-[11px] text-ink-4">{t('ws.brief.help')}</span>
-          </div>
-
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <h4 className="text-xs uppercase tracking-wide text-ink-3">{t('ws.batch.pieces')}</h4>
-              <span className="text-xs text-ink-4">{t('ws.batch.spend')}: {fmt.money(batch.spend, data.currency)}</span>
-            </div>
-
-            {batch.pieces.length === 0 && <p className="text-sm text-ink-3">{t('ws.piece.empty')}</p>}
-
-            <div className="space-y-2">
-              {batch.pieces.map((p) => (
-                <div key={p.id} className={`${card} p-3`}>
-                  <div className="flex items-start justify-between gap-2">
-                    <p className="text-sm text-ink flex-1">{p.variant}. {p.hook}</p>
-                    {batch.status !== 'closed' && !p.meta_ad_id && (
-                      <button onClick={() => void remove(p.id)} className="text-ink-4 hover:text-danger shrink-0"><Trash2 className="w-3.5 h-3.5" /></button>
-                    )}
-                  </div>
-
-                  {p.script && <p className="text-xs text-ink-3 mt-1 whitespace-pre-wrap line-clamp-4">{p.script}</p>}
-                  {p.visual_notes && <p className="text-[11px] text-ink-4 mt-1">{p.visual_notes}</p>}
-                  <div className="flex items-center gap-2 mt-2 flex-wrap">
-                    <span className="text-[11px] px-1.5 py-0.5 rounded border border-line bg-surface-2 text-ink-3">{t(`ws.format.${p.format ?? 'static'}`)}</span>
-                    {p.owner_name && <span className="text-[11px] text-ink-3">{p.owner_name}</span>}
-                    {p.meta_ad_id ? <VerdictChip v={p.verdict_now} t={t} /> : <span className="text-[11px] text-ink-4">{t('ws.piece.notMatched')}</span>}
-                  </div>
-
-                  <div className="mt-2 flex items-center gap-2">
-                    <code className="flex-1 text-[11px] font-mono bg-surface-2 border border-line rounded px-2 py-1 text-ink-2 truncate">{p.ad_name}</code>
-                    <button onClick={() => void copy(p.ad_name)} className="p-1.5 rounded border border-line text-ink-3 hover:text-ink shrink-0" title={t('ws.piece.copy')}>
-                      {copied === p.ad_name ? <Check className="w-3.5 h-3.5 text-ok" /> : <Copy className="w-3.5 h-3.5" />}
+              <label className={label}>{t('ws.new.pieces')}</label>
+              <div className="space-y-2">
+                {rows.map((r, i) => (
+                  <div key={i} className="grid grid-cols-[130px_1fr_auto] gap-2 items-center">
+                    <select value={r.format} onChange={(e) => setRow(i, { format: e.target.value })} className={input}>
+                      {PIECE_FORMATS.map((f) => <option key={f} value={f}>{t(`ws.format.${f}`)}</option>)}
+                    </select>
+                    <input value={r.hook} onChange={(e) => setRow(i, { hook: e.target.value })} className={`${input} min-w-0`} placeholder={t('ws.piece.hook.placeholder')} />
+                    <button onClick={() => setRows((rs) => rs.filter((_, j) => j !== i))} disabled={rows.length <= 1} className="p-1.5 rounded text-ink-4 hover:text-danger disabled:opacity-30" title={t('ws.piece.remove')}>
+                      <X className="w-3.5 h-3.5" />
                     </button>
                   </div>
-
-                  {p.meta_ad_id && (
-                    <div className="mt-2 flex items-center gap-3 text-[11px] text-ink-3 tabular-nums">
-                      <span>{fmt.money(p.spend, data.currency, { compact: true })}</span>
-                      <span>{fmt.ratio(p.roas)}x</span>
-                      <span>{p.purchases ?? 0} ✓</span>
-                      {p.archived_reason && (
-                        <span className="flex items-center gap-1 text-ink-4"><Archive className="w-3 h-3" />{t(`ws.archive.${p.archived_reason}`)}</span>
-                      )}
-                    </div>
-                  )}
-                </div>
-              ))}
+                ))}
+              </div>
+              <div className="flex items-center justify-between gap-2 mt-2 flex-wrap">
+                <button onClick={() => setRows((rs) => [...rs, { format: 'static', hook: '' }])} disabled={rows.length >= 8} className={btn}>
+                  <Plus className="w-3.5 h-3.5" />{t('ws.new.addRow')}
+                </button>
+                <p className="text-[11px] text-ink-4">{t('ws.piece.code.help')}</p>
+              </div>
             </div>
+
+            {error && <p className="text-xs text-danger">{error}</p>}
+
+            <button onClick={() => void submit()} disabled={busy || !angleId || !finalName.trim()} className={`${btnPrimary} w-full justify-center py-2`}>
+              {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : t('ws.new.submit')}
+            </button>
           </div>
-
-          {batch.status !== 'closed' && (
-            <div className={`${card} p-3 space-y-2`}>
-              <div>
-                <label className={label}>{t('ws.piece.hook')}</label>
-                <input value={hook} onChange={(e) => setHook(e.target.value)} className={input} placeholder={t('ws.piece.hook.placeholder')} />
-                <p className="text-[11px] text-ink-4 mt-1">{t('ws.piece.hook.help')}</p>
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className={label}>{t('ws.piece.format')}</label>
-                  <select value={format} onChange={(e) => setFormat(e.target.value)} className={input}>
-                    {PIECE_FORMATS.map((f) => <option key={f} value={f}>{t(`ws.format.${f}`)}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className={label}>{t('ws.piece.owner')}</label>
-                  <select value={ownerId} onChange={(e) => setOwnerId(e.target.value)} className={input}>
-                    <option value="">—</option>
-                    {editors.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
-                  </select>
-                </div>
-              </div>
-              <div>
-                <label className={label}>{t('ws.piece.script')}</label>
-                <textarea value={script} onChange={(e) => setScript(e.target.value)} rows={3} className={input} placeholder={t('ws.piece.script.placeholder')} />
-              </div>
-              <div>
-                <label className={label}>{t('ws.piece.visual')}</label>
-                <input value={visualNotes} onChange={(e) => setVisualNotes(e.target.value)} className={input} placeholder={t('ws.piece.visual.placeholder')} />
-              </div>
-              <button onClick={() => void add()} disabled={busy || !hook.trim()}
-                className="w-full py-1.5 rounded-md border border-line bg-surface-2 text-sm text-ink hover:border-accent/50 disabled:opacity-40">
-                {busy ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : t('ws.piece.add')}
-              </button>
-              <p className="text-[11px] text-ink-4">{t('ws.piece.name.help')}</p>
-            </div>
-          )}
-
-          {batch.closed_note && <p className="text-sm text-ink-2">{batch.closed_note}</p>}
-        </div>
+        )}
       </div>
     </div>
   );
