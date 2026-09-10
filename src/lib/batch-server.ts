@@ -135,6 +135,26 @@ export async function loadWorkshop(
   )) as unknown as AdDailyRow[];
   const aggregates = aggregateByAd(daily);
   const byAdId = new Map<string, AdAggregate>(aggregates.map((a) => [a.ad_id, a]));
+
+  // ---- auto-match ----------------------------------------------------------
+  // The minted name IS the join key. A piece whose exact name appears on exactly
+  // one Meta ad in the window gets pinned here, once, so the scorecard fills
+  // itself the day the ad starts spending. A name shared by two ad_ids stays
+  // unmatched rather than guessed.
+  const idsByName = new Map<string, Set<string>>();
+  for (const a of aggregates) {
+    const key = a.ad_name.trim().toUpperCase();
+    (idsByName.get(key) ?? idsByName.set(key, new Set()).get(key)!).add(a.ad_id);
+  }
+  const now = new Date().toISOString();
+  await Promise.all(pieces.filter((p) => !p.meta_ad_id).map(async (p) => {
+    const ids = idsByName.get(p.ad_name.trim().toUpperCase());
+    if (!ids || ids.size !== 1) return;
+    const adId = [...ids][0];
+    p.meta_ad_id = adId; p.matched_at = now;
+    if (p.status === 'planned' || p.status === 'ready') p.status = 'live';
+    await sb.from('experiment_variant').update({ meta_ad_id: adId, matched_at: now, status: p.status, updated_at: now }).eq('id', p.id);
+  }));
   const medianSpend = median(aggregates.filter((a) => a.spend > 0).map((a) => a.spend));
 
   const totalSpend = aggregates.reduce((s, a) => s + a.spend, 0);

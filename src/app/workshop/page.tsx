@@ -13,7 +13,7 @@
 // =============================================================================
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Plus, Loader2, X, Copy, Check, Trash2, TrendingUp, RefreshCw, Anchor, Archive, AlertTriangle } from 'lucide-react';
+import { Plus, Loader2, X, Copy, Check, Trash2, TrendingUp, RefreshCw, Anchor, Archive, AlertTriangle, BookOpen, Download, FileText } from 'lucide-react';
 import AppHeader from '@/components/AppHeader';
 import { useMe } from '@/lib/use-me';
 import { useT, useFormatters } from '@/lib/i18n';
@@ -54,6 +54,7 @@ export default function WorkshopPage() {
   const [openBatch, setOpenBatch] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [guide, setGuide] = useState(false);
 
   const brandId = activeBrand?.id ?? null;
 
@@ -90,7 +91,17 @@ export default function WorkshopPage() {
             <h1 className="text-xl font-semibold text-ink font-[family-name:var(--font-serif)]">{t('ws.title')}</h1>
             <p className="text-sm text-ink-3 mt-0.5">{t('ws.subtitle')}</p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <button onClick={() => setGuide((g) => !g)}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border text-sm ${guide ? 'border-accent bg-accent-soft text-accent' : 'border-line bg-surface text-ink-2 hover:text-ink'}`}>
+              <BookOpen className="w-4 h-4" />{t('ws.guide.button')}
+            </button>
+            {brandId && (
+              <a href={`/api/export/brain?brand=${brandId}&window=${Math.max(windowDays, 60)}`}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-line bg-surface text-sm text-ink-2 hover:text-ink" title={t('ws.export.help')}>
+                <Download className="w-4 h-4" />{t('ws.export.button')}
+              </a>
+            )}
             <select value={windowDays} onChange={(e) => setWindowDays(Number(e.target.value))}
               className="rounded-md border border-line bg-surface px-2.5 py-1.5 text-sm text-ink">
               {[7, 14, 30, 60, 90].map((n) => <option key={n} value={n}>{t('ws.window.days', { n })}</option>)}
@@ -102,6 +113,8 @@ export default function WorkshopPage() {
         </div>
 
         {err && <div className="mb-4 px-3 py-2 rounded-lg border border-danger/40 bg-danger-soft text-danger text-sm">{err}</div>}
+
+        {guide && <GuidePanel t={t} />}
 
         {data && <PlanStrip data={data} t={t} fmt={fmt} />}
 
@@ -131,6 +144,39 @@ export default function WorkshopPage() {
 }
 
 // ---------------------------------------------------------------------------
+// The vocabulary, on the screen where it is used. Eight words; if a strategist
+// has to leave the page to remember what a concept is, the page failed.
+const GUIDE_TERMS = ['persona', 'awareness', 'angle', 'concept', 'hook', 'format', 'batch', 'brief', 'name'] as const;
+
+function GuidePanel({ t }: { t: (k: string) => string }) {
+  return (
+    <div className={`${card} p-4 mb-4`}>
+      <div className="flex items-start justify-between gap-3 mb-3">
+        <div>
+          <h2 className="text-sm font-semibold text-ink">{t('ws.guide.title')}</h2>
+          <p className="text-xs text-ink-3 mt-0.5">{t('ws.guide.sub')}</p>
+        </div>
+      </div>
+      <dl className="grid grid-cols-1 md:grid-cols-3 gap-x-6 gap-y-3">
+        {GUIDE_TERMS.map((k) => (
+          <div key={k}>
+            <dt className="text-xs font-semibold text-ink">{t(`ws.guide.${k}`)}</dt>
+            <dd className="text-xs text-ink-3 mt-0.5 leading-relaxed">{t(`ws.guide.${k}.def`)}</dd>
+          </div>
+        ))}
+      </dl>
+      <ol className="mt-4 grid grid-cols-1 md:grid-cols-4 gap-2 text-xs text-ink-2">
+        {[1, 2, 3, 4].map((n) => (
+          <li key={n} className="rounded-lg border border-line bg-surface-2 px-3 py-2">
+            <span className="text-[11px] uppercase tracking-wide text-ink-4">{t('ws.guide.step')} {n}</span>
+            <p className="mt-0.5">{t(`ws.guide.step${n}`)}</p>
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}
+
 function PlanStrip({ data, t, fmt }: { data: Data; t: (k: string, v?: Record<string, string | number>) => string; fmt: Fmt }) {
   const v = data.volume;
   return (
@@ -445,8 +491,20 @@ function BatchDrawer({ batch, data, t, fmt, onClose, onChanged }: {
   const [hook, setHook] = useState('');
   const [format, setFormat] = useState<string>('static');
   const [ownerId, setOwnerId] = useState('');
+  const [script, setScript] = useState('');
+  const [visualNotes, setVisualNotes] = useState('');
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
+  const [briefBusy, setBriefBusy] = useState(false);
+
+  const copyBrief = async () => {
+    setBriefBusy(true);
+    try {
+      const res = await fetch(`/api/workshop/brief?batch=${batch.id}&format=json`);
+      const json = await res.json();
+      if (res.ok && json.markdown) { await navigator.clipboard.writeText(json.markdown); setCopied('__brief'); setTimeout(() => setCopied(null), 1500); }
+    } finally { setBriefBusy(false); }
+  };
 
   const editors = data.members.filter((m) => PRODUCTION_ROLES.has(m.role) || m.is_ai);
 
@@ -456,9 +514,9 @@ function BatchDrawer({ batch, data, t, fmt, onClose, onChanged }: {
     try {
       await fetch('/api/workshop/piece', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ batchId: batch.id, hook, format, owner_id: ownerId || null }),
+        body: JSON.stringify({ batchId: batch.id, hook, format, owner_id: ownerId || null, script: script || null, visual_notes: visualNotes || null }),
       });
-      setHook('');
+      setHook(''); setScript(''); setVisualNotes('');
       onChanged();
     } finally { setBusy(false); }
   };
@@ -491,6 +549,18 @@ function BatchDrawer({ batch, data, t, fmt, onClose, onChanged }: {
             <p className="text-sm text-ink-2 border-l-2 border-accent/50 pl-3">{batch.hypothesis}</p>
           )}
 
+          <div className="flex items-center gap-2 flex-wrap">
+            <a href={`/api/workshop/brief?batch=${batch.id}`}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-accent text-on-accent text-xs font-medium">
+              <FileText className="w-3.5 h-3.5" />{t('ws.brief.download')}
+            </a>
+            <button onClick={() => void copyBrief()} disabled={briefBusy}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-line bg-surface text-xs text-ink-2 hover:text-ink disabled:opacity-50">
+              {copied === '__brief' ? <Check className="w-3.5 h-3.5 text-ok" /> : <Copy className="w-3.5 h-3.5" />}{t('ws.brief.copy')}
+            </button>
+            <span className="text-[11px] text-ink-4">{t('ws.brief.help')}</span>
+          </div>
+
           <div>
             <div className="flex items-center justify-between mb-2">
               <h4 className="text-xs uppercase tracking-wide text-ink-3">{t('ws.batch.pieces')}</h4>
@@ -509,6 +579,8 @@ function BatchDrawer({ batch, data, t, fmt, onClose, onChanged }: {
                     )}
                   </div>
 
+                  {p.script && <p className="text-xs text-ink-3 mt-1 whitespace-pre-wrap line-clamp-4">{p.script}</p>}
+                  {p.visual_notes && <p className="text-[11px] text-ink-4 mt-1">{p.visual_notes}</p>}
                   <div className="flex items-center gap-2 mt-2 flex-wrap">
                     <span className="text-[11px] px-1.5 py-0.5 rounded border border-line bg-surface-2 text-ink-3">{t(`ws.format.${p.format ?? 'static'}`)}</span>
                     {p.owner_name && <span className="text-[11px] text-ink-3">{p.owner_name}</span>}
@@ -558,6 +630,14 @@ function BatchDrawer({ batch, data, t, fmt, onClose, onChanged }: {
                     {editors.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
                   </select>
                 </div>
+              </div>
+              <div>
+                <label className={label}>{t('ws.piece.script')}</label>
+                <textarea value={script} onChange={(e) => setScript(e.target.value)} rows={3} className={input} placeholder={t('ws.piece.script.placeholder')} />
+              </div>
+              <div>
+                <label className={label}>{t('ws.piece.visual')}</label>
+                <input value={visualNotes} onChange={(e) => setVisualNotes(e.target.value)} className={input} placeholder={t('ws.piece.visual.placeholder')} />
               </div>
               <button onClick={() => void add()} disabled={busy || !hook.trim()}
                 className="w-full py-1.5 rounded-md border border-line bg-surface-2 text-sm text-ink hover:border-accent/50 disabled:opacity-40">
