@@ -200,7 +200,9 @@ async function syncCreatives(
   for (const ad of ads) {
     const prev = byAdId.get(ad.id);
     // An ad skipped for low spend earlier is reconsidered once it passes the gate.
-    const skippedForSpend = prev?.queue_status === 'omitido' && (prev?.asset_strategy === 'poco-gasto' || prev?.asset_strategy === 'sin-senal');
+    // Retryable skips: parked for spend, or blocked by a permission the token
+    // did not have at the time (a new token is exactly why it gets retried).
+    const skippedForSpend = prev?.queue_status === 'omitido' && (prev?.asset_strategy === 'poco-gasto' || prev?.asset_strategy === 'sin-senal' || prev?.asset_strategy === 'video-bloqueado' || prev?.asset_kind === 'none');
     const alreadyDone = Boolean(prev?.asset_url) || prev?.queue_status === 'listo' || (prev?.queue_status === 'omitido' && !(skippedForSpend && passesGate(ad.id)));
     if (alreadyDone) continue;
     if (resolved >= limit || limited) { remaining++; continue; }

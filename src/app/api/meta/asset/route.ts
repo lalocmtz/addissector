@@ -34,7 +34,15 @@ export async function GET(request: NextRequest) {
     .maybeSingle();
   if (!row) return NextResponse.json({ error: 'Anuncio no encontrado' }, { status: 404 });
 
-  const actId = (row as unknown as { brands?: { meta_ad_account_id?: string } }).brands?.meta_ad_account_id;
+  // The token and the account live in ad_account (the owner pastes the token
+  // in /meta/barrido). The env var is only a fallback; re-resolving an expired
+  // URL with a dead env token is exactly how every download came back 502.
+  const { data: acc } = await sb.from('ad_account').select('ad_account_id,access_token')
+    .eq('brand_id', row.brand_id).eq('active', true).limit(1).maybeSingle();
+  const actId = acc?.ad_account_id ?? (row as unknown as { brands?: { meta_ad_account_id?: string } }).brands?.meta_ad_account_id;
+  let token: string | null = null;
+  try { token = adToken(acc?.access_token ?? null); } catch { token = null; }
+  let resolveError: string | null = null;
 
   async function traer(url: string): Promise<Response | null> {
     try {
@@ -49,28 +57,32 @@ export async function GET(request: NextRequest) {
   let upstream = row.asset_url ? await traer(row.asset_url) : null;
 
   // URL caducada -> re-resolver contra la API y actualizar la fila.
-  if (!upstream && row.ad_id && actId) {
+  if (!upstream && row.ad_id && actId && token) {
     try {
       const u = new URL(`https://graph.facebook.com/${GRAPH_VERSION}/${row.ad_id}`);
       u.searchParams.set('fields', AD_FIELDS);
-      u.searchParams.set('access_token', adToken());
-      const ad = (await (await fetch(u, { cache: 'no-store' })).json()) as RawAd;
-      const fresh = await resolveAsset(ad, actId);
+      u.searchParams.set('access_token', token);
+      const ad = (await (await fetch(u, { cache: 'no-store' })).json()) as RawAd & { error?: { message?: string } };
+      if (ad.error) throw new Error(ad.error.message ?? 'Meta rechazó la consulta');
+      const fresh = await resolveAsset(ad, actId, token);
+      if (!fresh.url) resolveError = fresh.error ?? 'Meta no entregó el archivo';
       if (fresh.url) {
         await sb.from('meta_ads').update({
           asset_url: fresh.url, asset_kind: fresh.kind,
-          asset_strategy: fresh.strategy, thumbnail_url: fresh.thumbnail,
+          asset_strategy: fresh.strategy, thumbnail_url: fresh.thumbnail, asset_error: null,
         }).eq('id', row.id);
         upstream = await traer(fresh.url);
       }
-    } catch {
-      /* cae al 502 de abajo */
+    } catch (e) {
+      resolveError = e instanceof Error ? e.message : 'No se pudo re-resolver el creativo';
     }
   }
 
   if (!upstream) {
+    // Leave the reason on the row so the Top 30 board can say "súbelo tú".
+    await sb.from('meta_ads').update({ asset_error: resolveError ?? 'La URL del creativo caducó y Meta no la renovó', updated_at: new Date().toISOString() }).eq('id', row.id);
     return NextResponse.json(
-      { error: 'No se pudo descargar el creativo desde Meta' },
+      { error: `No se pudo descargar el creativo desde Meta${resolveError ? `: ${resolveError}` : ''}` },
       { status: 502 }
     );
   }
