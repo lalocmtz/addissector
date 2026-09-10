@@ -11,7 +11,7 @@
 // =============================================================================
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Check, AlertTriangle, Loader2, Upload, KeyRound, Film, Image as ImageIcon, RefreshCw } from 'lucide-react';
+import { Check, AlertTriangle, Loader2, Upload, KeyRound, Film, Image as ImageIcon, RefreshCw, Sparkles } from 'lucide-react';
 import { createBrowserClient } from '@/lib/supabase-browser';
 import { useFormatters } from '@/lib/i18n';
 
@@ -20,19 +20,23 @@ import { useFormatters } from '@/lib/i18n';
 // ---------------------------------------------------------------------------
 
 interface Check { ok: boolean; name: string | null; granted: string[]; missing: string[]; error: string | null }
-interface AccountInfo { account: { id: string; ad_account_id: string; has_token: boolean; token_tail: string | null } | null; check: Check | null }
+interface GeminiState { has_key: boolean; tail: string | null; from?: 'user' | 'env' | null }
+interface AccountInfo { account: { id: string; ad_account_id: string; has_token: boolean; token_tail: string | null } | null; check: Check | null; gemini?: GeminiState | null }
 
 const PERM_LABEL: Record<string, string> = {
   ads_read: 'ads_read (números de la cuenta)',
   pages_read_engagement: 'pages_read_engagement (descargar videos de la página)',
 };
 
-export function MetaTokenCard({ brandId }: { brandId: string | null }) {
+export function MetaTokenCard({ brandId, onGeminiChange }: { brandId: string | null; onGeminiChange?: (hasKey: boolean) => void }) {
   const [info, setInfo] = useState<AccountInfo | null>(null);
   const [loading, setLoading] = useState(false);
   const [token, setToken] = useState('');
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+  const [geminiKey, setGeminiKey] = useState('');
+  const [savingGemini, setSavingGemini] = useState(false);
+  const [geminiMsg, setGeminiMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
 
   const load = useCallback(async () => {
     if (!brandId) return;
@@ -64,7 +68,24 @@ export function MetaTokenCard({ brandId }: { brandId: string | null }) {
     }
   };
 
+  const saveGemini = async () => {
+    if (!geminiKey.trim()) return;
+    setSavingGemini(true); setGeminiMsg(null);
+    try {
+      const r = await fetch('/api/meta/account', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ geminiKey: geminiKey.trim() }) });
+      const j = (await r.json()) as { error?: string; gemini?: GeminiState };
+      if (!r.ok) { setGeminiMsg({ kind: 'err', text: j.error ?? 'No se pudo guardar la clave' }); return; }
+      setGeminiKey('');
+      setGeminiMsg({ kind: 'ok', text: 'Clave guardada. El barrido usará el motor rápido.' });
+      onGeminiChange?.(true);
+      await load();
+    } finally {
+      setSavingGemini(false);
+    }
+  };
+
   const check = info?.check ?? null;
+  const gemini = info?.gemini ?? null;
   return (
     <div className="rounded-xl border border-line bg-surface p-4">
       <div className="flex items-start justify-between gap-3 flex-wrap">
@@ -117,6 +138,36 @@ export function MetaTokenCard({ brandId }: { brandId: string | null }) {
         </button>
       </div>
       {msg && <p className={`mt-2 text-xs ${msg.kind === 'ok' ? 'text-ok' : 'text-danger'}`}>{msg.text}</p>}
+
+      {/* --- Gemini: el motor rápido de análisis --------------------------- */}
+      <div className="mt-4 border-t border-line pt-3">
+        <h3 className="text-sm font-semibold text-ink flex items-center gap-2"><Sparkles className="w-4 h-4 text-ink-3" /> Clave de Gemini (motor rápido de análisis)</h3>
+        <p className="text-xs text-ink-3 mt-0.5">
+          Con esta clave el análisis corre en el servidor en ~1 min por video, como ScaleBot. Sin clave se usa el motor lento del navegador.
+          {' '}<a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer" className="text-accent hover:underline">Obtener una clave</a>
+        </p>
+        {gemini && (
+          <p className="mt-1.5 text-xs text-ink-2">
+            {gemini.has_key
+              ? <>clave guardada <span className="font-[family-name:var(--font-mono)]">…{gemini.tail}</span>{gemini.from === 'env' ? ' (la del servidor)' : ''}</>
+              : 'sin clave guardada'}
+          </p>
+        )}
+        <div className="mt-2 flex gap-2 flex-wrap">
+          <input
+            type="password"
+            value={geminiKey}
+            onChange={(e) => setGeminiKey(e.target.value)}
+            placeholder="Pega aquí la clave de Gemini (AIza…)"
+            autoComplete="off"
+            className="flex-1 min-w-[220px] rounded-md border border-line bg-surface px-2.5 py-1.5 text-sm text-ink placeholder:text-ink-4 focus:outline-none focus:border-accent font-[family-name:var(--font-mono)]"
+          />
+          <button onClick={saveGemini} disabled={savingGemini || !geminiKey.trim()} className="rounded-md bg-accent text-on-accent text-sm px-3 py-1.5 disabled:opacity-50 inline-flex items-center gap-1.5">
+            {savingGemini && <Loader2 className="w-3.5 h-3.5 animate-spin" />} Guardar
+          </button>
+        </div>
+        {geminiMsg && <p className={`mt-2 text-xs ${geminiMsg.kind === 'ok' ? 'text-ok' : 'text-danger'}`}>{geminiMsg.text}</p>}
+      </div>
     </div>
   );
 }

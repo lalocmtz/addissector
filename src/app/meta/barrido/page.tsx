@@ -14,11 +14,16 @@
 // punto de vista del usuario — abrir la pestaña y dejarla corriendo.
 //
 // Al terminar cada anuncio encadena solo: fusión (video + números) y Cerebro.
+//
+// Motor rápido (Gemini, servidor): cuando el usuario guardó una clave de Gemini
+// en la tarjeta de conexión, cada anuncio se manda a POST /api/meta/analyze-fast
+// y TODO (descarga, análisis, guardado, Cerebro) pasa en el servidor en ~1 min.
+// El pipeline del navegador queda como respaldo cuando no hay clave.
 // =============================================================================
 
 import { useState, useCallback, useRef, useEffect } from 'react';
 import Link from 'next/link';
-import { Play, Square, RefreshCw, CheckCircle2, AlertTriangle, Brain, ArrowLeft, Loader2 } from 'lucide-react';
+import { Play, Square, RefreshCw, CheckCircle2, AlertTriangle, Brain, ArrowLeft, Loader2, Sparkles, Monitor } from 'lucide-react';
 import AppHeader from '@/components/AppHeader';
 import { MetaTokenCard, MetaTop30 } from '@/components/MetaConnection';
 import { useMe } from '@/lib/use-me';
@@ -45,6 +50,10 @@ const esperar = (ms: number) => new Promise((r) => setTimeout(r, ms));
 /** Un anuncio que por su naturaleza no tiene creativo que analizar (catálogo /
  *  Advantage+). No es un fallo: ya quedó marcado en la cola, no se reintenta. */
 class NoAplica extends Error {}
+
+/** Fallo que el servidor YA dejó escrito en la cola (motor rápido): el loop no
+ *  debe volver a marcarlo, o contaría dos intentos por un solo error. */
+class YaMarcado extends Error {}
 
 /**
  * "Failed to fetch" es el mensaje que da el navegador cuando la conexion se
@@ -101,6 +110,9 @@ export default function BarridoPage() {
   const [topRefresh, setTopRefresh] = useState(0);
   const [log, setLog] = useState<LogLine[]>([]);
   const detener = useRef(false);
+  // null = todavía no se consultó; true = hay clave de Gemini (motor servidor).
+  const [motorGemini, setMotorGemini] = useState<boolean | null>(null);
+  const motorRef = useRef(false);
 
   const apunta = useCallback((kind: LogKind, msg: string) => {
     const t = new Date().toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -116,6 +128,21 @@ export default function BarridoPage() {
   }, [activeBrandId]);
 
   useEffect(() => { cargarResumen(); }, [cargarResumen]);
+
+  // ¿Con qué motor corre el barrido? Depende de si hay clave de Gemini guardada.
+  const cargarMotor = useCallback(async () => {
+    if (!activeBrandId) return;
+    try {
+      const r = await fetch(`/api/meta/account?brand=${activeBrandId}`);
+      if (!r.ok) return;
+      const j = (await r.json()) as { gemini?: { has_key?: boolean } | null };
+      const has = Boolean(j.gemini?.has_key);
+      motorRef.current = has;
+      setMotorGemini(has);
+    } catch { /* silencioso: se queda el motor del navegador */ }
+  }, [activeBrandId]);
+
+  useEffect(() => { void Promise.resolve().then(cargarMotor); }, [cargarMotor]);
 
   // -------------------------------------------------------------------------
   // Paso 1 — traer números y descubrir creativos nuevos
@@ -338,13 +365,54 @@ export default function BarridoPage() {
   }, [activeBrandId, apunta]);
 
   // -------------------------------------------------------------------------
+  // Paso 2b — motor rápido: todo pasa en el servidor con Gemini
+  // -------------------------------------------------------------------------
+  const analizarRapido = useCallback(async (item: QueueItem): Promise<string> => {
+    let r: Response;
+    try {
+      r = await pedir('/api/meta/analyze-fast', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: item.id }),
+      }, 'Análisis rápido (Gemini)', { intentos: 2, msLimite: 6 * 60000 });
+    } catch (e) {
+      // El servidor ya dejó el error en la cola (queue_status/attempts).
+      throw new YaMarcado(e instanceof Error ? e.message : 'Análisis rápido: falló');
+    }
+    const j = (await r.json()) as {
+      ok?: boolean; omitido?: boolean; error?: string;
+      creative_id?: string | null; hook?: string; headline?: string; seconds?: number;
+    };
+    if (j.omitido) throw new NoAplica(j.error ?? 'Anuncio de catálogo: no hay un creativo que analizar');
+    if (!j.ok) throw new YaMarcado(j.error ?? 'Análisis rápido: falló');
+
+    // La fusión (video + números) sigue siendo best-effort, como en el motor lento.
+    try {
+      await fetch('/api/fusion', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ brandId: activeBrandId, adName: item.name }),
+      });
+    } catch { /* la fusión es best-effort */ }
+
+    const corto = (t: string | undefined, n: number) => {
+      const v = (t ?? '').replace(/\s+/g, ' ').trim();
+      return v.length > n ? `${v.slice(0, n - 1)}…` : v;
+    };
+    return `hook: "${corto(j.hook, 80)}" · headline: "${corto(j.headline, 80)}" · ${j.seconds ?? 0} s`;
+  }, [activeBrandId]);
+
+  // -------------------------------------------------------------------------
   // Paso 3 — el loop
   // -------------------------------------------------------------------------
   const barrer = useCallback(async () => {
     if (!activeBrandId) return;
     detener.current = false;
     setCorriendo(true);
-    apunta('info', 'Barrido iniciado. Deja esta pestaña abierta.');
+    await cargarMotor();
+    const rapido = motorRef.current;
+    apunta('info', rapido
+      ? 'Barrido iniciado con el motor rápido (Gemini en el servidor). Deja esta pestaña abierta.'
+      : 'Barrido iniciado con el motor del navegador. Deja esta pestaña abierta.');
 
     // Un anuncio nunca debe colgar el barrido: si un MP4 grande atora la
     // extraccion de frames, se corta, se marca con error y se sigue.
@@ -379,18 +447,28 @@ export default function BarridoPage() {
             // 150 s de descarga + 120 s de transcripción + 300 s de análisis.
             // Ese techo era el que mataba TODOS los videos — por eso solo
             // terminaban las imágenes. Las imágenes sí caben de sobra en 5.
-            const techo = item.asset_kind === 'video' ? 12 * 60000 : 5 * 60000;
-            await conLimiteDeTiempo(analizarUno(item), techo, item.name);
-            hechos++;
-            apunta('ok', item.name);
+            if (rapido) {
+              // Motor rápido: el servidor tiene 5 min; el cliente espera hasta
+              // 6 (+1 reintento) y el techo total cubre ambos intentos.
+              const detalle = await conLimiteDeTiempo(analizarRapido(item), 13 * 60000, item.name);
+              hechos++;
+              apunta('ok', `✓ ${item.name} — ${detalle}`);
+            } else {
+              const techo = item.asset_kind === 'video' ? 12 * 60000 : 5 * 60000;
+              await conLimiteDeTiempo(analizarUno(item), techo, item.name);
+              hechos++;
+              apunta('ok', item.name);
+            }
           } catch (e) {
             const err = e as Error & { upgrade?: boolean };
             if (err instanceof NoAplica) { apunta('info', `${item.name} — ${err.message}`); return; }
             apunta('err', `${item.name} — ${err.message}`);
-            await fetch('/api/meta/queue', {
-              method: 'POST', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ id: item.id, status: 'error', error: err.message.slice(0, 300) }),
-            });
+            if (!(err instanceof YaMarcado)) {
+              await fetch('/api/meta/queue', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: item.id, status: 'error', error: err.message.slice(0, 300) }),
+              });
+            }
             if (err.upgrade) {
               apunta('err', 'Límite del plan alcanzado. El barrido se detiene aquí.');
               detener.current = true;
@@ -406,7 +484,7 @@ export default function BarridoPage() {
     setTopRefresh((n) => n + 1);
     setActual(null);
     setPaso('');
-  }, [activeBrandId, analizarUno, apunta, cargarResumen, refresh]);
+  }, [activeBrandId, analizarUno, analizarRapido, apunta, cargarMotor, cargarResumen, refresh]);
 
   const pct = resumen && resumen.total > 0
     ? Math.round(((resumen.listo + resumen.omitido) / resumen.total) * 100) : 0;
@@ -419,14 +497,25 @@ export default function BarridoPage() {
           <ArrowLeft className="h-4 w-4" /> Volver a Meta
         </Link>
 
-        <h1 className="mt-4 text-2xl font-semibold text-ink">Barrido automático</h1>
+        <div className="mt-4 flex items-center gap-3 flex-wrap">
+          <h1 className="text-2xl font-semibold text-ink">Barrido automático</h1>
+          {motorGemini !== null && (
+            <span
+              title={motorGemini ? 'Análisis en el servidor con Gemini: ~1 min por video.' : 'Sin clave de Gemini: el análisis corre en este navegador (lento). Guarda una clave abajo.'}
+              className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium ${motorGemini ? 'bg-ok-soft text-ok' : 'bg-surface-2 text-ink-3'}`}
+            >
+              {motorGemini ? <Sparkles className="h-3 w-3" /> : <Monitor className="h-3 w-3" />}
+              {motorGemini ? 'Motor: Gemini (servidor)' : 'Motor: navegador'}
+            </span>
+          )}
+        </div>
         <p className="mt-1 text-sm text-ink-3">
           Trae de Meta los 30 anuncios con más gasto de los últimos 30 días, los analiza uno por uno
           y alimenta el Cerebro solo. Deja esta pestaña abierta mientras corre.
         </p>
 
         <div className="mt-6 space-y-4">
-          <MetaTokenCard brandId={activeBrandId} />
+          <MetaTokenCard brandId={activeBrandId} onGeminiChange={(has) => { motorRef.current = has; setMotorGemini(has); }} />
           <MetaTop30 brandId={activeBrandId} currency={activeBrand?.economics?.currency ?? 'MXN'} refreshKey={topRefresh} />
         </div>
 
