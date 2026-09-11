@@ -18,6 +18,8 @@ export const maxDuration = 120;
 
 /** Tope del contexto extra que manda el Canvas (POST.extra). */
 const MAX_EXTRA = 12_000;
+/** Tope de imágenes del Canvas que se mandan a mirar. */
+const MAX_IMAGES = 6;
 
 export async function GET(request: NextRequest) {
   const user = await getSessionUser();
@@ -52,10 +54,14 @@ export async function POST(request: NextRequest) {
 
   if (!anthropicApiKey()) return NextResponse.json({ error: 'Anthropic API key is not configured' }, { status: 500 });
 
-  const { brandId, message, extra } = (await request.json()) as { brandId: string; message: string; extra?: string };
+  const { brandId, message, extra, images } = (await request.json()) as { brandId: string; message: string; extra?: string; images?: string[] };
   if (!brandId || !message?.trim()) return NextResponse.json({ error: 'Faltan datos' }, { status: 400 });
   // Contexto opcional del Canvas (lo que el usuario está planeando ahora), acotado.
   const canvasExtra = typeof extra === 'string' && extra.trim() ? extra.trim().slice(0, MAX_EXTRA) : '';
+  // Referencias visuales del Canvas: Claude las mira junto con la pregunta.
+  const canvasImages = (Array.isArray(images) ? images : [])
+    .filter((u): u is string => typeof u === 'string' && /^https?:\/\//i.test(u))
+    .slice(0, MAX_IMAGES);
 
   const sb = getSupabase();
 
@@ -78,13 +84,18 @@ Reglas:
 - Sé directo y accionable: qué está funcionando, qué cambiar, qué probar. Nada de relleno.
 - Si detectas un patrón nuevo digno de recordarse, termina con una línea "💡 Aprendizaje sugerido: ..." (una sola frase).
 - Responde siempre en español.
+- Si te adjuntan imágenes, son referencias visuales que el usuario pegó en su canvas: descríbelas en términos de creativo (formato, jerarquía, hook visual, oferta) y úsalas para proponer.
 
 ${context}${canvasExtra ? `\n\n## CONTEXTO DEL CANVAS (lo que el usuario está planeando ahora)\n${canvasExtra}` : ''}`;
 
   const client = anthropic();
+  const userContent: Anthropic.ContentBlockParam[] = [
+    ...canvasImages.map((url): Anthropic.ContentBlockParam => ({ type: 'image', source: { type: 'url', url } })),
+    { type: 'text', text: message.trim() },
+  ];
   const messages: Anthropic.MessageParam[] = [
     ...recent.map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content })),
-    { role: 'user' as const, content: message.trim() },
+    { role: 'user' as const, content: canvasImages.length > 0 ? userContent : message.trim() },
   ];
 
   try {

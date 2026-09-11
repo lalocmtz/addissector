@@ -3,7 +3,7 @@
 // El tablero se guarda entero en canvas_board.data = { items, groups }.
 // =============================================================================
 
-export type CanvasKind = 'note' | 'concept' | 'hook' | 'link' | 'ai';
+export type CanvasKind = 'note' | 'concept' | 'hook' | 'link' | 'ai' | 'image' | 'text';
 
 export interface CanvasItem {
   id: string;
@@ -17,6 +17,10 @@ export interface CanvasItem {
   title?: string;
   text?: string;
   url?: string;
+  /** Ruta en el bucket (solo imágenes subidas; sirve para borrarlas). */
+  path?: string;
+  /** Proporción ancho/alto original (solo imágenes): el resize la respeta. */
+  ratio?: number;
   meta?: Record<string, string>;
   createdAt: string;
 }
@@ -51,7 +55,24 @@ export const DEFAULT_SIZE: Record<CanvasKind, { w: number; h: number }> = {
   hook: { w: 260, h: 120 },
   link: { w: 240, h: 110 },
   ai: { w: 320, h: 220 },
+  image: { w: 360, h: 360 },
+  text: { w: 280, h: 64 },
 };
+
+/** Capas de dibujo: las imágenes van al fondo para poder escribir encima. */
+const LAYER: Record<CanvasKind, number> = { image: 0, note: 1, concept: 1, hook: 1, link: 1, ai: 1, text: 2 };
+
+/** Orden de pintado: imágenes atrás, tarjetas en medio, textos sueltos al frente. */
+export function sortForRender(items: CanvasItem[]): CanvasItem[] {
+  return [...items].sort((a, b) => (LAYER[a.kind] ?? 1) - (LAYER[b.kind] ?? 1));
+}
+
+/** Caja que respeta la proporción original y cabe en `max` px por lado. */
+export function fitBox(w: number, h: number, max = 380): { w: number; h: number } {
+  if (!w || !h) return { w: max, h: max };
+  const scale = Math.min(max / w, max / h, 1.5);
+  return { w: Math.max(80, Math.round(w * scale)), h: Math.max(80, Math.round(h * scale)) };
+}
 
 export function uid(): string {
   return typeof crypto !== 'undefined' && 'randomUUID' in crypto
@@ -77,7 +98,7 @@ export function groupAtCenter(item: CanvasItem, groups: CanvasGroup[]): string |
   return null;
 }
 
-type Labels = { kind: Record<CanvasKind, string>; field: Record<ConceptField, string>; loose: string; group: string };
+type Labels = { kind: Record<CanvasKind, string>; field: Record<ConceptField, string>; loose: string; group: string; imageFallback: string };
 
 /** Texto compacto del tablero para el chat (grupos con «Enviar al cerebro» + sueltas). */
 export function dumpForBrain(data: CanvasData, labels: Labels, max = 12_000): string {
@@ -95,6 +116,10 @@ export function dumpForBrain(data: CanvasData, labels: Labels, max = 12_000): st
         return `${k} "${text}"${it.meta?.type ? ` (${it.meta.type})` : ''}`;
       case 'link':
         return `${k} ${title || it.url || ''}${it.url ? ` — ${it.url}` : ''}`;
+      case 'image':
+        return `${k} ${title || labels.imageFallback}${text ? ` — ${text}` : ''}`;
+      case 'text':
+        return `${k} ${text}`;
       case 'ai':
         return `${k} ${text.slice(0, 600)}`;
       default:
@@ -112,4 +137,19 @@ export function dumpForBrain(data: CanvasData, labels: Labels, max = 12_000): st
   const loose = data.items.filter((it) => !it.groupId || !groupIds.has(it.groupId));
   if (loose.length > 0) parts.push(`${labels.loose}:\n${loose.map((it) => `- ${line(it)}`).join('\n')}`);
   return parts.join('\n\n').slice(0, max);
+}
+
+/** URLs de las imágenes que el chat puede mirar (mismas reglas que dumpForBrain). */
+export function imagesForBrain(data: CanvasData, max = 6): string[] {
+  const groupIds = new Set(data.groups.map((g) => g.id));
+  const offGroups = new Set(data.groups.filter((g) => !groupSendsToBrain(g)).map((g) => g.id));
+  const urls: string[] = [];
+  for (const it of data.items) {
+    if (it.kind !== 'image') continue;
+    if (it.groupId && groupIds.has(it.groupId) && offGroups.has(it.groupId)) continue;
+    const u = (it.url ?? '').trim();
+    if (/^https?:\/\//i.test(u) && !urls.includes(u)) urls.push(u);
+    if (urls.length >= max) break;
+  }
+  return urls;
 }

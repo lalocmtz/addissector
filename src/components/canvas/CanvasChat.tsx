@@ -14,10 +14,11 @@ interface Msg { id: string; role: 'user' | 'assistant'; content: string }
 
 const QUICK = ['hooks', 'angle', 'concepts', 'summary'] as const;
 
-export default function CanvasChat({ brandId, t, buildExtra, onPin, open, onToggle }: {
+export default function CanvasChat({ brandId, t, buildExtra, buildImages, onPin, open, onToggle }: {
   brandId: string;
   t: T;
   buildExtra: () => string;
+  buildImages?: () => string[];
   onPin: (text: string) => void;
   open: boolean;
   onToggle: () => void;
@@ -51,7 +52,7 @@ export default function CanvasChat({ brandId, t, buildExtra, onPin, open, onTogg
     try {
       const res = await fetch('/api/chat', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ brandId, message, extra: buildExtra() }),
+        body: JSON.stringify({ brandId, message, extra: buildExtra(), images: buildImages?.() ?? [] }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? 'Failed');
