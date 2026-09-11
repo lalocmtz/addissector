@@ -15,7 +15,7 @@ import { Plus, Loader2, X, Copy, Check, Trash2, BookOpen, Download, FileText, Ch
 import AppHeader from '@/components/AppHeader';
 import { useMe } from '@/lib/use-me';
 import { useT, useFormatters } from '@/lib/i18n';
-import { BATCH_VARIABLES, AWARENESS_STAGES, PIECE_FORMATS, VERDICT_ACTION, type Verdict } from '@/lib/batch';
+import { BATCH_VARIABLES, AWARENESS_STAGES, PIECE_FORMATS, VERDICT_ACTION, FUNNELS, BASE_FORMATS, baseFormat, isVideoFormat, brandCode, prohibitionsFor, mentionsPriceOrGuarantee, mintBatchName, type Verdict } from '@/lib/batch';
 import type { Workshop, BatchView, PieceView, BatchStage } from '@/lib/batch-server';
 
 interface Member { id: string; name: string; role: string; is_ai: boolean }
@@ -159,7 +159,7 @@ export default function WorkshopPage() {
       </main>
 
       {creating && data && brandId && (
-        <NewBatchModal data={data} brandId={brandId} t={t} prefill={prefill} onClose={() => setCreating(false)} onDone={() => { setCreating(false); void load(); }} />
+        <NewBatchModal data={data} brandId={brandId} brandName={activeBrand?.name ?? ''} t={t} prefill={prefill} onClose={() => setCreating(false)} onDone={() => { setCreating(false); void load(); }} />
       )}
     </div>
   );
@@ -376,6 +376,8 @@ function BatchCard({ b, data, t, fmt, onChanged, brandId }: {
         <button onClick={() => void copyBrief()} disabled={busy === 'brief'} className={btn}>
           {copied === 'brief' ? <Check className="w-3.5 h-3.5 text-ok" /> : <Copy className="w-3.5 h-3.5" />}{t('ws.brief.copy')}
         </button>
+        <a href={`/api/workshop/brief/editor?batch=${b.id}`} target="_blank" rel="noreferrer" className={btn} title={t('ws.brief.editor.help')}><Download className="w-3.5 h-3.5" />{t('ws.brief.editor')}</a>
+        <a href={`/api/workshop/brief/editor?batch=${b.id}&format=json`} target="_blank" rel="noreferrer" className={btn}>JSON</a>
         {editable && (
           <button onClick={() => { setAdding((a) => !a); setClosing(false); }} className={btn}><Plus className="w-3.5 h-3.5" />{t('ws.piece.add')}</button>
         )}
@@ -490,9 +492,6 @@ function CloseForm({ b, brandId, t, onDone, onCancel }: { b: BatchView; brandId:
 }
 
 // ---------------------------------------------------------------------------
-interface Draft { format: string; hook: string }
-const emptyRows = (): Draft[] => Array.from({ length: 4 }, () => ({ format: 'static', hook: '' }));
-
 function matchAngle(angles: Angle[], text: string): string {
   const q = text.trim().toLowerCase();
   if (!q) return angles[0]?.id ?? '';
@@ -500,33 +499,63 @@ function matchAngle(angles: Angle[], text: string): string {
   return hit?.id ?? angles[0]?.id ?? '';
 }
 
-function NewBatchModal({ data, brandId, t, prefill, onClose, onDone }: {
-  data: Data; brandId: string; t: T; prefill?: Prefill | null; onClose: () => void; onDone: () => void;
+interface Draft { formatCode: string; hook: string; open: string; body: string; close: string; script: string; visual: string; failure: string; more: boolean }
+const emptyRow = (formatCode: string): Draft => ({ formatCode, hook: '', open: '', body: '', close: '', script: '', visual: '', failure: '', more: false });
+const emptyRows = (formatCode: string): Draft[] => Array.from({ length: 4 }, () => emptyRow(formatCode));
+
+/** Canvas sends a coarse format (static/video/ugc…) or a base code; both map to a base code. */
+function toBaseCode(raw: string): string {
+  const v = raw.trim().toUpperCase();
+  if (baseFormat(v)) return v;
+  const map: Record<string, string> = { STATIC: 'F13', ESTATICO: 'F13', VIDEO: 'MUTE', UGC: 'UGC', ANIMATION: 'MECH', ANIMACION: 'MECH', CAROUSEL: 'F13', CARRUSEL: 'F13' };
+  return map[v.normalize('NFD').replace(/[̀-ͯ]/g, '')] ?? 'F13';
+}
+
+function NewBatchModal({ data, brandId, brandName, t, prefill, onClose, onDone }: {
+  data: Data; brandId: string; brandName: string; t: T; prefill?: Prefill | null; onClose: () => void; onDone: () => void;
 }) {
+  const brand = brandCode(brandName);
+  const nextNumber = useMemo(() => Math.max(0, ...[...data.live, ...data.bench, ...data.closed].map((b) => Number(b.number) || 0)) + 1, [data]);
+
   const [angleId, setAngleId] = useState(() => matchAngle(data.angles, prefill?.angle ?? ''));
+  const [concept, setConcept] = useState('');
+  const [funnel, setFunnel] = useState('');
+  const [awareness, setAwareness] = useState('');
+  const [baseCode, setBaseCode] = useState(() => toBaseCode(prefill?.format ?? ''));
+  const [hypothesis, setHypothesis] = useState('');
+  const [win, setWin] = useState('');
   const [variable, setVariable] = useState<string>('hook');
+  const [tag, setTag] = useState(() => `T${String(nextNumber).padStart(2, '0')}`);
   const [name, setName] = useState(prefill?.name ?? '');
   const [nameTouched, setNameTouched] = useState(Boolean(prefill?.name));
-  const [awareness, setAwareness] = useState('');
   const [rows, setRows] = useState<Draft[]>(() => {
-    const rs = emptyRows();
-    if (prefill) {
-      const f = prefill.format.trim().toLowerCase();
-      const format = PIECE_FORMATS.find((pf) => pf === f || t(`ws.format.${pf}`).toLowerCase() === f) ?? 'static';
-      rs[0] = { format, hook: prefill.hook };
-    }
+    const code = toBaseCode(prefill?.format ?? '');
+    const rs = emptyRows(code);
+    if (prefill?.hook) rs[0] = { ...rs[0], hook: prefill.hook };
     return rs;
   });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [minted, setMinted] = useState<string[] | null>(null);
+  const [minted, setMinted] = useState<{ id: string; codes: string[] } | null>(null);
   const { copied, copy } = useCopied();
 
   const angle = data.angles.find((a) => a.id === angleId) ?? null;
-  const suggested = angle ? `${angle.name} · ${t(`ws.var.${variable}`)}` : '';
-  const finalName = nameTouched ? name : suggested;
   const finalAwareness = awareness || angle?.awareness_stage || '';
+  const formatLocked = variable !== 'format';
+  const autoName = mintBatchName({ brand, angleCode: angle?.code ?? angle?.name ?? null, concept: concept || 'CONCEPTO', format: baseCode, funnel: funnel || 'XXX', batchSlug: tag });
+  const finalName = nameTouched ? name : autoName;
   const validRows = rows.filter((r) => r.hook.trim());
+  const prohibitions = prohibitionsFor(brand, funnel || null);
+
+  // When the format is locked, every piece inherits the base format.
+  const codeOf = (r: Draft) => (formatLocked ? baseCode : r.formatCode);
+
+  const problems: string[] = [];
+  if (!concept.trim()) problems.push(t('ws.new.rule.concept'));
+  if (!funnel) problems.push(t('ws.new.rule.funnel'));
+  if (validRows.length < 4 || validRows.length > 8) problems.push(t('ws.new.rule.pieces', { n: validRows.length }));
+  if (funnel !== 'BOF' && validRows.some((r) => mentionsPriceOrGuarantee(r.hook))) problems.push(t('ws.new.rule.price'));
+  const canSubmit = Boolean(angleId) && finalName.trim().length > 0 && problems.length === 0;
 
   const setRow = (i: number, patch: Partial<Draft>) => setRows((rs) => rs.map((r, j) => (j === i ? { ...r, ...patch } : r)));
 
@@ -535,29 +564,41 @@ function NewBatchModal({ data, brandId, t, prefill, onClose, onDone }: {
     try {
       const res = await fetch('/api/workshop', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ brandId, angle_id: angleId, name: finalName.trim(), variable, awareness: finalAwareness || null }),
+        body: JSON.stringify({
+          brandId, angle_id: angleId, name: finalName.trim(), variable, awareness: finalAwareness || null,
+          concept: concept.trim(), funnel, base_format: baseCode, hypothesis: hypothesis.trim(), win_condition: win.trim(), brand_code: brand,
+        }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? 'Failed');
       const batchId = json.batch.id as string;
       const codes: string[] = [];
       for (const r of validRows) {
+        const video = isVideoFormat(codeOf(r));
         const pr = await fetch('/api/workshop/piece', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ batchId, hook: r.hook.trim(), format: r.format }),
+          body: JSON.stringify({
+            batchId, hook: r.hook.trim(), format_code: codeOf(r),
+            beats: video ? { open: r.open, body: r.body, close: r.close } : null,
+            script: video ? r.script : '', visual_notes: r.visual, failure_mode: r.failure,
+          }),
         });
         const pj = await pr.json();
         if (!pr.ok) throw new Error(pj.error ?? 'Failed');
         codes.push(pj.piece.ad_name as string);
       }
-      setMinted(codes);
+      setMinted({ id: batchId, codes });
     } catch (e) { setError(e instanceof Error ? e.message : 'Failed'); }
     finally { setBusy(false); }
   };
 
+  const chip = 'inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-[family-name:var(--font-mono)]';
+  const statics = BASE_FORMATS.filter((f) => f.kind === 'static');
+  const videos = BASE_FORMATS.filter((f) => f.kind !== 'static');
+
   return (
     <div className="fixed inset-0 z-50 bg-overlay/60 flex items-start justify-center p-4 overflow-y-auto" onClick={minted ? undefined : onClose}>
-      <div className="w-full max-w-2xl my-8 rounded-xl border border-line bg-surface p-5" onClick={(e) => e.stopPropagation()}>
+      <div className="w-full max-w-3xl my-8 rounded-xl border border-line bg-surface p-5" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-1">
           <h3 className="text-base font-semibold text-ink">{minted ? t('ws.new.done.title') : t('ws.batch.new')}</h3>
           <button onClick={minted ? onDone : onClose} className="text-ink-3 hover:text-ink"><X className="w-4 h-4" /></button>
@@ -566,13 +607,15 @@ function NewBatchModal({ data, brandId, t, prefill, onClose, onDone }: {
         {minted ? (
           <div className="mt-3 space-y-3">
             <p className="text-sm text-ink-2">{t('ws.new.done.help')}</p>
-            <pre className="rounded-lg border border-line bg-surface-2 p-3 text-[11px] font-[family-name:var(--font-mono)] text-ink-2 overflow-x-auto whitespace-pre">{minted.join('\n') || t('ws.piece.empty')}</pre>
+            <pre className="rounded-lg border border-line bg-surface-2 p-3 text-[11px] font-[family-name:var(--font-mono)] text-ink-2 overflow-x-auto whitespace-pre">{minted.codes.join('\n') || t('ws.piece.empty')}</pre>
             <div className="flex items-center gap-2 flex-wrap">
-              {minted.length > 0 && (
-                <button onClick={() => void copy('all', minted.join('\n'))} className={btn}>
+              {minted.codes.length > 0 && (
+                <button onClick={() => void copy('all', minted.codes.join('\n'))} className={btn}>
                   {copied === 'all' ? <Check className="w-3.5 h-3.5 text-ok" /> : <Copy className="w-3.5 h-3.5" />}{t('ws.new.done.copyAll')}
                 </button>
               )}
+              <a href={`/api/workshop/brief/editor?batch=${minted.id}`} target="_blank" rel="noreferrer" className={btn}><Download className="w-3.5 h-3.5" />{t('ws.brief.editor')}</a>
+              <a href={`/api/workshop/brief/editor?batch=${minted.id}&format=json`} target="_blank" rel="noreferrer" className={btn}>JSON</a>
               <button onClick={onDone} className={`${btnPrimary} ml-auto`}>{t('ws.new.done.ok')}</button>
             </div>
           </div>
@@ -580,68 +623,161 @@ function NewBatchModal({ data, brandId, t, prefill, onClose, onDone }: {
           <div className="mt-3 space-y-4">
             <p className="text-xs text-ink-3">{t('ws.new.intro')}</p>
 
-            <div>
-              <label className={label}>{t('ws.new.angle')}</label>
-              <select value={angleId} onChange={(e) => setAngleId(e.target.value)} className={input}>
-                {data.angles.length === 0 && <option value="">—</option>}
-                {data.angles.map((a) => <option key={a.id} value={a.id}>{a.code ? `${a.code} · ` : ''}{a.name}</option>)}
-              </select>
-              <p className={hint}>
-                {t('ws.new.angle.help')}
-                {data.angles.length === 0 && <> <a href="/cerebro" className="text-accent underline inline-flex items-center gap-0.5">{t('ws.new.angle.link')}<ExternalLink className="w-3 h-3" /></a></>}
-                {angle?.personas?.name && <> · {t('ws.batch.persona')}: {angle.personas.name}</>}
-              </p>
+            <div className="grid sm:grid-cols-2 gap-3">
+              <div>
+                <label className={label}>{t('ws.new.brand')}</label>
+                <div className={`${input} flex items-center gap-2 bg-surface-2`}>
+                  <span className={`${chip} bg-accent-soft text-accent`}>{brand}</span>
+                  <span className="truncate">{brandName || '—'}</span>
+                </div>
+                <p className={hint}>{t('ws.new.brand.help')}</p>
+              </div>
+              <div>
+                <label className={label}>{t('ws.new.angle')}</label>
+                <select value={angleId} onChange={(e) => setAngleId(e.target.value)} className={input}>
+                  {data.angles.length === 0 && <option value="">—</option>}
+                  {data.angles.map((a) => <option key={a.id} value={a.id}>{a.code ? `${a.code} · ` : ''}{a.name}</option>)}
+                </select>
+                <p className={hint}>
+                  {t('ws.new.angle.help')}
+                  {data.angles.length === 0 && <> <a href="/cerebro" className="text-accent underline inline-flex items-center gap-0.5">{t('ws.new.angle.link')}<ExternalLink className="w-3 h-3" /></a></>}
+                  {angle?.personas?.name && <> · {t('ws.batch.persona')}: {angle.personas.name}</>}
+                </p>
+              </div>
             </div>
 
             <div>
-              <label className={label}>{t('ws.new.variable')}</label>
-              <select value={variable} onChange={(e) => setVariable(e.target.value)} className={input}>
-                {BATCH_VARIABLES.map((v) => <option key={v} value={v}>{t(`ws.var.${v}.long`)}</option>)}
-              </select>
-              <p className={hint}>{t('ws.new.variable.help')}</p>
+              <label className={label}>{t('ws.new.concept')} *</label>
+              <input value={concept} onChange={(e) => setConcept(e.target.value)} className={input} placeholder={t('ws.new.concept.placeholder')} />
+              <p className={hint}>{t('ws.new.concept.help')}</p>
+            </div>
+
+            <div className="grid sm:grid-cols-3 gap-3">
+              <div>
+                <label className={label}>{t('ws.new.funnel')} *</label>
+                <div className="flex gap-1">
+                  {FUNNELS.map((f) => (
+                    <button key={f} type="button" onClick={() => setFunnel(f)}
+                      className={`flex-1 px-2 py-1.5 rounded-md border text-sm ${funnel === f ? 'border-accent bg-accent-soft text-accent font-medium' : 'border-line text-ink-2 hover:text-ink'}`}>{f}</button>
+                  ))}
+                </div>
+                <p className={hint}>{t('ws.new.funnel.help')}</p>
+              </div>
+              <div>
+                <label className={label}>{t('ws.new.awareness')}</label>
+                <select value={finalAwareness} onChange={(e) => setAwareness(e.target.value)} className={input}>
+                  <option value="">—</option>
+                  {AWARENESS_STAGES.map((a) => <option key={a} value={a}>{t(`ws.aware.${a}`)}</option>)}
+                </select>
+                <p className={hint}>{t('ws.new.awareness.help')}</p>
+              </div>
+              <div>
+                <label className={label}>{t('ws.new.baseFormat')}</label>
+                <select value={baseCode} onChange={(e) => setBaseCode(e.target.value)} className={input}>
+                  <optgroup label={t('ws.new.baseFormat.static')}>
+                    {statics.map((f) => <option key={f.code} value={f.code}>{f.code} · {f.es}</option>)}
+                  </optgroup>
+                  <optgroup label={t('ws.new.baseFormat.video')}>
+                    {videos.map((f) => <option key={f.code} value={f.code}>{f.code} · {f.es}</option>)}
+                  </optgroup>
+                </select>
+                <p className={hint}>{t('ws.new.baseFormat.help')}</p>
+              </div>
+            </div>
+
+            <div className="grid sm:grid-cols-2 gap-3">
+              <div>
+                <label className={label}>{t('ws.new.hypothesis')}</label>
+                <textarea value={hypothesis} onChange={(e) => setHypothesis(e.target.value)} rows={2} className={input} placeholder={t('ws.new.hypothesis.placeholder')} />
+              </div>
+              <div>
+                <label className={label}>{t('ws.new.win')}</label>
+                <textarea value={win} onChange={(e) => setWin(e.target.value)} rows={2} className={input} placeholder={t('ws.new.win.placeholder')} />
+              </div>
+            </div>
+
+            <div className="grid sm:grid-cols-2 gap-3">
+              <div>
+                <label className={label}>{t('ws.new.variable')}</label>
+                <select value={variable} onChange={(e) => setVariable(e.target.value)} className={input}>
+                  {BATCH_VARIABLES.map((v) => <option key={v} value={v}>{t(`ws.var.${v}.long`)}</option>)}
+                </select>
+                <p className={hint}>{variable === 'hook' ? t('ws.new.variable.hookLock') : t('ws.new.variable.help')}</p>
+              </div>
+              <div>
+                <label className={label}>{t('ws.new.slug')}</label>
+                <input value={tag} onChange={(e) => setTag(e.target.value)} className={input} maxLength={12} />
+                <p className={hint}>{t('ws.new.slug.help')}</p>
+              </div>
             </div>
 
             <div>
               <label className={label}>{t('ws.new.name')}</label>
-              <input value={finalName} onChange={(e) => { setNameTouched(true); setName(e.target.value); }} className={input} placeholder={t('ws.new.name.placeholder')} />
-              <p className={hint}>{t('ws.new.name.help')}</p>
+              <input value={finalName} onChange={(e) => { setNameTouched(true); setName(e.target.value); }} className={`${input} font-[family-name:var(--font-mono)]`} />
+              <p className={hint}>{t('ws.new.name.auto')}{nameTouched && <> · <button type="button" className="text-accent underline" onClick={() => { setNameTouched(false); setName(''); }}>{t('ws.new.name.reset')}</button></>}</p>
             </div>
 
             <div>
-              <label className={label}>{t('ws.new.awareness')}</label>
-              <select value={finalAwareness} onChange={(e) => setAwareness(e.target.value)} className={input}>
-                <option value="">—</option>
-                {AWARENESS_STAGES.map((a) => <option key={a} value={a}>{t(`ws.aware.${a}`)}</option>)}
-              </select>
-              <p className={hint}>{t('ws.new.awareness.help')}</p>
-            </div>
-
-            <div>
-              <label className={label}>{t('ws.new.pieces')}</label>
+              <div className="flex items-center justify-between gap-2 mb-1">
+                <label className={`${label} mb-0`}>{t('ws.new.pieces')} · {validRows.length}/8</label>
+                <span className="text-[11px] text-ink-4">{formatLocked ? t('ws.new.pieces.inherit') : t('ws.new.pieces.free')}</span>
+              </div>
               <div className="space-y-2">
-                {rows.map((r, i) => (
-                  <div key={i} className="grid grid-cols-[130px_1fr_auto] gap-2 items-center">
-                    <select value={r.format} onChange={(e) => setRow(i, { format: e.target.value })} className={input}>
-                      {PIECE_FORMATS.map((f) => <option key={f} value={f}>{t(`ws.format.${f}`)}</option>)}
-                    </select>
-                    <input value={r.hook} onChange={(e) => setRow(i, { hook: e.target.value })} className={`${input} min-w-0`} placeholder={t('ws.piece.hook.placeholder')} />
-                    <button onClick={() => setRows((rs) => rs.filter((_, j) => j !== i))} disabled={rows.length <= 1} className="p-1.5 rounded text-ink-4 hover:text-danger disabled:opacity-30" title={t('ws.piece.remove')}>
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                ))}
+                {rows.map((r, i) => {
+                  const video = isVideoFormat(codeOf(r));
+                  const bad = funnel !== 'BOF' && mentionsPriceOrGuarantee(r.hook);
+                  return (
+                    <div key={i} className="rounded-lg border border-line p-2 space-y-2">
+                      <div className="grid grid-cols-[150px_1fr_auto_auto] gap-2 items-center">
+                        <select value={codeOf(r)} onChange={(e) => setRow(i, { formatCode: e.target.value })} disabled={formatLocked} className={`${input} disabled:opacity-60`}>
+                          {BASE_FORMATS.map((f) => <option key={f.code} value={f.code}>{f.code} · {f.es}</option>)}
+                        </select>
+                        <input value={r.hook} onChange={(e) => setRow(i, { hook: e.target.value })} className={`${input} min-w-0 ${bad ? 'border-danger' : ''}`} placeholder={t('ws.piece.hook.placeholder')} />
+                        <button type="button" onClick={() => setRow(i, { more: !r.more })} className={`${btn} px-2`}>{r.more ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}{t('ws.new.details')}</button>
+                        <button onClick={() => setRows((rs) => rs.filter((_, j) => j !== i))} disabled={rows.length <= 1} className="p-1.5 rounded text-ink-4 hover:text-danger disabled:opacity-30" title={t('ws.piece.remove')}>
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                      {r.more && (
+                        <div className="grid sm:grid-cols-2 gap-2">
+                          {video && (
+                            <>
+                              <input value={r.open} onChange={(e) => setRow(i, { open: e.target.value })} className={input} placeholder={t('ws.piece.beat.open')} />
+                              <input value={r.body} onChange={(e) => setRow(i, { body: e.target.value })} className={input} placeholder={t('ws.piece.beat.body')} />
+                              <input value={r.close} onChange={(e) => setRow(i, { close: e.target.value })} className={input} placeholder={t('ws.piece.beat.close')} />
+                              <textarea value={r.script} onChange={(e) => setRow(i, { script: e.target.value })} rows={2} className={input} placeholder={t('ws.piece.script')} />
+                            </>
+                          )}
+                          <input value={r.visual} onChange={(e) => setRow(i, { visual: e.target.value })} className={input} placeholder={t('ws.piece.visual')} />
+                          <input value={r.failure} onChange={(e) => setRow(i, { failure: e.target.value })} className={input} placeholder={t('ws.piece.failure')} />
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
               <div className="flex items-center justify-between gap-2 mt-2 flex-wrap">
-                <button onClick={() => setRows((rs) => [...rs, { format: 'static', hook: '' }])} disabled={rows.length >= 8} className={btn}>
+                <button onClick={() => setRows((rs) => [...rs, emptyRow(baseCode)])} disabled={rows.length >= 8} className={btn}>
                   <Plus className="w-3.5 h-3.5" />{t('ws.new.addRow')}
                 </button>
                 <p className="text-[11px] text-ink-4">{t('ws.piece.code.help')}</p>
               </div>
             </div>
 
+            <div className="rounded-lg border border-line bg-surface-2 p-3">
+              <p className="text-[11px] uppercase tracking-wide text-ink-3 mb-1">{t('ws.new.rules.title')}</p>
+              <ul className="text-xs text-ink-2 space-y-0.5">
+                {prohibitions.map((x) => <li key={x}>· {x}</li>)}
+                <li>· {t('ws.new.rule.one')}</li>
+              </ul>
+              {problems.length > 0 && (
+                <ul className="mt-2 text-xs text-danger space-y-0.5">{problems.map((x) => <li key={x}>! {x}</li>)}</ul>
+              )}
+            </div>
+
             {error && <p className="text-xs text-danger">{error}</p>}
 
-            <button onClick={() => void submit()} disabled={busy || !angleId || !finalName.trim()} className={`${btnPrimary} w-full justify-center py-2`}>
+            <button onClick={() => void submit()} disabled={busy || !canSubmit} className={`${btnPrimary} w-full justify-center py-2`}>
               {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : t('ws.new.submit')}
             </button>
           </div>

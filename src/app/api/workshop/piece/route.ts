@@ -12,7 +12,18 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSupabase } from '@/lib/supabase';
 import { getSessionUser } from '@/lib/supabase-server';
 import { PIECE_SELECT } from '@/lib/batch-server';
-import { mintAdName, PIECE_FORMATS, AWARENESS_STAGES, VERDICTS, ARCHIVE_REASONS } from '@/lib/batch';
+import { mintAdName, PIECE_FORMATS, AWARENESS_STAGES, VERDICTS, ARCHIVE_REASONS, baseFormat } from '@/lib/batch';
+
+/** { open, body, close } or null — the beat sheet of a video piece. */
+function readBeats(v: unknown): Record<string, string> | null {
+  if (!v || typeof v !== 'object') return null;
+  const out: Record<string, string> = {};
+  for (const k of ['open', 'body', 'close']) {
+    const x = (v as Record<string, unknown>)[k];
+    if (typeof x === 'string' && x.trim()) out[k] = x.trim();
+  }
+  return Object.keys(out).length ? out : null;
+}
 
 export const runtime = 'nodejs';
 
@@ -38,7 +49,12 @@ export async function POST(request: NextRequest) {
   const hook = typeof body.hook === 'string' ? body.hook.trim() : '';
   if (!hook) return NextResponse.json({ error: 'A piece needs its literal hook' }, { status: 400 });
 
-  const format = String(body.format ?? 'static');
+  // The base format code (F13, UGC, MUTE…) decides the coarse format and is
+  // what goes into the name; a bare coarse format still works for old callers.
+  const fc = typeof body.format_code === 'string' ? body.format_code.trim().toUpperCase() : '';
+  const base = fc ? baseFormat(fc) : null;
+  if (fc && !base) return NextResponse.json({ error: 'Unknown format code' }, { status: 400 });
+  const format = base ? base.kind : String(body.format ?? 'static');
   if (!(PIECE_FORMATS as readonly string[]).includes(format)) {
     return NextResponse.json({ error: 'Unknown format' }, { status: 400 });
   }
@@ -58,7 +74,7 @@ export async function POST(request: NextRequest) {
     angleCode: batch.angles?.code ?? null,
     batchNumber: batch.number,
     awareness,
-    format,
+    format: base?.code ?? format,
     hook,
     version: n + 1,
   });
@@ -66,6 +82,9 @@ export async function POST(request: NextRequest) {
   const { data, error } = await sb.from('experiment_variant').insert({
     user_id: user.id, brand_id: batch.brand_id, experiment_id: batchId,
     ad_name, variant, hook, format, awareness,
+    format_code: base?.code ?? null,
+    beats: readBeats(body.beats),
+    failure_mode: typeof body.failure_mode === 'string' ? body.failure_mode.trim() || null : null,
     hook_id: (body.hook_id as string) ?? null,
     script: typeof body.script === 'string' ? body.script.trim() || null : null,
     visual_notes: typeof body.visual_notes === 'string' ? body.visual_notes.trim() || null : null,
@@ -85,17 +104,24 @@ export async function PATCH(request: NextRequest) {
 
   const sb = getSupabase();
   const { data: current } = await sb.from('experiment_variant')
-    .select('id,experiment_id,ad_name,hook,format,awareness,meta_ad_id')
+    .select('id,experiment_id,ad_name,hook,format,format_code,awareness,meta_ad_id')
     .eq('id', id).eq('user_id', user.id).maybeSingle();
   if (!current) return NextResponse.json({ error: 'Piece not found' }, { status: 404 });
 
   const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
-  for (const k of ['hook', 'script', 'visual_notes', 'owner_id', 'hook_id', 'status'] as const) {
+  for (const k of ['hook', 'script', 'visual_notes', 'failure_mode', 'owner_id', 'hook_id', 'status'] as const) {
     if (body[k] === undefined) continue;
     const v = body[k];
     patch[k] = typeof v === 'string' ? (v.trim() || null) : v;
   }
-  if (body.format !== undefined) {
+  if (body.beats !== undefined) patch.beats = readBeats(body.beats);
+  if (body.format_code !== undefined) {
+    const base = body.format_code ? baseFormat(String(body.format_code).toUpperCase()) : null;
+    if (body.format_code && !base) return NextResponse.json({ error: 'Unknown format code' }, { status: 400 });
+    patch.format_code = base?.code ?? null;
+    if (base) patch.format = base.kind;
+  }
+  if (body.format !== undefined && body.format_code === undefined) {
     if (!(PIECE_FORMATS as readonly string[]).includes(String(body.format))) {
       return NextResponse.json({ error: 'Unknown format' }, { status: 400 });
     }
@@ -123,7 +149,7 @@ export async function PATCH(request: NextRequest) {
 
   // Re-mint only while the piece is still ours to rename. Once Meta has it, the
   // name is the join key for every report that mentions this ad.
-  const touchesName = ['hook', 'format', 'awareness'].some((k) => body[k] !== undefined);
+  const touchesName = ['hook', 'format', 'format_code', 'awareness'].some((k) => body[k] !== undefined);
   if (touchesName && !current.meta_ad_id && current.experiment_id) {
     const batch = await batchOf(sb, current.experiment_id, user.id);
     if (batch) {
@@ -132,7 +158,7 @@ export async function PATCH(request: NextRequest) {
         angleCode: batch.angles?.code ?? null,
         batchNumber: batch.number,
         awareness: (patch.awareness as string) ?? current.awareness,
-        format: (patch.format as string) ?? current.format,
+        format: (patch.format_code as string | null) ?? current.format_code ?? (patch.format as string) ?? current.format,
         hook: (patch.hook as string) ?? current.hook,
         version,
       });

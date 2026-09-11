@@ -23,12 +23,13 @@ export const BATCH_SELECT =
   'planned_for,started_at,closed_at,close_reason,closed_note,learning_id,created_at,updated_at';
 
 export const PIECE_SELECT =
-  'id,experiment_id,brand_id,ad_name,variant,hook,hook_id,format,awareness,script,visual_notes,' +
+  'id,experiment_id,brand_id,ad_name,variant,hook,hook_id,format,format_code,beats,failure_mode,awareness,script,visual_notes,' +
   'status,owner_id,meta_ad_id,matched_at,uploaded_at,verdict,verdict_at,archived_reason,created_at';
 
 export interface PieceRow {
   id: string; experiment_id: string | null; brand_id: string; ad_name: string; variant: string | null;
-  hook: string | null; hook_id: string | null; format: string | null; awareness: string | null;
+  hook: string | null; hook_id: string | null; format: string | null; format_code: string | null;
+  beats: { open?: string; body?: string; close?: string } | null; failure_mode: string | null; awareness: string | null;
   script: string | null; visual_notes: string | null; status: string; owner_id: string | null;
   meta_ad_id: string | null; matched_at: string | null; uploaded_at: string | null;
   verdict: Verdict | null; verdict_at: string | null; archived_reason: string | null; created_at: string;

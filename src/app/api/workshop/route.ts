@@ -10,7 +10,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSupabase } from '@/lib/supabase';
 import { getSessionUser } from '@/lib/supabase-server';
 import { loadWorkshop, BATCH_SELECT } from '@/lib/batch-server';
-import { BATCH_VARIABLES, AWARENESS_STAGES } from '@/lib/batch';
+import { BATCH_VARIABLES, AWARENESS_STAGES, FUNNELS, baseFormat, prohibitionsFor } from '@/lib/batch';
 import { nextExperimentNumber, experimentCode, EXPERIMENT_STATUSES } from '@/lib/experiments';
 
 export const runtime = 'nodejs';
@@ -74,6 +74,23 @@ export async function POST(request: NextRequest) {
   const awarenessIn = String(body.awareness ?? angle.awareness_stage ?? '');
   const awareness = (AWARENESS_STAGES as readonly string[]).includes(awarenessIn) ? awarenessIn : null;
 
+  // The editor brief fields. Optional at the API (Canvas and older callers),
+  // required by the modal; stored together in hypothesis_doc.
+  const str = (k: string) => (typeof body[k] === 'string' ? (body[k] as string).trim() : '');
+  const funnel = str('funnel').toUpperCase();
+  if (funnel && !(FUNNELS as readonly string[]).includes(funnel)) return NextResponse.json({ error: 'Funnel must be TOF, MOF or BOF' }, { status: 400 });
+  const baseCode = str('base_format').toUpperCase();
+  if (baseCode && !baseFormat(baseCode)) return NextResponse.json({ error: 'Unknown base format' }, { status: 400 });
+  const brandCodeIn = str('brand_code').toUpperCase();
+  const hypothesis_doc = (funnel || baseCode || str('concept') || str('win_condition')) ? {
+    concept: str('concept') || null,
+    funnel: funnel || null,
+    base_format: baseCode || null,
+    win_condition: str('win_condition') || null,
+    brand_code: brandCodeIn || null,
+    prohibitions: prohibitionsFor(brandCodeIn, funnel || null),
+  } : null;
+
   const number = await nextExperimentNumber(sb, brandId);
   const { data, error } = await sb.from('experiment').insert({
     user_id: user.id, brand_id: brandId, number, code: experimentCode(number),
@@ -83,6 +100,7 @@ export async function POST(request: NextRequest) {
     persona_id: angle.persona_id ?? null,
     awareness,
     hypothesis: typeof body.hypothesis === 'string' ? body.hypothesis.trim() || null : null,
+    hypothesis_doc,
     product_id: (body.product_id as string) ?? null,
     owner_id: (body.owner_id as string) ?? null,
     impression_cap: Number(body.impression_cap ?? 1500),

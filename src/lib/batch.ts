@@ -35,6 +35,65 @@ export const PIECE_FORMATS = ['static', 'video', 'ugc', 'carousel', 'animation']
 export type PieceFormat = (typeof PIECE_FORMATS)[number];
 
 // ---------------------------------------------------------------------------
+// Editor brief vocabulary: funnel, base formats, brand codes
+// ---------------------------------------------------------------------------
+export const FUNNELS = ['TOF', 'MOF', 'BOF'] as const;
+export type Funnel = (typeof FUNNELS)[number];
+
+/**
+ * The base format of a tanda. Statics carry the editor's own Fxx codes; videos
+ * are the four ways a video can be built. `kind` is the coarse PieceFormat the
+ * rest of the platform already understands; `ratio` is what the editor exports.
+ */
+export const BASE_FORMATS = [
+  { code: 'F13', kind: 'static', es: 'Frase + objeto', ratio: '4:5 / 1:1' },
+  { code: 'F08', kind: 'static', es: 'Chat / reply', ratio: '4:5 / 1:1' },
+  { code: 'F05', kind: 'static', es: 'Notas', ratio: '4:5 / 1:1' },
+  { code: 'F14', kind: 'static', es: 'Tachado', ratio: '4:5 / 1:1' },
+  { code: 'F03', kind: 'static', es: 'Búsqueda', ratio: '4:5 / 1:1' },
+  { code: 'F11', kind: 'static', es: 'Diagrama', ratio: '4:5 / 1:1' },
+  { code: 'UGC', kind: 'ugc', es: 'UGC', ratio: '9:16 / 4:5' },
+  { code: 'MUTE', kind: 'video', es: 'Mute + texto', ratio: '9:16 / 4:5' },
+  { code: 'REPLY', kind: 'video', es: 'Comment-reply', ratio: '9:16 / 4:5' },
+  { code: 'MECH', kind: 'animation', es: 'Mecanismo / animación', ratio: '9:16 / 4:5' },
+] as const satisfies readonly { code: string; kind: PieceFormat; es: string; ratio: string }[];
+export type BaseFormatCode = (typeof BASE_FORMATS)[number]['code'];
+
+export function baseFormat(code: string | null | undefined) {
+  return BASE_FORMATS.find((f) => f.code === code) ?? null;
+}
+export function isVideoFormat(code: string | null | undefined): boolean {
+  const k = baseFormat(code)?.kind;
+  return k === 'video' || k === 'ugc' || k === 'animation';
+}
+
+/** FL / SG from the brand name; anything else gets its first three letters. */
+export function brandCode(name: string | null | undefined): string {
+  const n = (name ?? '').toLowerCase().replace(/\s+/g, '');
+  if (n.includes('feelink') || n.includes('feel')) return 'FL';
+  if (n.includes('skinglow') || n.includes('skin')) return 'SG';
+  return slug(name, 3);
+}
+
+/** The rules the editor must not break, derived from brand + funnel. */
+export function prohibitionsFor(brand: string, funnel: string | null | undefined): string[] {
+  const out: string[] = ['No mezclar Feelink y Skinglow en la misma tanda.'];
+  if (brand === 'SG' && funnel === 'TOF') out.push('Skinglow TOF: sin producto en el frame 1.');
+  if (funnel !== 'BOF') out.push('Sin claims de precio ni garantía (solo BOF).');
+  return out;
+}
+
+/** True when a hook talks price or guarantee — only allowed in BOF. */
+export function mentionsPriceOrGuarantee(text: string): boolean {
+  return /(\$\s?\d|\bmxn\b|\bpesos\b|\bprecio\b|\bdescuento\b|\d+\s?%|\bgarant[ií]a\b|\benv[ií]o gratis\b|\bgratis\b|\bmeses sin intereses\b)/i.test(text);
+}
+
+/** FL_COMOFUNCIONA_PRUEBA15DIAS_F13_TOF_T07 — the tanda name the editor sees. */
+export function mintBatchName(m: { brand: string; angleCode: string | null; concept: string; format: string; funnel: string; batchSlug: string }): string {
+  return [m.brand, slug(m.angleCode, 12), slug(m.concept, 16), slug(m.format, 6), slug(m.funnel, 3), slug(m.batchSlug, 10)].join('_');
+}
+
+// ---------------------------------------------------------------------------
 // Verdict
 // ---------------------------------------------------------------------------
 export const VERDICTS = ['breakthrough', 'kpi_winner', 'spend_winner', 'loser'] as const;
