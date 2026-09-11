@@ -530,6 +530,9 @@ function Card({ ad, currency, eco, t, f, onOpen }: ItemProps) {
           ))}
         </dl>
         <div className="mt-2.5 flex flex-wrap items-center gap-1">
+          <span className={`${pill} ${ad.analyzed ? 'bg-ok-soft text-ok' : 'bg-warn-soft text-warn'}`} title={ad.analyzed ? t('library.analyzed.yes') : t('library.analyzed.no')}>
+            {ad.analyzed ? '✓ ' : '! '}{ad.analyzed ? t('library.analyzed.yes') : t('library.analyzed.no')}
+          </span>
           <VerdictPill v={ad.verdict} t={t} />
           {chips.map((x, i) => <span key={`${i}-${x}`} className={chip} title={x}>{x}</span>)}
         </div>

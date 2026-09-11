@@ -762,4 +762,6 @@ export const en: Record<string, string> = {
   'canvas.chat.quick.angle': 'Which angle has the best cost per purchase right now?',
   'canvas.chat.quick.concepts': 'Propose 3 concepts for a batch of statics',
   'canvas.chat.quick.summary': 'Summarize what is working and what is not',
+  'library.analyzed.yes': 'Analyzed',
+  'library.analyzed.no': 'Not analyzed',
 };

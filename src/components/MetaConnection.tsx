@@ -204,6 +204,7 @@ export function MetaTop30({ brandId, currency, refreshKey }: { brandId: string |
   const [uploading, setUploading] = useState<string | null>(null);
   const [analyzing, setAnalyzing] = useState<string | null>(null);
   const [lastDone, setLastDone] = useState<string | null>(null);
+  const [showAll, setShowAll] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const fileFor = useRef<TopItem | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -282,6 +283,13 @@ export function MetaTop30({ brandId, currency, refreshKey }: { brandId: string |
           ))}
         </div>
       )}
+      {c && (
+        <p className="mt-2 text-xs text-ink-3">
+          {c.analizado} de {data?.items.length ?? 0} ya están en el Cerebro. {c.analizado < (data?.items.length ?? 0) ? `Faltan ${(data?.items.length ?? 0) - c.analizado}: sube el archivo de cada uno y se analiza al momento.` : 'Top 30 completo.'}
+          {' '}
+          <button type="button" onClick={() => setShowAll((v) => !v)} className="underline text-ink-2 hover:text-ink">{showAll ? 'Ocultar analizados' : 'Ver también los analizados'}</button>
+        </p>
+      )}
       {err && <p className="mt-2 text-xs text-danger">{err}</p>}
       {lastDone && !err && <p className="mt-2 text-xs text-ok">{lastDone}</p>}
 
@@ -302,7 +310,7 @@ export function MetaTop30({ brandId, currency, refreshKey }: { brandId: string |
             </tr>
           </thead>
           <tbody className="divide-y divide-line">
-            {(data?.items ?? []).map((it) => {
+            {(data?.items ?? []).filter((it) => showAll || it.state !== 'analizado').map((it) => {
               const s = STATE[it.state];
               return (
                 <tr key={it.ad_id} className="align-middle">
@@ -341,6 +349,9 @@ export function MetaTop30({ brandId, currency, refreshKey }: { brandId: string |
                 </tr>
               );
             })}
+            {data && data.items.length > 0 && !showAll && data.items.every((it) => it.state === 'analizado') && (
+              <tr><td colSpan={8} className="py-4 text-center text-ok">Todo el top 30 está analizado y en el Cerebro.</td></tr>
+            )}
             {data && data.items.length === 0 && (
               <tr><td colSpan={8} className="py-4 text-center text-ink-4">Sin datos de gasto todavía. Pulsa «Traer de Meta».</td></tr>
             )}
