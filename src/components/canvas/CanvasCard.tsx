@@ -81,7 +81,9 @@ export default function CanvasCard({ item, selected, t, onChange, onDelete, onHe
 
         {/* Barra flotante: solo al pasar el mouse o si está seleccionada */}
         <div className={`absolute -top-3 left-1 right-1 flex items-center gap-1 rounded-lg border border-line bg-surface px-1.5 py-0.5 shadow-sm transition-opacity ${selected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
-          <GripHorizontal onPointerDown={onHeaderDown} className="w-3.5 h-3.5 text-ink-4 shrink-0 cursor-grab touch-none" />
+          <div onPointerDown={onHeaderDown} className="shrink-0 cursor-grab active:cursor-grabbing touch-none">
+            <GripHorizontal className="w-3.5 h-3.5 text-ink-4" />
+          </div>
           <input value={item.title ?? ''} onChange={(e) => onChange({ title: e.target.value })} onPointerDown={stop}
             placeholder={t('canvas.image.caption')}
             className="min-w-0 flex-1 bg-transparent text-[11px] text-ink placeholder:text-ink-4 focus:outline-none" />
@@ -116,7 +118,9 @@ export default function CanvasCard({ item, selected, t, onChange, onDelete, onHe
         onPointerDown={stop}
       >
         <div className={`absolute -top-3 left-0 flex items-center gap-1 rounded-lg border border-line bg-surface px-1.5 py-0.5 shadow-sm transition-opacity ${selected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
-          <GripHorizontal onPointerDown={onHeaderDown} className="w-3.5 h-3.5 text-ink-4 shrink-0 cursor-grab touch-none" />
+          <div onPointerDown={onHeaderDown} className="shrink-0 cursor-grab active:cursor-grabbing touch-none">
+            <GripHorizontal className="w-3.5 h-3.5 text-ink-4" />
+          </div>
           <select value={meta.size ?? 'm'} onChange={(e) => setMeta('size', e.target.value)} onPointerDown={stop}
             className="bg-transparent text-[10px] text-ink-3 focus:outline-none">
             <option value="s">S</option><option value="m">M</option><option value="l">L</option><option value="xl">XL</option>

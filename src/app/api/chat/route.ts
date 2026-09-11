@@ -89,8 +89,9 @@ Reglas:
 ${context}${canvasExtra ? `\n\n## CONTEXTO DEL CANVAS (lo que el usuario está planeando ahora)\n${canvasExtra}` : ''}`;
 
   const client = anthropic();
-  const userContent: Anthropic.ContentBlockParam[] = [
-    ...canvasImages.map((url): Anthropic.ContentBlockParam => ({ type: 'image', source: { type: 'url', url } })),
+  type Block = Exclude<Anthropic.MessageParam['content'], string>[number];
+  const userContent: Block[] = [
+    ...canvasImages.map((url): Block => ({ type: 'image', source: { type: 'url', url } })),
     { type: 'text', text: message.trim() },
   ];
   const messages: Anthropic.MessageParam[] = [
