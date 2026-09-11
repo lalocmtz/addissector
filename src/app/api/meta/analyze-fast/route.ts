@@ -95,9 +95,30 @@ export async function POST(request: NextRequest) {
       : kind === 'image' ? 'image/jpeg' : 'video/mp4';
 
     // 2 · Gemini --------------------------------------------------------------
-    const result = await analyzeCreativeWithGemini({
-      bytes, mime, kind, apiKey, adName: row.name, durationHint: row.duration ?? null,
-    });
+    let result: Awaited<ReturnType<typeof analyzeCreativeWithGemini>>;
+    let partial: string | null = null;
+    try {
+      result = await analyzeCreativeWithGemini({
+        bytes, mime, kind, apiKey, adName: row.name, durationHint: row.duration ?? null,
+      });
+    } catch (e) {
+      // A video Gemini cannot decode still has a cover frame. Analyzing the
+      // thumbnail is what ScaleBot does in this case — flagged as partial so
+      // nobody mistakes it for a full read of the video.
+      const thumb = row.thumbnail_url;
+      if (kind !== 'video' || !thumb) throw e;
+      const t = await fetch(thumb, { cache: 'no-store' }).catch(() => null);
+      if (!t || !t.ok) throw e;
+      const tBytes = await readBodyCapped(t, 15 * 1024 * 1024);
+      const tMime = (t.headers.get('content-type') ?? 'image/jpeg').split(';')[0].trim() || 'image/jpeg';
+      result = await analyzeCreativeWithGemini({ bytes: tBytes, mime: tMime, kind: 'image', apiKey, adName: row.name, durationHint: null });
+      partial = e instanceof Error ? e.message : 'video no decodificable';
+    }
+    if (partial) {
+      const a = result.analysis as Record<string, unknown>;
+      a.engine = { ...(a.engine as Record<string, unknown> | undefined), partial: 'solo portada', reason: partial };
+      a.summary = `[ANÁLISIS PARCIAL: solo la portada del video; Gemini no pudo leer el archivo] ${String(a.summary ?? '')}`;
+    }
 
     // 3 · creatives (igual que POST /api/creatives desde el barrido) ------------
     const saved = await saveCreative(sb, user.id, row.brand_id, {

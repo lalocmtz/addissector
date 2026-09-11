@@ -17,7 +17,8 @@ export const GEMINI_FALLBACK_MODEL = 'gemini-2.5-flash';
 export const GEMINI_SETTING_KEY = 'gemini_api_key';
 
 /** Images below this size travel inline (base64); above it, the Files API. */
-export const INLINE_IMAGE_MAX = 15 * 1024 * 1024;
+export const INLINE_VIDEO_MAX = 19 * 1024 * 1024;
+const INLINE_IMAGE_MAX = 15 * 1024 * 1024;
 
 export class GeminiError extends Error {
   status?: number;
@@ -144,8 +145,17 @@ export async function mediaPart(
   if (mime.startsWith('image/') && bytes.byteLength < INLINE_IMAGE_MAX) {
     return { part: { inline_data: { mime_type: mime, data: Buffer.from(bytes).toString('base64') } }, uploaded: null };
   }
-  const uploaded = await uploadToGemini(bytes, mime, apiKey, { displayName: opts.displayName });
-  return { part: { file_data: { mime_type: uploaded.mimeType || mime, file_uri: uploaded.uri } }, uploaded };
+  try {
+    const uploaded = await uploadToGemini(bytes, mime, apiKey, { displayName: opts.displayName });
+    return { part: { file_data: { mime_type: uploaded.mimeType || mime, file_uri: uploaded.uri } }, uploaded };
+  } catch (e) {
+    // Some CDN encodes (fragmented MP4 from fbcdn) fail in the Files API but
+    // decode fine when sent inline. One more try before giving up.
+    if (e instanceof GeminiError && /no pudo procesar/i.test(e.message) && bytes.byteLength < INLINE_VIDEO_MAX) {
+      return { part: { inline_data: { mime_type: mime, data: Buffer.from(bytes).toString('base64') } }, uploaded: null };
+    }
+    throw e;
+  }
 }
 
 function stripFences(raw: string): string {

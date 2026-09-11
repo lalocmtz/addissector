@@ -202,6 +202,8 @@ export function MetaTop30({ brandId, currency, refreshKey }: { brandId: string |
   const [data, setData] = useState<TopResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState<string | null>(null);
+  const [analyzing, setAnalyzing] = useState<string | null>(null);
+  const [lastDone, setLastDone] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const fileFor = useRef<TopItem | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -239,12 +241,19 @@ export function MetaTop30({ brandId, currency, refreshKey }: { brandId: string |
       const kind = file.type.startsWith('image/') ? 'image' : 'video';
       const p = await fetch(`/api/meta/ads/${metaId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ asset_path: path, asset_kind: kind }) });
       if (!p.ok) throw new Error(((await p.json()) as { error?: string }).error ?? 'No se pudo vincular el archivo');
+      // The file is in; analyze it right now instead of waiting for a barrido.
+      setAnalyzing(item.ad_id);
+      const a = await fetch('/api/meta/analyze-fast', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: metaId }) });
+      const aj = (await a.json().catch(() => ({}))) as { ok?: boolean; error?: string; hook?: string };
+      if (!a.ok) throw new Error(aj.error ?? 'El archivo se subió pero el análisis falló; vuelve a intentar desde "Iniciar barrido"');
+      setLastDone(`${item.ad_name}: analizado${aj.hook ? ` · hook: “${aj.hook}”` : ''}`);
       metaId = null;
       await load();
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Falló la subida');
     } finally {
       setUploading(null);
+      setAnalyzing(null);
       if (fileInput.current) fileInput.current.value = '';
     }
   };
@@ -274,6 +283,7 @@ export function MetaTop30({ brandId, currency, refreshKey }: { brandId: string |
         </div>
       )}
       {err && <p className="mt-2 text-xs text-danger">{err}</p>}
+      {lastDone && !err && <p className="mt-2 text-xs text-ok">{lastDone}</p>}
 
       <input ref={fileInput} type="file" accept="video/*,image/*" className="hidden" onChange={(e) => void onFile(e.target.files?.[0] ?? null)} />
 
@@ -324,7 +334,7 @@ export function MetaTop30({ brandId, currency, refreshKey }: { brandId: string |
                         title={!it.meta_id ? 'Primero pulsa "Traer de Meta" para que exista aquí' : 'Subir el archivo de este anuncio'}
                         className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] disabled:opacity-40 ${it.state === 'subir' ? 'border-danger text-danger hover:bg-danger-soft' : 'border-line text-ink-2 hover:bg-surface-2'}`}
                       >
-                        {uploading === it.ad_id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Upload className="w-3 h-3" />} Subir archivo
+                        {uploading === it.ad_id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Upload className="w-3 h-3" />} {analyzing === it.ad_id ? 'Analizando…' : uploading === it.ad_id ? 'Subiendo…' : 'Subir archivo'}
                       </button>
                     )}
                   </td>
