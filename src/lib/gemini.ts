@@ -12,8 +12,13 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 const BASE = 'https://generativelanguage.googleapis.com';
-export const GEMINI_MODEL = 'gemini-2.5-pro';
-export const GEMINI_FALLBACK_MODEL = 'gemini-2.5-flash';
+/**
+ * Cadena de respaldo: SOLO se usa si no se pudo preguntar a Google que modelos
+ * existen. Nunca se fija un modelo como si fuera eterno — el 14-sep-2026
+ * gemini-2.5-pro empezo a contestar 404 "no longer available to new users" a
+ * las claves nuevas y cada analisis moria con un 502 opaco.
+ */
+export const GEMINI_FALLBACK_CHAIN = ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.0-flash'];
 export const GEMINI_SETTING_KEY = 'gemini_api_key';
 
 /** Images below this size travel inline (base64); above it, the Files API. */
@@ -188,27 +193,80 @@ async function generateOnce(parts: GeminiPart[], apiKey: string, model: string):
 const isOverload = (e: unknown) =>
   e instanceof GeminiError && (e.status === 429 || e.status === 503 || e.status === 500 || /overload|resource.?exhausted|quota/i.test(e.message));
 
+/** El modelo ya no existe para esta clave: hay que probar el siguiente. */
+const isModelGone = (e: unknown) =>
+  e instanceof GeminiError
+  && (e.status === 404 || e.status === 400)
+  && /no longer available|not found|is not supported|no such model|not supported for/i.test(e.message);
+
+interface Descubierto { huella: string; cadena: string[]; at: number }
+let descubierto: Descubierto | null = null;
+const CACHE_MS = 30 * 60 * 1000;
+
+/** Version alta primero, luego pro sobre flash; castiga lite / preview / exp. */
+function puntuar(n: string): number {
+  const ver = Number((n.match(/gemini-(\d+(?:\.\d+)?)/) ?? [])[1] ?? 0);
+  return ver * 100
+    + (/pro/.test(n) ? 30 : 0)
+    + (/flash/.test(n) ? 20 : 0)
+    - (/lite/.test(n) ? 10 : 0)
+    - (/(exp|preview)/.test(n) ? 15 : 0);
+}
+
 /**
- * One generateContent call that must return a JSON object. On overload / 429
- * the same request is retried ONCE with the flash model.
+ * Le pregunta a Google que modelos acepta ESTA clave, en vez de confiar en un
+ * nombre fijo. Se cachea 30 min por clave; si la consulta falla queda la cadena
+ * de respaldo. Esto es lo que evita que un retiro de modelo del lado de Google
+ * vuelva a tumbar todos los analisis.
+ */
+export async function geminiModelChain(apiKey: string): Promise<string[]> {
+  const huella = apiKey.slice(-8);
+  if (descubierto && descubierto.huella === huella && Date.now() - descubierto.at < CACHE_MS) {
+    return descubierto.cadena;
+  }
+  let cadena = [...GEMINI_FALLBACK_CHAIN];
+  try {
+    const res = await fetch(`${BASE}/v1beta/models?pageSize=200&key=${encodeURIComponent(apiKey)}`, { cache: 'no-store' });
+    if (res.ok) {
+      const j = (await res.json()) as { models?: { name?: string; supportedGenerationMethods?: string[] }[] };
+      const nombres = (j.models ?? [])
+        .filter((m) => (m.supportedGenerationMethods ?? []).includes('generateContent'))
+        .map((m) => (m.name ?? '').replace(/^models\//, ''))
+        .filter((n) => n.startsWith('gemini-') && !/embedding|aqa|imagen|image-gen|tts|audio|live|learnlm/i.test(n));
+      if (nombres.length) cadena = nombres.sort((a, b) => puntuar(b) - puntuar(a)).slice(0, 6);
+    }
+  } catch { /* sin red hacia Google: queda la cadena de respaldo */ }
+  descubierto = { huella, cadena, at: Date.now() };
+  return cadena;
+}
+
+/**
+ * One generateContent call that must return a JSON object. Recorre la cadena de
+ * modelos: avanza al siguiente si el modelo ya no existe para esta clave o si
+ * viene saturado, y se detiene en cualquier otro error.
  */
 export async function geminiGenerateJson<T = Record<string, unknown>>(
   parts: GeminiPart[],
   apiKey: string,
-  model: string = GEMINI_MODEL,
+  model?: string,
 ): Promise<{ json: T; model: string }> {
-  let raw: string;
-  let used = model;
-  try {
-    raw = await generateOnce(parts, apiKey, model);
-  } catch (e) {
-    if (!isOverload(e) || model === GEMINI_FALLBACK_MODEL) throw e;
-    used = GEMINI_FALLBACK_MODEL;
-    raw = await generateOnce(parts, apiKey, used);
+  const descubierta = await geminiModelChain(apiKey);
+  const cadena = model ? [model, ...descubierta.filter((m) => m !== model)] : descubierta;
+  let ultimo: unknown = new GeminiError('Gemini no tiene ningun modelo disponible para esta clave');
+  for (const usado of cadena) {
+    let raw: string;
+    try {
+      raw = await generateOnce(parts, apiKey, usado);
+    } catch (e) {
+      ultimo = e;
+      if (isModelGone(e) || isOverload(e)) continue;
+      throw e;
+    }
+    try {
+      return { json: JSON.parse(stripFences(raw)) as T, model: usado };
+    } catch {
+      throw new GeminiError('Gemini no devolvió un JSON válido');
+    }
   }
-  try {
-    return { json: JSON.parse(stripFences(raw)) as T, model: used };
-  } catch {
-    throw new GeminiError('Gemini no devolvió un JSON válido');
-  }
+  throw ultimo;
 }

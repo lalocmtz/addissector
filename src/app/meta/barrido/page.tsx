@@ -83,7 +83,11 @@ async function pedir(
         e.upgrade = r.status === 402;
         throw e;
       }
-      ultimo = `${etiqueta}: respondió ${r.status}`;
+      // Un 5xx tambien trae el motivo en el cuerpo. Mostrar solo el numero
+      // escondia la causa real (p.ej. "Gemini ya no acepta este modelo") y
+      // mandaba a buscar el problema donde no estaba.
+      const j5 = await r.json().catch(() => ({} as { error?: string }));
+      ultimo = j5.error ? `${etiqueta}: ${j5.error}` : `${etiqueta}: respondió ${r.status}`;
     } catch (err) {
       clearTimeout(t);
       if ((err as Error & { upgrade?: boolean }).upgrade) throw err;
