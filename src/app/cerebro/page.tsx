@@ -15,12 +15,13 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import {
   Loader2, Send, Trash2, Plus, X, Brain, Lightbulb, ChevronDown, ChevronRight, Save,
   FileText, Upload, Users, Compass, Zap, CheckCircle2, Globe, Search, Sparkles, PenLine,
-  Copy, ArrowLeftRight,
+  Copy, ArrowLeftRight, AlertTriangle,
 } from 'lucide-react';
 import AppHeader from '@/components/AppHeader';
 import BrainSync from '@/components/BrainSync';
+import { beginPending, endPending, usePendingWarning } from '@/lib/pending-saves';
 import { useMe } from '@/lib/use-me';
-import { ANGLE_STATUS } from '@/lib/plan';
+import { ANGLE_STATUS, AWARENESS_STAGES } from '@/lib/plan';
 import { fmtMoney, resolveEconomics, type Economics } from '@/lib/meta';
 
 /** Redondeo de ROAS para mostrar. */
@@ -47,6 +48,9 @@ interface Angle {
   id: string; code: string | null; name: string | null; persona_id: string | null;
   pain: string | null; mechanism: string | null; psychology: string | null; objection: string | null;
   status: string | null; evidence: string | null; source: string | null;
+  // Estaban en la tabla y en el GET, pero no en el tipo ni en la UI: datos que
+  // nadie podia leer ni corregir.
+  desire: string | null; learnings: string | null; awareness_stage: string | null;
 }
 /** Fila de /api/library. Todo opcional: la ruta la está reescribiendo otro agente. */
 interface LibAd {
@@ -105,36 +109,102 @@ const INPUT_CLS =
 // Piezas reutilizables
 // ---------------------------------------------------------------------------
 
-/** Campo que se guarda solo al salir (onBlur). Sin controlar el valor: así no
- *  hay parpadeo mientras escribes ni estados sincronizados de más. */
-function Field({ label, value, placeholder, rows, mono, onSave }: {
+/** Campo que se guarda solo mientras escribes (debounce) y tambien al salir.
+ *
+ *  Antes guardaba SOLO en onBlur: escribir y recargar sin hacer clic fuera
+ *  perdia el texto en silencio. Ahora hay debounce de 1.2 s, indicador visible
+ *  por campo y, con `validate`, el valor invalido ni siquiera se manda.
+ *  Sigue sin controlar el valor para no provocar parpadeo al teclear. */
+function Field({ label, value, placeholder, rows, mono, validate, onSave }: {
   label?: string;
   value: string | null;
   placeholder?: string;
   rows?: number;
   mono?: boolean;
-  onSave: (v: string) => void;
+  /** Devuelve el mensaje de error, o null si el valor es valido. */
+  validate?: (v: string) => string | null;
+  onSave: (v: string) => void | Promise<unknown>;
 }) {
-  const commit = (v: string) => { if (v.trim() !== (value ?? '').trim()) onSave(v.trim()); };
+  const [estado, setEstado] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [aviso, setAviso] = useState<string | null>(null);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const ultimo = useRef((value ?? '').trim());
+  const sucio = useRef(false);
+
+  const limpiar = useCallback(() => {
+    if (sucio.current) { sucio.current = false; endPending(); }
+  }, []);
+
+  const guardar = useCallback(async (raw: string) => {
+    const v = raw.trim();
+    if (v === ultimo.current) { limpiar(); setEstado('idle'); return; }
+    const err = validate ? validate(v) : null;
+    if (err) { setEstado('error'); setAviso(err); return; }
+    setAviso(null);
+    setEstado('saving');
+    try {
+      const r = await onSave(v);
+      if (r === false) throw new Error('rechazado');
+      ultimo.current = v;
+      setEstado('saved');
+    } catch {
+      setEstado('error');
+      setAviso('No se guardó. Vuelve a intentarlo.');
+    } finally {
+      limpiar();
+    }
+  }, [onSave, validate, limpiar]);
+
+  const alEscribir = (raw: string) => {
+    if (!sucio.current) { sucio.current = true; beginPending(); }
+    setEstado('idle');
+    setAviso(null);
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => { void guardar(raw); }, 1200);
+  };
+
+  const alSalir = (raw: string) => {
+    if (timer.current) clearTimeout(timer.current);
+    void guardar(raw);
+  };
+
+  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
+
+  const etiqueta = estado === 'saving' ? 'Guardando…'
+    : estado === 'saved' ? 'Guardado'
+    : estado === 'error' ? 'Error'
+    : null;
+  const cls = estado === 'error' ? 'text-danger' : estado === 'saved' ? 'text-ok' : 'text-ink-4';
+
   return (
     <div className="w-full min-w-0">
-      {label && <p className="text-[10px] uppercase tracking-wide text-ink-4 mb-1">{label}</p>}
+      {(label || etiqueta) && (
+        <div className="flex items-center justify-between gap-2 mb-1">
+          {label
+            ? <p className="text-[10px] uppercase tracking-wide text-ink-4">{label}</p>
+            : <span />}
+          {etiqueta && <span className={`text-[10px] ${cls}`}>{etiqueta}</span>}
+        </div>
+      )}
       {rows ? (
         <textarea
           defaultValue={value ?? ''}
           placeholder={placeholder}
           rows={rows}
-          onBlur={(e) => commit(e.target.value)}
+          onChange={(e) => alEscribir(e.target.value)}
+          onBlur={(e) => alSalir(e.target.value)}
           className={`${INPUT_CLS} resize-y leading-relaxed`}
         />
       ) : (
         <input
           defaultValue={value ?? ''}
           placeholder={placeholder}
-          onBlur={(e) => commit(e.target.value)}
+          onChange={(e) => alEscribir(e.target.value)}
+          onBlur={(e) => alSalir(e.target.value)}
           className={`${INPUT_CLS}${mono ? ' font-[family-name:var(--font-mono)] uppercase tracking-wide' : ''}`}
         />
       )}
+      {aviso && <p className="text-[10px] text-danger mt-1 break-words">{aviso}</p>}
     </div>
   );
 }
@@ -221,6 +291,7 @@ function Loading() {
 function useBank<T extends { id: string }>(url: string, brandId: string | null) {
   const [items, setItems] = useState<T[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     await Promise.resolve();
@@ -240,22 +311,45 @@ function useBank<T extends { id: string }>(url: string, brandId: string | null) 
   useEffect(() => { void Promise.resolve().then(load); }, [load]);
 
   const create = async (payload: Record<string, unknown>) => {
-    if (!brandId) return;
-    await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ brandId, ...payload }),
-    });
-    await load();
+    if (!brandId) return false;
+    try {
+      const r = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ brandId, ...payload }),
+      });
+      if (!r.ok) {
+        const d = (await r.json().catch(() => ({}))) as { error?: string };
+        // Antes fallaba en silencio: el boton simplemente no hacia nada.
+        setError(d.error ?? `El servidor respondió ${r.status}`);
+        return false;
+      }
+      setError(null);
+      await load();
+      return true;
+    } catch {
+      setError('No hubo conexión con el servidor.');
+      return false;
+    }
   };
 
+  /** Guarda un campo. Reintenta los 5xx con backoff y devuelve si quedo. */
   const patch = async (id: string, payload: Record<string, unknown>) => {
     setItems((prev) => prev.map((it) => (it.id === id ? { ...it, ...payload } as T : it)));
-    await fetch(url, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id, ...payload }),
-    });
+    for (let intento = 0; intento < 3; intento += 1) {
+      try {
+        const r = await fetch(url, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id, ...payload }),
+        });
+        if (r.ok) return true;
+        // 4xx no mejora reintentando; 5xx sí (concurrencia, pool, red).
+        if (r.status < 500) return false;
+      } catch { /* red: reintentamos */ }
+      if (intento < 2) await new Promise((res) => setTimeout(res, 400 * (intento + 1)));
+    }
+    return false;
   };
 
   const remove = async (id: string) => {
@@ -263,7 +357,7 @@ function useBank<T extends { id: string }>(url: string, brandId: string | null) 
     await fetch(`${url}?id=${id}`, { method: 'DELETE' });
   };
 
-  return { items, loading, load, create, patch, remove };
+  return { items, loading, error, setError, load, create, patch, remove };
 }
 
 
@@ -272,6 +366,7 @@ function useBank<T extends { id: string }>(url: string, brandId: string | null) 
 // ---------------------------------------------------------------------------
 
 export default function CerebroPage() {
+  usePendingWarning();
   return (
     <Suspense fallback={<main className="flex-1 min-h-screen" />}>
       <CerebroInner />
@@ -741,7 +836,7 @@ function useAngleStats(brandId: string | null) {
 }
 
 function AnglesTab({ brandId }: { brandId: string | null }) {
-  const { items, loading, create, patch, remove } = useBank<Angle>('/api/plan/angles', brandId);
+  const { items, loading, error, setError, create, patch, remove } = useBank<Angle>('/api/plan/angles', brandId);
   const personas = useBank<Persona>('/api/plan/personas', brandId);
   const lib = useAngleStats(brandId);
 
@@ -764,7 +859,7 @@ function AnglesTab({ brandId }: { brandId: string | null }) {
         hint="Un ángulo es la razón de compra. Los que detectó la IA vienen de los anuncios de Meta; el estado sale del gasto de los últimos 30 días, no de una opinión."
         action={
           <button
-            onClick={() => create({ name: 'Ángulo nuevo', status: 'sin_probar', source: 'manual' })}
+            onClick={() => { void create({ name: 'Ángulo nuevo', status: 'sin_probar', source: 'manual' }); }}
             disabled={!brandId}
             className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg gradient-blue text-on-accent disabled:opacity-50 shrink-0"
           >
@@ -772,6 +867,13 @@ function AnglesTab({ brandId }: { brandId: string | null }) {
           </button>
         }
       />
+      {error && (
+        <div className="mb-4 rounded-lg border border-danger bg-danger-soft px-3 py-2 text-sm text-danger flex items-start gap-2">
+          <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+          <span className="min-w-0 break-words">{error}</span>
+          <button onClick={() => setError(null)} className="ml-auto shrink-0 text-ink-4 hover:text-ink-1"><X className="w-3.5 h-3.5" /></button>
+        </div>
+      )}
       {loading ? <Loading /> : items.length === 0 ? (
         <Empty>
           Aquí vive la razón por la que alguien compra, no el formato del video. Escribe el dolor
@@ -788,6 +890,7 @@ function AnglesTab({ brandId }: { brandId: string | null }) {
               eco={lib.eco}
               currency={lib.currency}
               personas={personas.items}
+              codigosHermanos={items.filter((x) => x.id !== a.id).map((x) => (x.code ?? '').trim().toUpperCase())}
               onPatch={(payload) => patch(a.id, payload)}
               onRemove={() => { if (confirm('¿Eliminar este ángulo?')) remove(a.id); }}
             />
@@ -798,25 +901,38 @@ function AnglesTab({ brandId }: { brandId: string | null }) {
   );
 }
 
-function AngleCard({ angle: a, stats, statsLoading, eco, currency, personas, onPatch, onRemove }: {
+function AngleCard({ angle: a, stats, statsLoading, eco, currency, personas, codigosHermanos, onPatch, onRemove }: {
   angle: Angle;
   stats: AngleStats | undefined;
   statsLoading: boolean;
   eco: Economics;
   currency: string | null;
   personas: Persona[];
-  onPatch: (payload: Record<string, unknown>) => void;
+  codigosHermanos: string[];
+  onPatch: (payload: Record<string, unknown>) => Promise<boolean> | void;
   onRemove: () => void;
 }) {
   const [more, setMore] = useState(false);
   const verdict = ANGLE_VERDICT[angleVerdictId(stats, eco)];
+
+  /** 8 caracteres A-Z0-9, unico en la marca. El guion esta prohibido porque es
+   *  el separador del nombre de anuncio (ANGULO-Tnn-CONCIENCIA-…) y romperia
+   *  el parseo. */
+  const validarCodigo = useCallback((v: string): string | null => {
+    const c = v.trim().toUpperCase();
+    if (!c) return 'El código no puede quedar vacío.';
+    if (c.includes('-')) return 'Sin guiones: el guion separa las partes del nombre del anuncio.';
+    if (!/^[A-Z0-9]{8}$/.test(c)) return 'Deben ser 8 caracteres, solo A-Z y 0-9.';
+    if (codigosHermanos.includes(c)) return 'Ya hay otro ángulo con ese código.';
+    return null;
+  }, [codigosHermanos]);
 
   return (
     <div className="rounded-xl border border-line bg-surface p-4 space-y-3 min-w-0">
       {/* Código + nombre + borrar */}
       <div className="flex items-start gap-2 min-w-0">
         <div className="w-36 shrink-0 min-w-0">
-          <Field value={a.code} mono placeholder="CÓDIGO" onSave={(v) => onPatch({ code: v })} />
+          <Field value={a.code} mono placeholder="CÓDIGO" validate={validarCodigo} onSave={(v) => onPatch({ code: v.toUpperCase() })} />
         </div>
         <div className="flex-1 min-w-0">
           <Field value={a.name} placeholder="Nombre del ángulo" onSave={(v) => onPatch({ name: v })} />
@@ -877,14 +993,30 @@ function AngleCard({ angle: a, stats, statsLoading, eco, currency, personas, onP
           <Field label="Psicología (por qué convierte)" value={a.psychology} rows={2} placeholder="La palanca mental que activa" onSave={(v) => onPatch({ psychology: v })} />
           <Field label="Objeción" value={a.objection} rows={2} placeholder="Qué duda hay que tumbar" onSave={(v) => onPatch({ objection: v })} />
           <Field label="Evidencia" value={a.evidence} rows={2} placeholder="Qué te hace creer que este ángulo jala" onSave={(v) => onPatch({ evidence: v })} />
+          <Field label="Deseo" value={a.desire} rows={2} placeholder="Qué quiere que pase después de comprar" onSave={(v) => onPatch({ desire: v })} />
+          <Field label="Aprendizajes" value={a.learnings} rows={3} placeholder="Qué te enseñaron los anuncios de este ángulo" onSave={(v) => onPatch({ learnings: v })} />
+          <div className="min-w-0">
+            <p className="text-[10px] uppercase tracking-wide text-ink-4 mb-1">Conciencia</p>
+            <select
+              value={a.awareness_stage ?? ''}
+              onChange={(e) => onPatch({ awareness_stage: e.target.value || null })}
+              className={INPUT_CLS}
+            >
+              <option value="">Sin definir</option>
+              {AWARENESS_STAGES.map((x) => <option key={x.id} value={x.id}>{x.label}</option>)}
+            </select>
+            <p className="text-[10px] text-ink-4 mt-1 break-words">
+              De aquí sale el segmento CONCIENCIA del nombre del anuncio.
+            </p>
+          </div>
           <div className="min-w-0">
             <p className="text-[10px] uppercase tracking-wide text-ink-4 mb-1">Estado manual (opcional)</p>
             <select
               value={a.status ?? ''}
-              onChange={(e) => onPatch({ status: e.target.value || null })}
+              onChange={(e) => onPatch({ status: e.target.value || 'sin_probar' })}
               className={INPUT_CLS}
             >
-              <option value="">Sin estado manual</option>
+              <option value="sin_probar">Sin probar</option>
               {ANGLE_STATUS.map((s) => (
                 <option key={s.id} value={s.id}>{s.label}</option>
               ))}

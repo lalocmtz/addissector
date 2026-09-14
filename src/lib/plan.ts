@@ -272,6 +272,17 @@ export const ANGLE_STATUS = [
   { id: 'muerto', label: 'Muerto', cls: 'border-danger/40 text-danger' },
 ] as const;
 
+/** Las 5 etapas de conciencia, con los MISMOS ids que el clasificador
+ *  (agents/taxonomy.ts) y el generador del nombre del anuncio. Tener dos
+ *  vocabularios para lo mismo es lo que ensucio funnel_stage. */
+export const AWARENESS_STAGES = [
+  { id: 'unaware', label: 'No sabe que tiene el problema' },
+  { id: 'problem_aware', label: 'Sabe el problema' },
+  { id: 'solution_aware', label: 'Conoce soluciones' },
+  { id: 'product_aware', label: 'Conoce el producto' },
+  { id: 'most_aware', label: 'Listo para comprar' },
+] as const;
+
 export const NARRATIVE_FORMATS = [
   'Duelo de productos', 'Testimonio', 'Antes / después', 'Listicle', 'Demo',
   'Reseña respondida', 'Carta de fundador', 'Educativo', 'Comparativa', 'Unboxing',
