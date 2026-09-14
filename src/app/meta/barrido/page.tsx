@@ -25,6 +25,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import { Play, Square, RefreshCw, CheckCircle2, AlertTriangle, Brain, ArrowLeft, Loader2, Sparkles, Monitor } from 'lucide-react';
 import AppHeader from '@/components/AppHeader';
+import BrainSync from '@/components/BrainSync';
 import { MetaTokenCard, MetaTop30 } from '@/components/MetaConnection';
 import { useMe } from '@/lib/use-me';
 import { extractFrames, selectFramesForAnalysis } from '@/lib/frame-extractor';
@@ -519,7 +520,8 @@ export default function BarridoPage() {
         </p>
 
         <div className="mt-6 space-y-4">
-          <MetaTokenCard brandId={activeBrandId} onGeminiChange={(has) => { motorRef.current = has; setMotorGemini(has); }} />
+          <BrainSync brandId={activeBrandId ?? null} />
+        <MetaTokenCard brandId={activeBrandId} onGeminiChange={(has) => { motorRef.current = has; setMotorGemini(has); }} />
           <MetaTop30 brandId={activeBrandId} currency={activeBrand?.economics?.currency ?? 'MXN'} refreshKey={topRefresh} />
         </div>
 

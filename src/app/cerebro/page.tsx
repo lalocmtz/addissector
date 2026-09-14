@@ -18,6 +18,7 @@ import {
   Copy, ArrowLeftRight,
 } from 'lucide-react';
 import AppHeader from '@/components/AppHeader';
+import BrainSync from '@/components/BrainSync';
 import { useMe } from '@/lib/use-me';
 import { ANGLE_STATUS } from '@/lib/plan';
 import { fmtMoney, resolveEconomics, type Economics } from '@/lib/meta';
@@ -265,108 +266,6 @@ function useBank<T extends { id: string }>(url: string, brandId: string | null) 
   return { items, loading, load, create, patch, remove };
 }
 
-// ---------------------------------------------------------------------------
-// Banner de ingesta — el cerebro se pone al día con los análisis pendientes.
-// ---------------------------------------------------------------------------
-
-interface Counts { personas: number; angles: number; hooks: number; learnings: number }
-
-function IngestBanner({ brandId }: { brandId: string | null }) {
-  const [pending, setPending] = useState(0);
-  const [running, setRunning] = useState(false);
-  const [done, setDone] = useState(0);
-  const [total, setTotal] = useState(0);
-  const [result, setResult] = useState<string | null>(null);
-
-  const load = useCallback(async () => {
-    await Promise.resolve();
-    if (!brandId) { setPending(0); return; }
-    try {
-      const r = await fetch(`/api/brain/ingest?brand=${brandId}`);
-      const d = await r.json();
-      setPending(Number(d.pending) || 0);
-    } catch {
-      setPending(0);
-    }
-  }, [brandId]);
-
-  // La carga va dentro de un microtask: así el efecto nunca hace setState síncrono.
-  useEffect(() => { void Promise.resolve().then(load); }, [load]);
-
-  const run = async () => {
-    if (!brandId || running) return;
-    setRunning(true);
-    setResult(null);
-    setTotal(pending);
-    setDone(0);
-    const acc: Counts = { personas: 0, angles: 0, hooks: 0, learnings: 0 };
-    let left = pending;
-    try {
-      // Se llama en bucle hasta que no quede nada. El backfill procesa de 8 en 8
-      // para no pasarse del tiempo de la función.
-      for (let i = 0; i < 40 && left > 0; i++) {
-        const res = await fetch('/api/brain/ingest/backfill', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ brandId }),
-        });
-        const d = (await res.json()) as {
-          processed?: number; remaining?: number; created?: Counts;
-        };
-        for (const k of ['personas', 'angles', 'hooks', 'learnings'] as const) {
-          acc[k] += d.created?.[k] ?? 0;
-        }
-        const remaining = Number(d.remaining) || 0;
-        setDone((v) => v + (Number(d.processed) || 0));
-        setPending(remaining);
-        // Si no avanzó, no tiene caso seguir dándole vueltas.
-        if (!d.processed || remaining >= left) { left = 0; break; }
-        left = remaining;
-      }
-      const parts: string[] = [];
-      if (acc.personas) parts.push(`${acc.personas} persona${acc.personas > 1 ? 's' : ''}`);
-      if (acc.angles) parts.push(`${acc.angles} ángulo${acc.angles > 1 ? 's' : ''}`);
-      if (acc.hooks) parts.push(`${acc.hooks} hook${acc.hooks > 1 ? 's' : ''}`);
-      if (acc.learnings) parts.push(`${acc.learnings} aprendizaje${acc.learnings > 1 ? 's' : ''}`);
-      setResult(parts.length ? `El cerebro guardó ${parts.join(', ')}.` : 'El cerebro leyó todo: no había nada nuevo que guardar.');
-    } catch {
-      setResult('Algo falló leyendo los análisis. Vuelve a intentarlo.');
-    } finally {
-      setRunning(false);
-      await load();
-    }
-  };
-
-  if (!brandId || (pending === 0 && !running && !result)) return null;
-
-  return (
-    <div className="mb-4 rounded-xl border border-accent/25 bg-accent/5 px-4 py-3 flex items-center justify-between gap-4 flex-wrap">
-      <div className="min-w-0">
-        <p className="text-xs text-ink flex items-center gap-2 break-words">
-          <Sparkles className="w-3.5 h-3.5 text-accent shrink-0" />
-          {running
-            ? `Leyendo tus anuncios ganadores… ${done}${total ? ` de ${total}` : ''}`
-            : pending > 0
-              ? `Tienes ${pending} análisis que el cerebro todavía no ha leído`
-              : 'El cerebro está al día'}
-        </p>
-        <p className="text-[10px] text-ink-4 mt-0.5 break-words">
-          {result ?? 'De los análisis de tus anuncios salen las personas, los ángulos, los hooks y los aprendizajes.'}
-        </p>
-      </div>
-      {pending > 0 && (
-        <button
-          onClick={run}
-          disabled={running}
-          className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg gradient-blue text-on-accent disabled:opacity-60 shrink-0"
-        >
-          {running ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Brain className="w-3.5 h-3.5" />}
-          {running ? 'Leyendo…' : 'Alimentar el cerebro'}
-        </button>
-      )}
-    </div>
-  );
-}
 
 // ---------------------------------------------------------------------------
 // Página
@@ -422,7 +321,7 @@ function CerebroInner() {
 
       <section className="flex-1 px-4 sm:px-6 py-5">
         <div className="max-w-[1400px] mx-auto">
-          <IngestBanner key={activeBrandId} brandId={activeBrandId} />
+          <BrainSync key={activeBrandId} brandId={activeBrandId} />
           {tab === 'chat' && <ChatTab brandId={activeBrandId} brandName={activeBrand?.name ?? ''} />}
           {tab === 'personas' && <PersonasTab key={activeBrandId} brandId={activeBrandId} />}
           {tab === 'angulos' && <AnglesTab key={activeBrandId} brandId={activeBrandId} />}
