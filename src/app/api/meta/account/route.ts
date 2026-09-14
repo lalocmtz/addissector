@@ -31,13 +31,33 @@ interface Check {
   missing: string[];
   /** Pages the token can act on (/me/accounts). Empty = no Page assigned to this user/token. */
   pages: { id: string; name: string }[];
+  /**
+   * Whether this token can actually READ THIS ad account. The permission list
+   * above only says what the token declares; a System User can hold ads_read
+   * and still be a stranger to act_X. That gap is what let the card show three
+   * green ticks while every sync failed with (#200).
+   */
+  account: { ok: boolean; name: string | null; error: string | null } | null;
   error: string | null;
 }
 
-async function checkToken(token: string): Promise<Check> {
+/** Hits the ad account itself: the only proof that the token can read it. */
+async function checkAccount(token: string, actId: string | null): Promise<Check['account']> {
+  if (!actId) return null;
+  try {
+    const u = `https://graph.facebook.com/${GRAPH_VERSION}/${actId}?fields=name,account_status&access_token=${encodeURIComponent(token)}`;
+    const j = (await (await fetch(u, { cache: 'no-store' })).json()) as { name?: string; error?: { message?: string } };
+    if (j.error) return { ok: false, name: null, error: j.error.message ?? 'Meta rechazó la cuenta' };
+    return { ok: true, name: j.name ?? null, error: null };
+  } catch (e) {
+    return { ok: false, name: null, error: e instanceof Error ? e.message : 'No se pudo consultar la cuenta' };
+  }
+}
+
+async function checkToken(token: string, actId: string | null = null): Promise<Check> {
   try {
     const me = (await (await fetch(`https://graph.facebook.com/${GRAPH_VERSION}/me?fields=name&access_token=${encodeURIComponent(token)}`, { cache: 'no-store' })).json()) as { name?: string; error?: { message?: string } };
-    if (me.error) return { ok: false, name: null, granted: [], missing: [...NEEDED], pages: [], error: me.error.message ?? 'Token rechazado' };
+    if (me.error) return { ok: false, name: null, granted: [], missing: [...NEEDED], pages: [], account: null, error: me.error.message ?? 'Token rechazado' };
     const perms = (await (await fetch(`https://graph.facebook.com/${GRAPH_VERSION}/me/permissions?access_token=${encodeURIComponent(token)}`, { cache: 'no-store' })).json()) as { data?: { permission: string; status: string }[] };
     const granted = (perms.data ?? []).filter((p) => p.status === 'granted').map((p) => p.permission);
     const missing = NEEDED.filter((p) => !granted.includes(p));
@@ -46,17 +66,18 @@ async function checkToken(token: string): Promise<Check> {
       const acc = (await (await fetch(`https://graph.facebook.com/${GRAPH_VERSION}/me/accounts?fields=id,name&limit=50&access_token=${encodeURIComponent(token)}`, { cache: 'no-store' })).json()) as { data?: { id: string; name: string }[] };
       pages = (acc.data ?? []).map((p) => ({ id: p.id, name: p.name }));
     } catch { /* optional */ }
-    return { ok: missing.length === 0, name: me.name ?? null, granted, missing, pages, error: null };
+    const account = await checkAccount(token, actId);
+    return { ok: missing.length === 0 && account?.ok !== false, name: me.name ?? null, granted, missing, pages, account, error: null };
   } catch (e) {
-    return { ok: false, name: null, granted: [], missing: [...NEEDED], pages: [], error: e instanceof Error ? e.message : 'No se pudo consultar a Meta' };
+    return { ok: false, name: null, granted: [], missing: [...NEEDED], pages: [], account: null, error: e instanceof Error ? e.message : 'No se pudo consultar a Meta' };
   }
 }
 
 async function accountOf(brandId: string, userId: string) {
   const sb = getSupabase();
-  const { data } = await sb.from('ad_account').select('id,ad_account_id,access_token,active')
+  const { data } = await sb.from('ad_account').select('id,ad_account_id,access_token,active,last_synced_at,last_sync_error')
     .eq('brand_id', brandId).eq('user_id', userId).eq('active', true).limit(1).maybeSingle();
-  return data as { id: string; ad_account_id: string; access_token: string | null; active: boolean } | null;
+  return data as { id: string; ad_account_id: string; access_token: string | null; active: boolean; last_synced_at: string | null; last_sync_error: string | null } | null;
 }
 
 /** { has_key, tail } for the user's Gemini key: app_settings first, env fallback. */
@@ -81,10 +102,11 @@ export async function GET(request: NextRequest) {
   const acc = await accountOf(brandId, user.id);
   if (!acc) return NextResponse.json({ account: null, gemini });
   const token = acc.access_token ?? process.env.META_ACCESS_TOKEN ?? null;
-  const check = token ? await checkToken(token) : null;
+  const check = token ? await checkToken(token, acc.ad_account_id) : null;
   return NextResponse.json({
     account: { id: acc.id, ad_account_id: acc.ad_account_id, has_token: Boolean(acc.access_token), token_tail: acc.access_token ? acc.access_token.slice(-4) : null },
     check,
+    sync: { last_synced_at: acc.last_synced_at, last_sync_error: acc.last_sync_error },
     gemini,
   });
 }
@@ -112,7 +134,7 @@ export async function PATCH(request: NextRequest) {
   if (!body.brandId || !token) return NextResponse.json({ error: 'Faltan brandId o token' }, { status: 400 });
   const acc = await accountOf(body.brandId, user.id);
   if (!acc) return NextResponse.json({ error: 'La marca no tiene cuenta de Meta activa' }, { status: 404 });
-  const check = await checkToken(token);
+  const check = await checkToken(token, acc.ad_account_id);
   if (check.error) return NextResponse.json({ error: `Meta rechazó el token: ${check.error}`, check }, { status: 400 });
   const sb = getSupabase();
   const { error } = await sb.from('ad_account').update({ access_token: token, updated_at: new Date().toISOString() }).eq('id', acc.id);

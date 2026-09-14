@@ -16,6 +16,7 @@ import {
   Settings2, CheckCircle2, CircleDashed, ExternalLink, Sparkles, Info,
 } from 'lucide-react';
 import AppHeader from '@/components/AppHeader';
+import SyncBanner from '@/components/SyncBanner';
 import { useMe } from '@/lib/use-me';
 import { useT, useFormatters } from '@/lib/i18n';
 import { parseMetaExport, verdictFor, metaAiPrompt, resolveEconomics, type Economics, type Verdict } from '@/lib/meta';
@@ -235,6 +236,7 @@ export default function MetaPage() {
 
       <section className="px-4 sm:px-6 py-6">
         <div className="max-w-[1400px] mx-auto">
+          <SyncBanner brandId={activeBrandId ?? null} />
           {/* Top bar */}
           <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
             <div>

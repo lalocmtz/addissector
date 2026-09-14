@@ -15,6 +15,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSupabase } from '@/lib/supabase';
 import { getSessionUser } from '@/lib/supabase-server';
 import { openMetaAsset, readBodyCapped, META_ASSET_COLUMNS, type MetaAssetRow } from '@/lib/meta-asset';
+import { mirrorBytes, mirrorThumbnail } from '@/lib/meta-mirror';
 import { getGeminiKey, GeminiError } from '@/lib/gemini';
 import { analyzeCreativeWithGemini, type CreativeKind } from '@/lib/gemini-analysis';
 import { saveCreative } from '@/lib/creatives-save';
@@ -93,6 +94,15 @@ export async function POST(request: NextRequest) {
     const mime = headerMime && (headerMime.startsWith('image/') || headerMime.startsWith('video/'))
       ? headerMime
       : kind === 'image' ? 'image/jpeg' : 'video/mp4';
+
+    // 1b · Copia permanente ---------------------------------------------------
+    // Ya tenemos los bytes en memoria: es el momento más barato de quedarnos
+    // con el archivo. Si venía del bucket no se toca nada. Nunca tumba el
+    // análisis: si el espejo falla seguimos con Gemini igual.
+    if (!opened.ownBucket) {
+      await mirrorBytes(sb, row, bytes, mime);
+      await mirrorThumbnail(sb, row);
+    }
 
     // 2 · Gemini --------------------------------------------------------------
     let result: Awaited<ReturnType<typeof analyzeCreativeWithGemini>>;

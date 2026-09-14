@@ -12,6 +12,7 @@ import { useState, useEffect, useCallback, useMemo, useRef, useSyncExternalStore
 import Link from 'next/link';
 import { Loader2, Film, Image as ImageIcon, Library, Search, X, LayoutGrid, List, Check, Copy, RefreshCw, Play } from 'lucide-react';
 import AppHeader from '@/components/AppHeader';
+import SyncBanner from '@/components/SyncBanner';
 import { useMe } from '@/lib/use-me';
 import { useT, useFormatters } from '@/lib/i18n';
 import { DEFAULT_ECONOMICS, type Economics, type VerdictId } from '@/lib/meta';
@@ -272,6 +273,7 @@ export default function LibraryPage() {
     <main className="flex-1">
       <AppHeader me={me} activeBrand={activeBrand} onBrandChange={setActiveBrandId} />
       <section className="max-w-[1400px] mx-auto px-4 sm:px-6 py-6">
+        <SyncBanner brandId={activeBrandId ?? null} />
         {/* Header */}
         <div className="flex flex-wrap items-start justify-between gap-4 mb-5">
           <div className="min-w-0">

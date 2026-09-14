@@ -5,15 +5,21 @@
 // firmadas de `source` caducan. Esta ruta lo baja del lado del servidor y, si la
 // URL ya expiró, la vuelve a resolver contra la API antes de rendirse (la
 // lógica compartida vive en src/lib/meta-asset.ts).
+//
+// Además deja una COPIA en nuestro bucket la primera vez que un archivo de Meta
+// pasa por aquí (src/lib/meta-mirror.ts): así el siguiente play ya no depende de
+// que el link firmado siga vivo. Por eso lee el cuerpo a memoria en vez de
+// pasarlo en streaming — es el precio de quedarnos con el archivo.
 // =============================================================================
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabase } from '@/lib/supabase';
 import { getSessionUser } from '@/lib/supabase-server';
-import { openMetaAsset, META_ASSET_COLUMNS, type MetaAssetRow } from '@/lib/meta-asset';
+import { META_ASSET_COLUMNS, type MetaAssetRow } from '@/lib/meta-asset';
+import { openAndMirror } from '@/lib/meta-mirror';
 
 export const runtime = 'nodejs';
-export const maxDuration = 120;
+export const maxDuration = 300;
 
 export async function GET(request: NextRequest) {
   const user = await getSessionUser();
@@ -31,24 +37,21 @@ export async function GET(request: NextRequest) {
     .maybeSingle();
   if (!row) return NextResponse.json({ error: 'Anuncio no encontrado' }, { status: 404 });
 
-  const { upstream, error } = await openMetaAsset(sb, row as unknown as MetaAssetRow);
+  const { bytes, mime, error } = await openAndMirror(sb, row as unknown as MetaAssetRow);
 
-  if (!upstream) {
+  if (!bytes) {
     return NextResponse.json(
       { error: `No se pudo descargar el creativo desde Meta${error ? `: ${error}` : ''}` },
       { status: 502 }
     );
   }
 
-  const tipo = upstream.headers.get('content-type')
-    ?? ((row as { asset_kind?: string | null }).asset_kind === 'image' ? 'image/jpeg' : 'video/mp4');
-  return new NextResponse(upstream.body, {
+  const body = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+  return new NextResponse(body, {
     headers: {
-      'Content-Type': tipo,
+      'Content-Type': mime,
+      'Content-Length': String(body.byteLength),
       'Cache-Control': 'private, max-age=600',
-      ...(upstream.headers.get('content-length')
-        ? { 'Content-Length': upstream.headers.get('content-length')! }
-        : {}),
     },
   });
 }
