@@ -17,6 +17,8 @@ import {
 } from 'lucide-react';
 import AppHeader from '@/components/AppHeader';
 import SyncBanner from '@/components/SyncBanner';
+import Incrementalidad from '@/components/Incrementalidad';
+import AdsetBreakdown, { type GroupBy } from '@/components/AdsetBreakdown';
 import { useMe } from '@/lib/use-me';
 import { useT, useFormatters } from '@/lib/i18n';
 import { parseMetaExport, metaAiPrompt, resolveEconomics } from '@/lib/meta';
@@ -170,6 +172,10 @@ export default function MetaPage() {
   const [sortKey, setSortKey] = useState<string>('spend7');
   const [sortDesc, setSortDesc] = useState(true);
   const [onlyActive, setOnlyActive] = useState(true);
+  // Agrupación de arriba: qué conjunto/campaña está seleccionado filtra la
+  // tabla de abajo. `groupKey` guarda el id (o el nombre, cuando no hay id).
+  const [groupBy, setGroupBy] = useState<GroupBy>('adset');
+  const [groupKey, setGroupKey] = useState<string | null>(null);
   const [selected, setSelected] = useState<AdRow | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadMsg, setUploadMsg] = useState<{ ok: boolean; text: string } | null>(null);
@@ -237,6 +243,11 @@ export default function MetaPage() {
   const visible = useMemo(() => {
     let rows = ads;
     if (onlyActive) rows = rows.filter((a) => !a.status || a.status.toLowerCase().includes('active'));
+    if (groupKey) {
+      rows = rows.filter((a) => (
+        (groupBy === 'adset' ? a.adset_id ?? a.adset_name : a.campaign_id ?? a.campaign_name) ?? '—'
+      ) === groupKey);
+    }
     return [...rows].sort((a, b) => {
       // Ordena por la columna visible: las ventanas no son llaves del agregado.
       const col = COLS.find((c) => c.key === sortKey);
@@ -248,7 +259,7 @@ export default function MetaPage() {
       if (typeof va === 'string') return sortDesc ? String(vb).localeCompare(String(va)) : String(va).localeCompare(String(vb));
       return sortDesc ? (vb as number) - (va as number) : (va as number) - (vb as number);
     });
-  }, [ads, onlyActive, sortKey, sortDesc]);
+  }, [ads, onlyActive, groupBy, groupKey, sortKey, sortDesc]);
 
   // El color ya no sale del percentil de la tabla sino de los umbrales de la
   // marca: un ROAS verde significa "arriba de tu objetivo", no "de los mejores
@@ -275,6 +286,18 @@ export default function MetaPage() {
     const purchases = visible.reduce((s, a) => s + (a.purchases ?? 0), 0);
     return { spend, revenue, purchases, roas: spend > 0 ? revenue / spend : 0 };
   }, [visible]);
+
+  /** Base del desglose: respeta "solo activos" pero NO el grupo seleccionado,
+   *  para que los demás conjuntos sigan a la vista y se pueda saltar entre ellos. */
+  const agrupables = useMemo(
+    () => (onlyActive ? ads.filter((a) => !a.status || a.status.toLowerCase().includes('active')) : ads),
+    [ads, onlyActive],
+  );
+  const grupoActivo = useMemo(() => {
+    if (!groupKey) return null;
+    const a = agrupables.find((x) => ((groupBy === 'adset' ? x.adset_id ?? x.adset_name : x.campaign_id ?? x.campaign_name) ?? '—') === groupKey);
+    return (groupBy === 'adset' ? a?.adset_name : a?.campaign_name) ?? groupKey;
+  }, [agrupables, groupBy, groupKey]);
 
   const winners = useMemo(() => visible.filter((a) => a.verdict?.id === 'ganador'), [visible]);
   const pendingWinners = winners.filter((w) => !w.analyzed);
@@ -386,6 +409,30 @@ export default function MetaPage() {
             <p className="text-[10px] text-ink-3 -mt-3 mb-4 font-[family-name:var(--font-mono)]">{t('window.vsPrevious')}</p>
           )}
 
+          {/* Incrementalidad y desglose: el "de dónde viene" antes del "qué apago" */}
+          <Incrementalidad brandId={activeBrandId ?? null} breakeven={eco.breakeven} />
+
+          <AdsetBreakdown
+            ads={agrupables}
+            eco={eco}
+            currency={currency}
+            groupBy={groupBy}
+            onGroupBy={setGroupBy}
+            selected={groupKey}
+            onSelect={setGroupKey}
+          />
+
+          {groupKey && (
+            <div className="mb-4 flex items-center gap-2 text-xs">
+              <span className="inline-flex items-center gap-1.5 rounded-md border border-accent/40 bg-accent-soft px-2.5 py-1 text-accent">
+                {t('meta.filteredBy', { name: grupoActivo ?? '' })}
+              </span>
+              <button onClick={() => setGroupKey(null)} className="text-ink-4 hover:text-ink-1 underline">
+                {t('meta.clearFilter')}
+              </button>
+            </div>
+          )}
+
           {/* Winners pending analysis */}
           {pendingWinners.length > 0 && (
             <div className="mb-5 rounded-md border border-warn/40 bg-warn-soft px-4 py-3">
@@ -416,6 +463,9 @@ export default function MetaPage() {
             </div>
           ) : (
             <div className="rounded-md border border-line overflow-x-auto">
+              <p className="px-3 py-2 text-[10px] text-ink-4 border-b border-line/60 leading-relaxed">
+                {t('meta.momentum.legend')}
+              </p>
               <table className="w-full text-xs whitespace-nowrap tabular-nums">
                 <thead>
                   <tr className="border-b border-line bg-surface text-ink-2">
@@ -448,6 +498,19 @@ export default function MetaPage() {
                             <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${a.status?.toLowerCase().includes('active') ? 'bg-ok' : 'bg-ink-4'}`} />
                             <span className="truncate text-ink" title={`${a.ad_name} · ${a.ad_id}`}>{a.ad_name}</span>
                           </div>
+                          {(a.adset_name || a.campaign_name) && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const k = (groupBy === 'adset' ? a.adset_id ?? a.adset_name : a.campaign_id ?? a.campaign_name) ?? '—';
+                                setGroupKey((cur) => (cur === k ? null : k));
+                              }}
+                              title={`${a.campaign_name ?? ''}${a.adset_name ? ` › ${a.adset_name}` : ''}`}
+                              className="block max-w-full truncate text-left text-[10px] text-ink-4 hover:text-accent pl-3"
+                            >
+                              {a.adset_name ?? a.campaign_name}
+                            </button>
+                          )}
                         </td>
                         <td className="px-2 py-1.5">
                           <span title={v.why} className={`inline-block px-2 py-0.5 rounded border text-[11px] ${VERDICT_STYLE[v.id]}`}>{VERDICT_META[v.id].label}</span>

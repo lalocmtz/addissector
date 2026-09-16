@@ -166,6 +166,12 @@ export interface AdAggregate extends Totals, Rates {
   ad_id: string;
   ad_name: string;
   status: string | null;
+  /** Dónde vive el anuncio. Sale de la última fila diaria: si Meta lo movió,
+   *  manda el conjunto de hoy, no el de la primera semana. */
+  campaign_id: string | null;
+  campaign_name: string | null;
+  adset_id: string | null;
+  adset_name: string | null;
   first_date: string | null;
   last_date: string | null;
   spend_last3: number;
@@ -200,6 +206,10 @@ export function aggregateByAd(rows: AdDailyRow[], momentum?: { minSpend: number;
       ad_id: adId,
       ad_name: last.ad_name,
       status: last.status,
+      campaign_id: last.campaign_id ?? null,
+      campaign_name: last.campaign_name ?? null,
+      adset_id: last.adset_id ?? null,
+      adset_name: last.adset_name ?? null,
       first_date: days[0].date,
       last_date: last.date,
       ...totals,
