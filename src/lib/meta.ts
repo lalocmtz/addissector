@@ -35,26 +35,75 @@ export interface DailyRow {
  * not part of this object anymore — it is derived from Meta and lives in
  * ad_account.currency (never typed by hand).
  */
+export interface Band { bad: number; good: number }
+
 export interface Economics {
-  breakeven: number; // break-even ROAS
-  target: number;    // target ROAS (winner)
-  kill: number;      // spend without purchases that means "kill" (≈ 2× break-even CPA)
+  breakeven: number; // ROAS de equilibrio = AOV / margen de contribucion
+  target: number;    // ROAS objetivo (ganador) = AOV / CAC objetivo
+  kill: number;      // piso de gasto sin compras que significa "apagar"
+  /** Multiplo del CPA objetivo a partir del cual un veredicto es confiable. */
+  signalMultiple: number;
+  /** Caida de ROAS 7d vs 14d que enciende "Vigilar" (negativo, p.ej. -0.20). */
+  fatigueDrop: number;
+  /** Frecuencia a partir de la cual vigilar. */
+  freqWatch: number;
+  /** Bandas creativas, calibradas con p25/p75 de la propia cuenta. */
+  hook: Band;
+  hold: Band;
+  ret75: Band;
+  /** Economia unitaria, para poder explicar de donde sale el breakeven. */
+  aov: number | null;
+  cac: number | null;
+  unitCost: number | null;
 }
 
 export const DEFAULT_ECONOMICS: Economics = {
-  breakeven: 1.46,
+  breakeven: 1.56,
   target: 2.0,
   kill: 58,
+  signalMultiple: 2,
+  fatigueDrop: -0.2,
+  freqWatch: 2.5,
+  hook: { bad: 0.10, good: 0.22 },
+  hold: { bad: 0.17, good: 0.30 },
+  ret75: { bad: 0.09, good: 0.20 },
+  aov: null,
+  cac: null,
+  unitCost: null,
 };
 
-/** Merges a stored economics blob with defaults, ignoring the legacy `currency` key. */
+const pos = (v: unknown, fallback: number): number => (Number(v) > 0 ? Number(v) : fallback);
+const banda = (v: unknown, fallback: Band): Band => {
+  const b = (v ?? {}) as Partial<Band>;
+  return { bad: pos(b.bad, fallback.bad), good: pos(b.good, fallback.good) };
+};
+const posOrNull = (v: unknown): number | null => (Number(v) > 0 ? Number(v) : null);
+
+/** Mezcla el blob guardado en brands.economics con los defaults. */
 export function resolveEconomics(raw: unknown): Economics {
-  const e = (raw ?? {}) as Partial<Economics> & { currency?: unknown };
+  const e = (raw ?? {}) as Record<string, unknown>;
+  const fatigue = Number(e.fatigueDrop);
   return {
-    breakeven: Number(e.breakeven) > 0 ? Number(e.breakeven) : DEFAULT_ECONOMICS.breakeven,
-    target: Number(e.target) > 0 ? Number(e.target) : DEFAULT_ECONOMICS.target,
-    kill: Number(e.kill) > 0 ? Number(e.kill) : DEFAULT_ECONOMICS.kill,
+    breakeven: pos(e.breakeven, DEFAULT_ECONOMICS.breakeven),
+    target: pos(e.target, DEFAULT_ECONOMICS.target),
+    kill: pos(e.kill, DEFAULT_ECONOMICS.kill),
+    signalMultiple: pos(e.signalMultiple, DEFAULT_ECONOMICS.signalMultiple),
+    fatigueDrop: Number.isFinite(fatigue) && fatigue < 0 ? fatigue : DEFAULT_ECONOMICS.fatigueDrop,
+    freqWatch: pos(e.freqWatch, DEFAULT_ECONOMICS.freqWatch),
+    hook: banda(e.hook, DEFAULT_ECONOMICS.hook),
+    hold: banda(e.hold, DEFAULT_ECONOMICS.hold),
+    ret75: banda(e.ret75, DEFAULT_ECONOMICS.ret75),
+    aov: posOrNull(e.aov),
+    cac: posOrNull(e.cac),
+    unitCost: posOrNull(e.unitCost),
   };
+}
+
+/** CPA objetivo: el CAC declarado, o el que implica AOV / ROAS objetivo. */
+export function targetCpa(e: Economics): number | null {
+  if (e.cac) return e.cac;
+  if (e.aov && e.target > 0) return e.aov / e.target;
+  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -249,7 +298,12 @@ export function mergeDuplicateDays(rows: DailyRow[]): DailyRow[] {
 // ---------------------------------------------------------------------------
 // Per-ad verdict (account rules). Labels are i18n keys resolved by the UI.
 // ---------------------------------------------------------------------------
-export type VerdictId = 'ganador' | 'prometedor' | 'dejar' | 'apagar' | 'sin_datos';
+/**
+ * OJO: el vocabulario del veredicto vive en src/lib/verdict.ts. Este alias
+ * existe solo para el prompt de abajo y se mantiene laxo a proposito, para no
+ * crear una dependencia circular entre meta.ts y verdict.ts.
+ */
+export type VerdictId = string;
 
 export interface Verdict {
   id: VerdictId;
@@ -312,16 +366,19 @@ export function fmtMoney(n: number, currency: string | null | undefined): string
 /** Prompt ready to paste into Meta's AI, per verdict. */
 export function metaAiPrompt(
   ad: VerdictInput & { ad_name: string; days: number; hook_rate: number | null; ret75: number | null; freq: number | null },
-  v: Verdict, eco: Economics, currency: string | null = null
+  v: { id: string; why: string }, eco: Economics, currency: string | null = null
 ): string {
   const base = `Analiza el anuncio "${ad.ad_name}" (últimos ${ad.days} días: gasto ${fmtMoney(ad.spend, currency)}, ROAS ${ad.roas?.toFixed(2) ?? 'N/D'}, hook rate ${ad.hook_rate?.toFixed(1) ?? 'N/D'}%, retención al 75% ${ad.ret75?.toFixed(0) ?? 'N/D'}%, frecuencia ${ad.freq?.toFixed(1) ?? 'N/D'}).`;
-  const ask: Record<VerdictId, string> = {
+  const ask: Record<string, string> = {
     ganador: '¿Qué está haciendo que este anuncio gane? Dame la curva de retención por segundo, desglose por edad/género/ubicación y qué audiencia está convirtiendo mejor vs el resto de la cuenta.',
     prometedor: '¿Qué le falta para escalar? Compara su CTR, retención y CVR contra el promedio de la cuenta y dime dónde está la fuga.',
+    potencial: '¿Qué le falta para escalar? Compara su CTR, retención y CVR contra el promedio de la cuenta y dime dónde está la fuga.',
+    mantener: '¿Dónde pierde a la gente este anuncio? Curva de retención por segundo y en qué segundo cae más vs los ganadores de la cuenta.',
+    vigilar: '¿Está fatigándose? Dame frecuencia, alcance nuevo vs repetido y cómo cambió la retención en los últimos 7 días contra los 7 previos.',
     dejar: '¿Dónde pierde a la gente este anuncio? Curva de retención por segundo y en qué segundo cae más vs los ganadores de la cuenta.',
     apagar: '¿Hubo algún segmento (edad/género/placement) donde sí funcionó antes de apagarlo?',
     sin_datos: '¿Cómo va la fase de aprendizaje de este anuncio vs otros lanzados la misma semana?',
   };
   void eco;
-  return `${base}\n\n${ask[v.id]}\n\nDame también: curva de retención por segundo, comparativa vs el promedio de la cuenta, y desglose por edad, género y placement.`;
+  return `${base}\n\n${(ask[v.id] ?? ask.sin_datos)}\n\nDame también: curva de retención por segundo, comparativa vs el promedio de la cuenta, y desglose por edad, género y placement.`;
 }

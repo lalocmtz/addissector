@@ -19,8 +19,10 @@ import AppHeader from '@/components/AppHeader';
 import SyncBanner from '@/components/SyncBanner';
 import { useMe } from '@/lib/use-me';
 import { useT, useFormatters } from '@/lib/i18n';
-import { parseMetaExport, verdictFor, metaAiPrompt, resolveEconomics, type Economics, type Verdict } from '@/lib/meta';
+import { parseMetaExport, metaAiPrompt, resolveEconomics } from '@/lib/meta';
 import type { AdAggregate, AdDailyRow, MomentumPhase } from '@/lib/metrics';
+import { VERDICT_META, bandTone, roasTone, type VerdictId, type VerdictResult } from '@/lib/verdict';
+import type { Economics } from '@/lib/meta';
 import type { WindowId } from '@/lib/windows';
 
 // ---------------------------------------------------------------------------
@@ -40,6 +42,17 @@ interface AdRow extends AdAggregate {
   asset_url: string | null;
   thumbnail_url: string | null;
   delta: { spend: number | null; roas: number | null; hook_rate: number | null; cpa: number | null } | null;
+  /** Ventanas fijas que calcula el servidor. Mandan sobre la ventana en pantalla. */
+  d3: Win | null; d7: Win | null; d14: Win | null;
+  verdict: VerdictResult;
+}
+
+/** El corte de una ventana: lo que la tabla pinta, nada más. */
+interface Win {
+  spend: number; revenue: number | null; purchases: number | null;
+  roas: number | null; cpa: number | null;
+  hook_rate: number | null; hold_rate: number | null; ret50: number | null; ret75: number | null;
+  freq: number | null; cvr: number | null; cpm: number | null; cpc: number | null; cost_atc: number | null;
 }
 
 type SortKey = keyof Pick<AdRow,
@@ -70,34 +83,76 @@ interface AccountSummary {
 }
 
 type Fmt = ReturnType<typeof useFormatters>;
-interface Col { key: SortKey; label: string; tip: string; higherBetter: boolean | null; fmt: (a: AdRow, f: Fmt, cur: string | null) => string }
+/**
+ * Una columna de la tabla. `get` da el número para ordenar y pintar; `fmt` lo
+ * escribe. El orden del arreglo ES el orden de lectura, y es deliberado:
+ * primero lo creativo (lo que un creativo puede cambiar), luego la economía de
+ * 7 días (la que manda), luego 14 días (la que confirma), y al final lo
+ * secundario. Nada va colapsado.
+ */
+interface Col {
+  key: string;
+  label: string;
+  tip: string;
+  group: 'creativo' | 'd7' | 'd14' | 'momento' | 'secundaria';
+  get: (a: AdRow) => number | null;
+  fmt: (a: AdRow, f: Fmt, cur: string | null) => string;
+  tone?: (a: AdRow, eco: Economics) => 'ok' | 'danger' | null;
+}
+
+const w = (a: AdRow, k: 'd3' | 'd7' | 'd14') => a[k];
+const pick = (a: AdRow, k: 'd3' | 'd7' | 'd14', f: keyof Win): number | null => {
+  const x = w(a, k);
+  return x ? (x[f] as number | null) : null;
+};
+/** Caída relativa de ROAS 7d contra 14d. Negativo = está empeorando. */
+const deltaRoas = (a: AdRow): number | null => {
+  const r7 = pick(a, 'd7', 'roas');
+  const r14 = pick(a, 'd14', 'roas');
+  return r7 != null && r14 != null && r14 > 0 ? r7 / r14 - 1 : null;
+};
+
 const COLS: Col[] = [
-  { key: 'spend', label: 'meta.col.spend', tip: 'meta.col.spend.tip', higherBetter: null, fmt: (a, f, c) => f.money(a.spend, c) },
-  { key: 'revenue', label: 'meta.col.revenue', tip: 'meta.col.revenue.tip', higherBetter: true, fmt: (a, f, c) => (a.revenue ? f.money(a.revenue, c) : '—') },
-  { key: 'roas', label: 'meta.col.roas', tip: 'meta.col.roas.tip', higherBetter: true, fmt: (a, f) => f.ratio(a.roas) },
-  { key: 'purchases', label: 'meta.col.purchases', tip: 'meta.col.purchases.tip', higherBetter: true, fmt: (a, f) => (a.purchases ? f.num(a.purchases) : '—') },
-  { key: 'cpa', label: 'meta.col.cpa', tip: 'meta.col.cpa.tip', higherBetter: false, fmt: (a, f, c) => f.money(a.cpa, c) },
-  { key: 'hook_rate', label: 'meta.col.hook', tip: 'meta.col.hook.tip', higherBetter: true, fmt: (a, f) => f.pct(a.hook_rate, 1) },
-  { key: 'hold_rate', label: 'meta.col.hold', tip: 'meta.col.hold.tip', higherBetter: true, fmt: (a, f) => f.pct(a.hold_rate, 0) },
-  { key: 'ret50', label: 'meta.col.ret50', tip: 'meta.col.ret50.tip', higherBetter: true, fmt: (a, f) => f.pct(a.ret50, 0) },
-  { key: 'ret75', label: 'meta.col.ret75', tip: 'meta.col.ret75.tip', higherBetter: true, fmt: (a, f) => f.pct(a.ret75, 0) },
-  { key: 'cvr', label: 'meta.col.cvr', tip: 'meta.col.cvr.tip', higherBetter: true, fmt: (a, f) => f.pct(a.cvr, 2) },
-  { key: 'cpm', label: 'meta.col.cpm', tip: 'meta.col.cpm.tip', higherBetter: false, fmt: (a, f, c) => f.money(a.cpm, c) },
-  { key: 'cpc', label: 'meta.col.cpc', tip: 'meta.col.cpc.tip', higherBetter: false, fmt: (a, f, c) => f.money(a.cpc, c) },
-  { key: 'cost_atc', label: 'meta.col.costAtc', tip: 'meta.col.costAtc.tip', higherBetter: false, fmt: (a, f, c) => f.money(a.cost_atc, c) },
-  { key: 'freq', label: 'meta.col.freq', tip: 'meta.col.freq.tip', higherBetter: false, fmt: (a, f) => f.ratio(a.freq, 1) },
-  { key: 'link_clicks', label: 'meta.col.clicks', tip: 'meta.col.clicks.tip', higherBetter: true, fmt: (a, f) => (a.link_clicks ? f.num(a.link_clicks) : '—') },
+  // Bloque 1 — métricas creativas primero
+  { key: 'hook7', label: 'meta.col.hook', tip: 'meta.col.hook.tip', group: 'creativo', get: (a) => pick(a, 'd7', 'hook_rate'), fmt: (a, f) => f.pct(pick(a, 'd7', 'hook_rate'), 1), tone: (a, e) => bandTone(pick(a, 'd7', 'hook_rate'), e.hook) },
+  { key: 'hold7', label: 'meta.col.hold', tip: 'meta.col.hold.tip', group: 'creativo', get: (a) => pick(a, 'd7', 'hold_rate'), fmt: (a, f) => f.pct(pick(a, 'd7', 'hold_rate'), 0), tone: (a, e) => bandTone(pick(a, 'd7', 'hold_rate'), e.hold) },
+  { key: 'ret50_7', label: 'meta.col.ret50', tip: 'meta.col.ret50.tip', group: 'creativo', get: (a) => pick(a, 'd7', 'ret50'), fmt: (a, f) => f.pct(pick(a, 'd7', 'ret50'), 0) },
+  { key: 'ret75_7', label: 'meta.col.ret75', tip: 'meta.col.ret75.tip', group: 'creativo', get: (a) => pick(a, 'd7', 'ret75'), fmt: (a, f) => f.pct(pick(a, 'd7', 'ret75'), 0), tone: (a, e) => bandTone(pick(a, 'd7', 'ret75'), e.ret75) },
+  { key: 'freq7', label: 'meta.col.freq', tip: 'meta.col.freq.tip', group: 'creativo', get: (a) => pick(a, 'd7', 'freq'), fmt: (a, f) => f.ratio(pick(a, 'd7', 'freq'), 2), tone: (a, e) => { const v = pick(a, 'd7', 'freq'); return v != null && v >= e.freqWatch ? 'danger' : null; } },
+
+  // Bloque 2 — economía 7d: la que manda
+  { key: 'spend7', label: 'meta.col.spend7', tip: 'meta.col.spend7.tip', group: 'd7', get: (a) => pick(a, 'd7', 'spend'), fmt: (a, f, c) => f.money(pick(a, 'd7', 'spend'), c) },
+  { key: 'roas7', label: 'meta.col.roas7', tip: 'meta.col.roas7.tip', group: 'd7', get: (a) => pick(a, 'd7', 'roas'), fmt: (a, f) => f.ratio(pick(a, 'd7', 'roas')), tone: (a, e) => roasTone(pick(a, 'd7', 'roas'), e) },
+  { key: 'cpa7', label: 'meta.col.cpa7', tip: 'meta.col.cpa7.tip', group: 'd7', get: (a) => pick(a, 'd7', 'cpa'), fmt: (a, f, c) => f.money(pick(a, 'd7', 'cpa'), c) },
+  { key: 'purch7', label: 'meta.col.purchases7', tip: 'meta.col.purchases7.tip', group: 'd7', get: (a) => pick(a, 'd7', 'purchases'), fmt: (a, f) => { const v = pick(a, 'd7', 'purchases'); return v ? f.num(v) : '—'; } },
+  { key: 'rev7', label: 'meta.col.revenue7', tip: 'meta.col.revenue7.tip', group: 'd7', get: (a) => pick(a, 'd7', 'revenue'), fmt: (a, f, c) => { const v = pick(a, 'd7', 'revenue'); return v ? f.money(v, c) : '—'; } },
+
+  // Bloque 3 — economía 14d: confirma o desmiente
+  { key: 'spend14', label: 'meta.col.spend14', tip: 'meta.col.spend14.tip', group: 'd14', get: (a) => pick(a, 'd14', 'spend'), fmt: (a, f, c) => f.money(pick(a, 'd14', 'spend'), c) },
+  { key: 'roas14', label: 'meta.col.roas14', tip: 'meta.col.roas14.tip', group: 'd14', get: (a) => pick(a, 'd14', 'roas'), fmt: (a, f) => f.ratio(pick(a, 'd14', 'roas')), tone: (a, e) => roasTone(pick(a, 'd14', 'roas'), e) },
+  { key: 'cpa14', label: 'meta.col.cpa14', tip: 'meta.col.cpa14.tip', group: 'd14', get: (a) => pick(a, 'd14', 'cpa'), fmt: (a, f, c) => f.money(pick(a, 'd14', 'cpa'), c) },
+  { key: 'purch14', label: 'meta.col.purchases14', tip: 'meta.col.purchases14.tip', group: 'd14', get: (a) => pick(a, 'd14', 'purchases'), fmt: (a, f) => { const v = pick(a, 'd14', 'purchases'); return v ? f.num(v) : '—'; } },
+
+  // Bloque 4 — momento corto
+  { key: 'roas3', label: 'meta.col.roas3', tip: 'meta.col.roas3.tip', group: 'momento', get: (a) => pick(a, 'd3', 'roas'), fmt: (a, f) => f.ratio(pick(a, 'd3', 'roas')), tone: (a, e) => roasTone(pick(a, 'd3', 'roas'), e) },
+  { key: 'droas', label: 'meta.col.droas', tip: 'meta.col.droas.tip', group: 'momento', get: deltaRoas, fmt: (a, f) => { const d = deltaRoas(a); return d == null ? '—' : `${d > 0 ? '+' : ''}${f.pct(d, 0)}`; }, tone: (a, e) => { const d = deltaRoas(a); return d == null ? null : d <= e.fatigueDrop ? 'danger' : d >= 0.15 ? 'ok' : null; } },
+
+  // Bloque 5 — secundarias
+  { key: 'cvr7', label: 'meta.col.cvr', tip: 'meta.col.cvr.tip', group: 'secundaria', get: (a) => pick(a, 'd7', 'cvr'), fmt: (a, f) => f.pct(pick(a, 'd7', 'cvr'), 2) },
+  { key: 'cpm7', label: 'meta.col.cpm', tip: 'meta.col.cpm.tip', group: 'secundaria', get: (a) => pick(a, 'd7', 'cpm'), fmt: (a, f, c) => f.money(pick(a, 'd7', 'cpm'), c) },
+  { key: 'cpc7', label: 'meta.col.cpc', tip: 'meta.col.cpc.tip', group: 'secundaria', get: (a) => pick(a, 'd7', 'cpc'), fmt: (a, f, c) => f.money(pick(a, 'd7', 'cpc'), c) },
+  { key: 'catc7', label: 'meta.col.costAtc', tip: 'meta.col.costAtc.tip', group: 'secundaria', get: (a) => pick(a, 'd7', 'cost_atc'), fmt: (a, f, c) => f.money(pick(a, 'd7', 'cost_atc'), c) },
 ];
 
 /** Verdict chips: state is encoded in shape (border + weight) as well as color. */
-const VERDICT_STYLE: Record<Verdict['id'], string> = {
+const VERDICT_STYLE: Record<VerdictId, string> = {
   ganador: 'bg-ok-soft text-ok border-ok/40 font-semibold',
-  prometedor: 'bg-warn-soft text-warn border-warn/40',
-  dejar: 'bg-warn-soft text-warn border-warn/40 border-dashed',
+  potencial: 'bg-accent-soft text-accent border-accent/40',
+  mantener: 'bg-warn-soft text-warn border-warn/40',
+  vigilar: 'bg-warn-soft text-warn border-warn/40 border-dashed',
   apagar: 'bg-danger-soft text-danger border-danger/40 font-semibold',
   sin_datos: 'bg-surface-2 text-ink-3 border-line',
 };
-
 export default function MetaPage() {
   const router = useRouter();
   const t = useT();
@@ -112,7 +167,7 @@ export default function MetaPage() {
   const [memoryTo, setMemoryTo] = useState<string | null>(null);
   const [windowId, setWindowId] = useState<WindowId>('last7');
   const [account, setAccount] = useState<AccountSummary | null>(null);
-  const [sortKey, setSortKey] = useState<SortKey>('spend');
+  const [sortKey, setSortKey] = useState<string>('spend7');
   const [sortDesc, setSortDesc] = useState(true);
   const [onlyActive, setOnlyActive] = useState(true);
   const [selected, setSelected] = useState<AdRow | null>(null);
@@ -183,7 +238,10 @@ export default function MetaPage() {
     let rows = ads;
     if (onlyActive) rows = rows.filter((a) => !a.status || a.status.toLowerCase().includes('active'));
     return [...rows].sort((a, b) => {
-      const va = a[sortKey]; const vb = b[sortKey];
+      // Ordena por la columna visible: las ventanas no son llaves del agregado.
+      const col = COLS.find((c) => c.key === sortKey);
+      const va = col ? col.get(a) : (a as unknown as Record<string, number | null>)[sortKey];
+      const vb = col ? col.get(b) : (b as unknown as Record<string, number | null>)[sortKey];
       if (va == null && vb == null) return 0;
       if (va == null) return 1;
       if (vb == null) return -1;
@@ -192,27 +250,24 @@ export default function MetaPage() {
     });
   }, [ads, onlyActive, sortKey, sortDesc]);
 
+  // El color ya no sale del percentil de la tabla sino de los umbrales de la
+  // marca: un ROAS verde significa "arriba de tu objetivo", no "de los mejores
+  // de esta pantalla". Un tablero que se califica contra si mismo pinta verde
+  // al menos malo de una cuenta que pierde.
   const heat = useMemo(() => {
-    const map = new Map<SortKey, (v: number | null) => string>();
+    const map = new Map<string, (a: AdRow) => string>();
     for (const c of COLS) {
-      if (c.higherBetter === null) { map.set(c.key, () => ''); continue; }
-      const vals = visible.map((a) => a[c.key] as number | null).filter((v): v is number => v != null && Number.isFinite(v)).sort((x, y) => x - y);
-      if (vals.length < 3) { map.set(c.key, () => ''); continue; }
-      const lo = vals[Math.floor(vals.length * 0.1)];
-      const hi = vals[Math.floor(vals.length * 0.9)] || lo + 1;
-      map.set(c.key, (v) => {
-        if (v == null) return '';
-        let s = hi === lo ? 0.5 : (v - lo) / (hi - lo);
-        s = Math.max(0, Math.min(1, s));
-        if (!c.higherBetter) s = 1 - s;
-        // danger (0) → neutral → ok (1), via the semantic tokens
-        return s > 0.5
-          ? `color-mix(in oklab, var(--color-ok) ${Math.round((s - 0.5) * 2 * 28)}%, transparent)`
-          : `color-mix(in oklab, var(--color-danger) ${Math.round((0.5 - s) * 2 * 28)}%, transparent)`;
+      if (!c.tone) { map.set(c.key, () => ''); continue; }
+      map.set(c.key, (a) => {
+        const tone = c.tone!(a, eco);
+        if (!tone) return '';
+        return tone === 'ok'
+          ? 'color-mix(in oklab, var(--color-ok) 20%, transparent)'
+          : 'color-mix(in oklab, var(--color-danger) 20%, transparent)';
       });
     }
     return map;
-  }, [visible]);
+  }, [eco]);
 
   const totals = useMemo(() => {
     const spend = visible.reduce((s, a) => s + a.spend, 0);
@@ -221,11 +276,11 @@ export default function MetaPage() {
     return { spend, revenue, purchases, roas: spend > 0 ? revenue / spend : 0 };
   }, [visible]);
 
-  const winners = useMemo(() => visible.filter((a) => verdictFor(a, eco, currency).id === 'ganador'), [visible, eco, currency]);
+  const winners = useMemo(() => visible.filter((a) => a.verdict?.id === 'ganador'), [visible]);
   const pendingWinners = winners.filter((w) => !w.analyzed);
   const metricsPending = useMemo(() => visible.some((a) => a.video_metrics_pending), [visible]);
 
-  const sortBy = (k: SortKey) => {
+  const sortBy = (k: string) => {
     if (sortKey === k) setSortDesc((d) => !d);
     else { setSortKey(k); setSortDesc(true); }
   };
@@ -368,6 +423,7 @@ export default function MetaPage() {
                       {t('meta.col.ad', { n: visible.length })}
                     </th>
                     <th className="text-left px-2 py-2 font-medium">{t('meta.col.verdict')}</th>
+                    <th className="text-left px-2 py-2 font-medium">{t('meta.col.why')}</th>
                     <th className="text-left px-2 py-2 font-medium" title={t('meta.col.momentum.tip')}>{t('meta.col.momentum')}</th>
                     <th className="text-center px-2 py-2 font-medium" title={t('meta.col.analysis.tip')}>{t('meta.col.analysis')}</th>
                     {COLS.map((c) => (
@@ -384,7 +440,7 @@ export default function MetaPage() {
                 </thead>
                 <tbody>
                   {visible.map((a) => {
-                    const v = verdictFor(a, eco, currency);
+                    const v = a.verdict;
                     return (
                       <tr key={a.ad_id} onClick={() => setSelected(a)} className="border-b border-line/60 hover:bg-surface-2 cursor-pointer transition-colors">
                         <td className="px-3 py-1.5 sticky left-0 bg-canvas max-w-[260px]">
@@ -394,7 +450,10 @@ export default function MetaPage() {
                           </div>
                         </td>
                         <td className="px-2 py-1.5">
-                          <span title={v.why} className={`inline-block px-2 py-0.5 rounded border text-[10px] ${VERDICT_STYLE[v.id]}`}>{t(v.labelKey)}</span>
+                          <span title={v.why} className={`inline-block px-2 py-0.5 rounded border text-[11px] ${VERDICT_STYLE[v.id]}`}>{VERDICT_META[v.id].label}</span>
+                        </td>
+                        <td className="px-2 py-1.5 max-w-[280px]">
+                          <span className="block truncate text-[11px] text-ink-3" title={v.why}>{v.why}</span>
                         </td>
                         <td className="px-2 py-1.5">
                           {a.momentum && (
@@ -407,7 +466,7 @@ export default function MetaPage() {
                           )}
                         </td>
                         <td className="px-2 py-1.5 text-center">
-                          {v.id === 'ganador' || v.id === 'prometedor' || a.analyzed || a.has_dossier ? (
+                          {v.id === 'ganador' || v.id === 'potencial' || a.analyzed || a.has_dossier ? (
                             a.analyzed ? <CheckCircle2 className="w-4 h-4 text-ok inline" aria-label={t('meta.analyzed')} />
                               : a.has_dossier ? <CircleDashed className="w-4 h-4 text-warn inline" aria-label={t('meta.partialDossier')} />
                               : <CircleDashed className="w-4 h-4 text-warn inline" aria-label={t('meta.needsAnalysis')} />
@@ -417,7 +476,7 @@ export default function MetaPage() {
                           <td
                             key={c.key}
                             className="text-right px-2.5 py-1.5 font-[family-name:var(--font-mono)] text-ink-2"
-                            style={{ background: heat.get(c.key)?.(a[c.key] as number | null) || undefined }}
+                            style={{ background: heat.get(c.key)?.(a) || undefined }}
                           >
                             {c.fmt(a, f, currency)}
                           </td>
@@ -540,7 +599,7 @@ function AdDetail({ ad, brandId, eco, currency, onClose, onSaved, onAnalyze }: {
   const [fusionError, setFusionError] = useState<string | null>(null);
   const [copiedAll, setCopiedAll] = useState(false);
   const [copiedFusion, setCopiedFusion] = useState(false);
-  const v = verdictFor(ad, eco, currency);
+  const v = ad.verdict;
 
   const generateFusion = async () => {
     setFusing(true);
@@ -566,7 +625,7 @@ function AdDetail({ ad, brandId, eco, currency, onClose, onSaved, onAnalyze }: {
     const m = (n: number | null | undefined) => f.money(n, currency);
     const lines = [
  `AD: ${ad.ad_name} (meta ad_id ${ad.ad_id})`,
- `Verdict: ${t(v.labelKey)} — ${v.why}`,
+ `Verdict: ${VERDICT_META[v.id].label} — ${v.why}`,
  `Metrics (${ad.days} days, ${currency ?? '?'}): spend ${m(ad.spend)} · revenue ${m(ad.revenue)} · ROAS ${f.ratio(ad.roas)} · purchases ${f.num(ad.purchases)} · CPA ${m(ad.cpa)} · hook ${f.pct(ad.hook_rate)} · hold ${f.pct(ad.hold_rate, 0)} · ret25 ${f.pct(ad.ret25, 0)} · ret50 ${f.pct(ad.ret50, 0)} · ret75 ${f.pct(ad.ret75, 0)} · ret100 ${f.pct(ad.ret100, 0)} · CVR ${f.pct(ad.cvr, 2)} · CPM ${m(ad.cpm)} · CPC ${m(ad.cpc)} · cost/ATC ${m(ad.cost_atc)} · freq ${f.ratio(ad.freq, 1)} · clicks ${f.num(ad.link_clicks)}`,
       '',
       'DAILY SERIES:',
@@ -618,7 +677,7 @@ function AdDetail({ ad, brandId, eco, currency, onClose, onSaved, onAnalyze }: {
           <div className="min-w-0">
             <h2 className="text-base font-semibold text-ink break-words font-[family-name:var(--font-serif)]">{ad.ad_name}</h2>
             <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-              <span className={`inline-block px-2 py-0.5 rounded border text-[10px] ${VERDICT_STYLE[v.id]}`}>{t(v.labelKey)}</span>
+              <span className={`inline-block px-2 py-0.5 rounded border text-[10px] ${VERDICT_STYLE[v.id]}`}>{VERDICT_META[v.id].label}</span>
               <span className="text-[10px] text-ink-3 font-[family-name:var(--font-mono)]">
                 {t('meta.detail.daysWithData', { n: ad.days })}{ad.created_date ? t('meta.detail.created', { date: ad.created_date }) : ''} · {ad.ad_id}
               </span>

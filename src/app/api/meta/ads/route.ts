@@ -16,6 +16,7 @@ import { getSessionUser } from '@/lib/supabase-server';
 import { aggregateByAd, rollupAggregates, AD_DAILY_COLUMNS, type AdDailyRow } from '@/lib/metrics';
 import { resolveWindow, isWindowId, delta, type WindowId } from '@/lib/windows';
 import { resolveEconomics } from '@/lib/meta';
+import { verdictOf, signalFloor } from '@/lib/verdict';
 import { fetchAll } from '@/lib/fetch-all';
 
 export const runtime = 'nodejs';
@@ -75,6 +76,24 @@ export async function GET(request: NextRequest) {
   const ads = aggregateByAd(rows).map((a) => ({ ...a, momentum: momentumById.get(a.ad_id) }));
   const prevAds = win.previous ? aggregateByAd(all.filter((r) => inRange(r, win.previous!))) : [];
   const prevById = new Map(prevAds.map((a) => [a.ad_id, a]));
+  // --- Ventanas fijas 3d / 7d / 14d -----------------------------------------
+  // El veredicto NO depende de la ventana que el usuario esté mirando: 7d manda
+  // y 14d confirma, siempre, aunque en pantalla esté "Hoy". Se calculan sobre
+  // el mismo `all` que ya está en memoria, así que no cuestan una consulta más.
+  const diasAtras = (n: number) => {
+    const d = new Date(`${anchor}T00:00:00Z`);
+    d.setUTCDate(d.getUTCDate() - (n - 1));
+    return d.toISOString().slice(0, 10);
+  };
+  const ventana = (n: number) => {
+    const desde = diasAtras(n);
+    return new Map(aggregateByAd(all.filter((r) => r.date >= desde && r.date <= anchor)).map((a) => [a.ad_id, a]));
+  };
+  const w3 = ventana(3);
+  const w7 = ventana(7);
+  const w14 = ventana(14);
+  const piso = signalFloor(eco);
+
   const account = rollupAggregates(ads);
   const accountPrev = win.previous ? rollupAggregates(prevAds) : null;
 
@@ -102,6 +121,13 @@ export async function GET(request: NextRequest) {
     if (key) creativeByName.set(norm(key), c);
   }
 
+  /** Lo que la tabla necesita de una ventana, sin arrastrar el agregado entero. */
+  const slice = (x: ReturnType<typeof aggregateByAd>[number] | undefined) => x ? {
+    spend: x.spend, revenue: x.revenue, purchases: x.purchases, roas: x.roas, cpa: x.cpa,
+    hook_rate: x.hook_rate, hold_rate: x.hold_rate, ret50: x.ret50, ret75: x.ret75,
+    freq: x.freq, cvr: x.cvr, cpm: x.cpm, cpc: x.cpc, cost_atc: x.cost_atc,
+  } : null;
+
   const enriched = ads.map((a) => {
     const dim = dimById.get(a.ad_id);
     const prev = prevById.get(a.ad_id);
@@ -127,6 +153,14 @@ export async function GET(request: NextRequest) {
       persona_id: dim?.persona_id ?? null,
       angle_id: dim?.angle_id ?? null,
       concept_id: dim?.concept_id ?? null,
+      d3: slice(w3.get(a.ad_id)),
+      d7: slice(w7.get(a.ad_id)),
+      d14: slice(w14.get(a.ad_id)),
+      verdict: verdictOf(
+        { spend: w7.get(a.ad_id)?.spend ?? 0, roas: w7.get(a.ad_id)?.roas ?? null, purchases: w7.get(a.ad_id)?.purchases ?? null, freq: w7.get(a.ad_id)?.freq ?? null },
+        w14.get(a.ad_id) ? { spend: w14.get(a.ad_id)!.spend, roas: w14.get(a.ad_id)!.roas, purchases: w14.get(a.ad_id)!.purchases, freq: w14.get(a.ad_id)!.freq } : null,
+        eco,
+      ),
       previous: prev ? { spend: prev.spend, roas: prev.roas, hook_rate: prev.hook_rate, cpa: prev.cpa, purchases: prev.purchases } : null,
       delta: prev ? { spend: delta(a.spend, prev.spend), roas: delta(a.roas, prev.roas), hook_rate: delta(a.hook_rate, prev.hook_rate), cpa: delta(a.cpa, prev.cpa) } : null,
     };
@@ -134,6 +168,8 @@ export async function GET(request: NextRequest) {
 
   return NextResponse.json({
     ads: enriched,
+    economics: eco,
+    signalFloor: piso,
     window: win,
     account: {
       current: account,
