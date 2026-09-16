@@ -17,6 +17,7 @@ import { aggregateByAd, rollupAggregates, AD_DAILY_COLUMNS, type AdDailyRow } fr
 import { resolveWindow, isWindowId, delta, type WindowId } from '@/lib/windows';
 import { resolveEconomics } from '@/lib/meta';
 import { verdictOf, signalFloor } from '@/lib/verdict';
+import { scalabilityOf, mergeDays, type ScaleDay } from '@/lib/scalability';
 import { fetchAll } from '@/lib/fetch-all';
 
 export const runtime = 'nodejs';
@@ -89,6 +90,33 @@ export async function GET(request: NextRequest) {
     const desde = diasAtras(n);
     return new Map(aggregateByAd(all.filter((r) => r.date >= desde && r.date <= anchor)).map((a) => [a.ad_id, a]));
   };
+  // --- Escalabilidad: qué pasó con cada anuncio cuando le subieron el gasto ---
+  // Se lee sobre los últimos 30 días, no sobre toda la vida: lo que importa es
+  // cómo se comporta HOY, no cómo se comportaba en julio con otra oferta.
+  const desde30 = diasAtras(30);
+  const diasPorAd = new Map<string, ScaleDay[]>();
+  const diasPorAdset = new Map<string, ScaleDay[]>();
+  const diasPorCampana = new Map<string, ScaleDay[]>();
+  for (const r of all) {
+    if (!r.ad_id || r.date < desde30 || r.date > anchor) continue;
+    const d: ScaleDay = { date: r.date, spend: r.spend ?? 0, revenue: r.revenue ?? null };
+    const push = (m: Map<string, ScaleDay[]>, k: string | null | undefined) => {
+      if (!k) return;
+      const arr = m.get(k) ?? [];
+      arr.push(d);
+      m.set(k, arr);
+    };
+    push(diasPorAd, r.ad_id);
+    push(diasPorAdset, r.adset_id ?? r.adset_name);
+    push(diasPorCampana, r.campaign_id ?? r.campaign_name);
+  }
+  /** Un grupo (conjunto o campaña) se mide sobre su serie diaria sumada. */
+  const escalaDeGrupo = (m: Map<string, ScaleDay[]>) => {
+    const out: Record<string, ReturnType<typeof scalabilityOf>> = {};
+    for (const [k, dias] of m) out[k] = scalabilityOf(mergeDays([dias]), eco);
+    return out;
+  };
+
   const w3 = ventana(3);
   const w7 = ventana(7);
   const w14 = ventana(14);
@@ -153,6 +181,7 @@ export async function GET(request: NextRequest) {
       persona_id: dim?.persona_id ?? null,
       angle_id: dim?.angle_id ?? null,
       concept_id: dim?.concept_id ?? null,
+      scale: scalabilityOf(diasPorAd.get(a.ad_id) ?? [], eco),
       d3: slice(w3.get(a.ad_id)),
       d7: slice(w7.get(a.ad_id)),
       d14: slice(w14.get(a.ad_id)),
@@ -170,6 +199,10 @@ export async function GET(request: NextRequest) {
     ads: enriched,
     economics: eco,
     signalFloor: piso,
+    /** Escalabilidad ya agregada por conjunto y por campaña: el cliente no
+     *  puede calcularla sumando anuncios, necesita la serie diaria del grupo. */
+    scaleByAdset: escalaDeGrupo(diasPorAdset),
+    scaleByCampaign: escalaDeGrupo(diasPorCampana),
     window: win,
     account: {
       current: account,

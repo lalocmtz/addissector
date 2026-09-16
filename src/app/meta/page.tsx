@@ -24,6 +24,7 @@ import { useT, useFormatters } from '@/lib/i18n';
 import { parseMetaExport, metaAiPrompt, resolveEconomics } from '@/lib/meta';
 import type { AdAggregate, AdDailyRow, MomentumPhase } from '@/lib/metrics';
 import { VERDICT_META, bandTone, roasTone, type VerdictId, type VerdictResult } from '@/lib/verdict';
+import { SCALE_META, type Scalability, type ScaleId } from '@/lib/scalability';
 import type { Economics } from '@/lib/meta';
 import type { WindowId } from '@/lib/windows';
 
@@ -47,6 +48,8 @@ interface AdRow extends AdAggregate {
   /** Ventanas fijas que calcula el servidor. Mandan sobre la ventana en pantalla. */
   d3: Win | null; d7: Win | null; d14: Win | null;
   verdict: VerdictResult;
+  /** Qué pasó con este anuncio cuando le subieron el gasto. */
+  scale: Scalability | null;
 }
 
 /** El corte de una ventana: lo que la tabla pinta, nada más. */
@@ -137,6 +140,7 @@ const COLS: Col[] = [
 
   // Bloque 4 — momento corto
   { key: 'roas3', label: 'meta.col.roas3', tip: 'meta.col.roas3.tip', group: 'momento', get: (a) => pick(a, 'd3', 'roas'), fmt: (a, f) => f.ratio(pick(a, 'd3', 'roas')), tone: (a, e) => roasTone(pick(a, 'd3', 'roas'), e) },
+  { key: 'mroas', label: 'meta.col.mroas', tip: 'meta.col.mroas.tip', group: 'momento', get: (a) => a.scale?.mroas ?? null, fmt: (a) => (a.scale?.mroas != null ? a.scale.mroas.toFixed(2) : '—'), tone: (a, e) => { const m = a.scale?.mroas; return m == null ? null : m >= e.target ? 'ok' : m < e.breakeven ? 'danger' : null; } },
   { key: 'droas', label: 'meta.col.droas', tip: 'meta.col.droas.tip', group: 'momento', get: deltaRoas, fmt: (a, f) => { const d = deltaRoas(a); return d == null ? '—' : `${d > 0 ? '+' : ''}${f.pct(d, 0)}`; }, tone: (a, e) => { const d = deltaRoas(a); return d == null ? null : d <= e.fatigueDrop ? 'danger' : d >= 0.15 ? 'ok' : null; } },
 
   // Bloque 5 — secundarias
@@ -145,6 +149,16 @@ const COLS: Col[] = [
   { key: 'cpc7', label: 'meta.col.cpc', tip: 'meta.col.cpc.tip', group: 'secundaria', get: (a) => pick(a, 'd7', 'cpc'), fmt: (a, f, c) => f.money(pick(a, 'd7', 'cpc'), c) },
   { key: 'catc7', label: 'meta.col.costAtc', tip: 'meta.col.costAtc.tip', group: 'secundaria', get: (a) => pick(a, 'd7', 'cost_atc'), fmt: (a, f, c) => f.money(pick(a, 'd7', 'cost_atc'), c) },
 ];
+
+/** Chips de escalamiento. Mismo lenguaje visual que los veredictos. */
+const SCALE_STYLE: Record<ScaleId, string> = {
+  aguanta: 'bg-ok-soft text-ok border-ok/40 font-semibold',
+  aguanta_justo: 'bg-warn-soft text-warn border-warn/40',
+  se_cae: 'bg-danger-soft text-danger border-danger/40',
+  colapsa: 'bg-danger-soft text-danger border-danger/40 font-semibold',
+  plano: 'bg-surface-2 text-ink-3 border-line border-dashed',
+  sin_datos: 'bg-surface-2 text-ink-4 border-line',
+};
 
 /** Verdict chips: state is encoded in shape (border + weight) as well as color. */
 const VERDICT_STYLE: Record<VerdictId, string> = {
@@ -169,6 +183,8 @@ export default function MetaPage() {
   const [memoryTo, setMemoryTo] = useState<string | null>(null);
   const [windowId, setWindowId] = useState<WindowId>('last7');
   const [account, setAccount] = useState<AccountSummary | null>(null);
+  const [scaleAdset, setScaleAdset] = useState<Record<string, Scalability>>({});
+  const [scaleCampaign, setScaleCampaign] = useState<Record<string, Scalability>>({});
   const [sortKey, setSortKey] = useState<string>('spend7');
   const [sortDesc, setSortDesc] = useState(true);
   const [onlyActive, setOnlyActive] = useState(true);
@@ -176,6 +192,8 @@ export default function MetaPage() {
   // tabla de abajo. `groupKey` guarda el id (o el nombre, cuando no hay id).
   const [groupBy, setGroupBy] = useState<GroupBy>('adset');
   const [groupKey, setGroupKey] = useState<string | null>(null);
+  /** Filtro rápido: solo lo que aguanta que le subas presupuesto. */
+  const [soloEscalables, setSoloEscalables] = useState(false);
   const [selected, setSelected] = useState<AdRow | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadMsg, setUploadMsg] = useState<{ ok: boolean; text: string } | null>(null);
@@ -196,6 +214,8 @@ export default function MetaPage() {
       setCurrencySource(data.currencySource ?? null);
       setAccount(data.account ?? null);
       setAds(data.ads ?? []);
+      setScaleAdset(data.scaleByAdset ?? {});
+      setScaleCampaign(data.scaleByCampaign ?? {});
     } catch {
       setAds([]);
     } finally {
@@ -243,6 +263,7 @@ export default function MetaPage() {
   const visible = useMemo(() => {
     let rows = ads;
     if (onlyActive) rows = rows.filter((a) => !a.status || a.status.toLowerCase().includes('active'));
+    if (soloEscalables) rows = rows.filter((a) => a.scale?.id === 'aguanta' || a.scale?.id === 'aguanta_justo');
     if (groupKey) {
       rows = rows.filter((a) => (
         (groupBy === 'adset' ? a.adset_id ?? a.adset_name : a.campaign_id ?? a.campaign_name) ?? '—'
@@ -259,7 +280,7 @@ export default function MetaPage() {
       if (typeof va === 'string') return sortDesc ? String(vb).localeCompare(String(va)) : String(va).localeCompare(String(vb));
       return sortDesc ? (vb as number) - (va as number) : (va as number) - (vb as number);
     });
-  }, [ads, onlyActive, groupBy, groupKey, sortKey, sortDesc]);
+  }, [ads, onlyActive, soloEscalables, groupBy, groupKey, sortKey, sortDesc]);
 
   // El color ya no sale del percentil de la tabla sino de los umbrales de la
   // marca: un ROAS verde significa "arriba de tu objetivo", no "de los mejores
@@ -343,6 +364,10 @@ export default function MetaPage() {
                 <input type="checkbox" checked={onlyActive} onChange={(e) => setOnlyActive(e.target.checked)} className="accent-accent" />
                 {t('meta.onlyActive')}
               </label>
+              <label className="flex items-center gap-1.5 text-xs text-ink-2 cursor-pointer select-none px-2" title={t('meta.onlyScalable.tip')}>
+                <input type="checkbox" checked={soloEscalables} onChange={(e) => setSoloEscalables(e.target.checked)} className="accent-accent" />
+                {t('meta.onlyScalable')}
+              </label>
               <button
                 onClick={() => setShowEco((v) => !v)}
                 className="p-2 rounded-md border border-line text-ink-2 hover:text-ink hover:border-line-strong transition-colors"
@@ -417,6 +442,7 @@ export default function MetaPage() {
             eco={eco}
             currency={currency}
             groupBy={groupBy}
+            scales={groupBy === 'adset' ? scaleAdset : scaleCampaign}
             onGroupBy={setGroupBy}
             selected={groupKey}
             onSelect={setGroupKey}
@@ -464,7 +490,7 @@ export default function MetaPage() {
           ) : (
             <div className="rounded-md border border-line overflow-x-auto">
               <p className="px-3 py-2 text-[10px] text-ink-4 border-b border-line/60 leading-relaxed">
-                {t('meta.momentum.legend')}
+                {t('meta.momentum.legend')} {t('meta.scale.legend')}
               </p>
               <table className="w-full text-xs whitespace-nowrap tabular-nums">
                 <thead>
@@ -475,6 +501,7 @@ export default function MetaPage() {
                     <th className="text-left px-2 py-2 font-medium">{t('meta.col.verdict')}</th>
                     <th className="text-left px-2 py-2 font-medium">{t('meta.col.why')}</th>
                     <th className="text-left px-2 py-2 font-medium" title={t('meta.col.momentum.tip')}>{t('meta.col.momentum')}</th>
+                    <th className="text-left px-2 py-2 font-medium" title={t('meta.col.scale.tip')}>{t('meta.col.scale')}</th>
                     <th className="text-center px-2 py-2 font-medium" title={t('meta.col.analysis.tip')}>{t('meta.col.analysis')}</th>
                     {COLS.map((c) => (
                       <th
@@ -525,6 +552,17 @@ export default function MetaPage() {
                               className={`inline-block px-1.5 py-0.5 rounded border text-[10px] font-[family-name:var(--font-mono)] ${PHASE_STYLE[a.momentum.phase]}`}
                             >
                               {t(`phase.${a.momentum.phase}`)}{a.delta?.roas != null ? ` ${a.delta.roas >= 0 ? '▲' : '▼'}${Math.abs(a.delta.roas).toFixed(0)}%` : ''}
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-2 py-1.5">
+                          {a.scale && (
+                            <span
+                              title={a.scale.why}
+                              className={`inline-block px-1.5 py-0.5 rounded border text-[10px] ${SCALE_STYLE[a.scale.id]}`}
+                            >
+                              {SCALE_META[a.scale.id].short}
+                              {a.scale.mroas != null ? ` ${a.scale.mroas.toFixed(2)}` : ''}
                             </span>
                           )}
                         </td>

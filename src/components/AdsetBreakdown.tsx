@@ -22,6 +22,7 @@ import { ChevronDown, ChevronRight, Layers, X } from 'lucide-react';
 import { useT, useFormatters } from '@/lib/i18n';
 import type { Economics } from '@/lib/meta';
 import type { VerdictResult } from '@/lib/verdict';
+import { SCALE_META, type Scalability, type ScaleId } from '@/lib/scalability';
 
 export interface GroupableAd {
   ad_id: string;
@@ -35,6 +36,16 @@ export interface GroupableAd {
 }
 
 export type GroupBy = 'adset' | 'campaign';
+
+/** Mismo lenguaje visual que la tabla de anuncios. */
+const SCALE_STYLE: Record<ScaleId, string> = {
+  aguanta: 'bg-ok-soft text-ok border-ok/40 font-semibold',
+  aguanta_justo: 'bg-warn-soft text-warn border-warn/40',
+  se_cae: 'bg-danger-soft text-danger border-danger/40',
+  colapsa: 'bg-danger-soft text-danger border-danger/40 font-semibold',
+  plano: 'bg-surface-2 text-ink-3 border-line border-dashed',
+  sin_datos: 'bg-surface-2 text-ink-4 border-line',
+};
 
 interface Row {
   key: string;
@@ -51,9 +62,13 @@ interface Row {
   wasted: number;
   /** Proporción del gasto que se llevó el anuncio más caro del grupo. */
   top: number | null;
+  /** Qué pasó con el grupo cuando le subieron el gasto. La calcula el servidor
+   *  sobre la serie diaria del conjunto: no se puede promediar la de sus
+   *  anuncios, porque el gasto del grupo se mueve cuando Meta lo redistribuye. */
+  scale: Scalability | null;
 }
 
-function agrupa(ads: GroupableAd[], by: GroupBy): Row[] {
+function agrupa(ads: GroupableAd[], by: GroupBy, scales: Record<string, Scalability>): Row[] {
   const map = new Map<string, { row: Row; spends: number[] }>();
   for (const a of ads) {
     const key = (by === 'adset' ? a.adset_id ?? a.adset_name : a.campaign_id ?? a.campaign_name) ?? '—';
@@ -63,6 +78,7 @@ function agrupa(ads: GroupableAd[], by: GroupBy): Row[] {
         key, name, campaign: a.campaign_name ?? null,
         ads: 0, activos: 0, spend: 0, revenue: 0, purchases: 0,
         roas: null, cpa: null, wasted: 0, top: null,
+        scale: scales[key] ?? null,
       },
       spends: [],
     };
@@ -87,9 +103,11 @@ function agrupa(ads: GroupableAd[], by: GroupBy): Row[] {
 }
 
 export default function AdsetBreakdown({
-  ads, eco, currency, groupBy, onGroupBy, selected, onSelect,
+  ads, eco, currency, groupBy, onGroupBy, selected, onSelect, scales,
 }: {
   ads: GroupableAd[];
+  /** Escalabilidad por clave de grupo, tal como la manda /api/meta/ads. */
+  scales: Record<string, Scalability>;
   eco: Economics;
   currency: string | null;
   groupBy: GroupBy;
@@ -101,7 +119,7 @@ export default function AdsetBreakdown({
   const f = useFormatters();
   const [abierto, setAbierto] = useState(true);
 
-  const rows = useMemo(() => agrupa(ads, groupBy), [ads, groupBy]);
+  const rows = useMemo(() => agrupa(ads, groupBy, scales), [ads, groupBy, scales]);
   const totalSpend = rows.reduce((s, r) => s + r.spend, 0);
   const totalWasted = rows.reduce((s, r) => s + r.wasted, 0);
 
@@ -142,6 +160,7 @@ export default function AdsetBreakdown({
                 <th className="text-right font-medium py-2 px-2">{t('meta.col.spend7')}</th>
                 <th className="text-right font-medium py-2 px-2">{t('meta.col.roas7')}</th>
                 <th className="text-right font-medium py-2 px-2">{t('meta.col.cpa7')}</th>
+                <th className="text-left font-medium py-2 px-2" title={t('meta.col.scale.tip')}>{t('meta.col.scale')}</th>
                 <th className="text-right font-medium py-2 px-2" title={t('grp.col.wasted.tip')}>{t('grp.col.wasted')}</th>
                 <th className="text-right font-medium py-2 px-3" title={t('grp.col.top.tip')}>{t('grp.col.top')}</th>
               </tr>
@@ -175,6 +194,14 @@ export default function AdsetBreakdown({
                       {r.roas?.toFixed(2) ?? '—'}
                     </td>
                     <td className="text-right px-2 text-ink-2">{r.cpa != null ? f.money(r.cpa, currency) : '—'}</td>
+                    <td className="px-2 font-[family-name:var(--font-sans)]">
+                      {r.scale && (
+                        <span title={r.scale.why} className={`inline-block px-1.5 py-0.5 rounded border text-[10px] ${SCALE_STYLE[r.scale.id]}`}>
+                          {SCALE_META[r.scale.id].short}
+                          {r.scale.mroas != null ? ` ${r.scale.mroas.toFixed(2)}` : ''}
+                        </span>
+                      )}
+                    </td>
                     <td
                       className={`text-right px-2 ${pctWaste >= 0.5 ? 'text-danger font-semibold' : pctWaste > 0 ? 'text-warn' : 'text-ink-4'}`}
                       style={pctWaste > 0 ? { background: `color-mix(in oklab, var(--color-danger) ${Math.round(pctWaste * 22)}%, transparent)` } : undefined}
