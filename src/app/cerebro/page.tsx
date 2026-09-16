@@ -42,6 +42,7 @@ interface Learning {
 interface Persona {
   id: string; name: string | null; description: string | null; pains: string | null;
   desires: string | null; objections: string | null; awareness_stage: string | null;
+  callout: string | null; education_gap: string | null; solutions: string | null; offer_fit: string | null;
   evidence: string | null; status: string | null; source: string | null;
 }
 interface Angle {
@@ -744,7 +745,11 @@ function PersonasTab({ brandId }: { brandId: string | null }) {
               </div>
               <IaMark source={p.source} />
               <Field label="Descripción" value={p.description} rows={2} placeholder="Quién es, en una frase que puedas imaginar" onSave={(v) => patch(p.id, { description: v })} />
-              <Field label="Dolores" value={p.pains} rows={2} placeholder="Qué le duele, en sus palabras" onSave={(v) => patch(p.id, { pains: v })} />
+              <Field label="Línea de callout (el primer frame)" value={p.callout} rows={2} placeholder="La frase con la que se reconoce en el primer segundo" onSave={(v) => patch(p.id, { callout: v })} />
+              <Field label="Problemas" value={p.pains} rows={3} placeholder="Qué le duele y qué conductas ya cambió por eso" onSave={(v) => patch(p.id, { pains: v })} />
+              <Field label="Hueco de educación" value={p.education_gap} rows={3} placeholder="Qué creencia falsa hay que actualizar ANTES de que la solución tenga sentido" onSave={(v) => patch(p.id, { education_gap: v })} />
+              <Field label="Soluciones (qué hace el producto por ella)" value={p.solutions} rows={3} placeholder="El mecanismo dicho en sus términos" onSave={(v) => patch(p.id, { solutions: v })} />
+              <Field label="Sensibilidad de oferta" value={p.offer_fit} rows={2} placeholder="Unidad simple, pack de 3, o ninguna oferta" onSave={(v) => patch(p.id, { offer_fit: v })} />
               <Field label="Deseos" value={p.desires} rows={2} placeholder="Qué quiere que pase después de comprar" onSave={(v) => patch(p.id, { desires: v })} />
               <Field label="Objeciones" value={p.objections} rows={2} placeholder="Por qué no compraría" onSave={(v) => patch(p.id, { objections: v })} />
               <Field label="Evidencia" value={p.evidence} rows={2} placeholder="Reseña, comentario o mensaje que lo prueba" onSave={(v) => patch(p.id, { evidence: v })} />

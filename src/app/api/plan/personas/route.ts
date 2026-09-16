@@ -5,8 +5,9 @@ export const runtime = 'nodejs';
 
 const crud = makeCrud({
   table: 'personas',
-  select: 'id,name,description,pains,desires,objections,awareness_stage,evidence,status,source,created_at',
-  writable: ['name', 'description', 'pains', 'desires', 'objections', 'awareness_stage', 'evidence', 'status'],
+  select: 'id,name,callout,description,pains,education_gap,solutions,desires,objections,offer_fit,awareness_stage,evidence,status,source,created_at',
+  writable: ['name', 'callout', 'description', 'pains', 'education_gap', 'solutions', 'desires', 'objections', 'offer_fit', 'awareness_stage', 'evidence', 'status'],
+  notNull: ['name'],
 });
 
 export const GET = crud.GET;
