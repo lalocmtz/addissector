@@ -24,13 +24,13 @@ async function nextProvisionalCode(brandId: string, userId: string): Promise<str
 
 const crud = makeCrud({
   table: 'angles',
-  select: 'id,code,name,persona_id,pain,desire,mechanism,psychology,objection,awareness_stage,funnel_stage,status,derived_status,priority,evidence,learnings,source,created_at',
-  writable: ['code', 'name', 'persona_id', 'pain', 'desire', 'mechanism', 'psychology', 'objection', 'awareness_stage', 'funnel_stage', 'status', 'priority', 'evidence', 'learnings', 'source'],
+  select: 'id,code,name,persona_id,definition,example,reference_url,reference_kind,pain,desire,mechanism,psychology,objection,awareness_stage,funnel_stage,status,derived_status,priority,evidence,learnings,source,created_at',
+  writable: ['code', 'name', 'persona_id', 'definition', 'example', 'reference_url', 'reference_kind', 'pain', 'desire', 'mechanism', 'psychology', 'objection', 'awareness_stage', 'funnel_stage', 'status', 'priority', 'evidence', 'learnings', 'source'],
   notNull: ['code', 'name', 'status'],
   beforeCreate: async ({ brandId, userId, values }) => {
     const out: Record<string, unknown> = {};
     if (!values.code) out.code = await nextProvisionalCode(brandId, userId);
-    if (!values.name) out.name = 'Ángulo nuevo';
+    if (!values.name) out.name = 'Concepto nuevo';
     if (!values.status) out.status = 'sin_probar';
     return out;
   },

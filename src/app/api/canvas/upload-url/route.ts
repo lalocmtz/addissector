@@ -12,13 +12,18 @@ import { getSessionUser } from '@/lib/supabase-server';
 export const runtime = 'nodejs';
 
 const BUCKET = 'brand-assets';
-const EXT_OK = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'avif', 'heic'];
+const EXT_OK = [
+  'png', 'jpg', 'jpeg', 'gif', 'webp', 'avif', 'heic',
+  // Un concepto se referencia con el video que lo ejemplifica, no solo con un
+  // still: la biblioteca de conceptos sube clips cortos por aquí.
+  'mp4', 'mov', 'webm', 'm4v',
+];
 
 export async function POST(request: NextRequest) {
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: 'No autenticado' }, { status: 401 });
 
-  const { brandId, filename } = (await request.json()) as { brandId?: string; filename?: string };
+  const { brandId, filename, folder } = (await request.json()) as { brandId?: string; filename?: string; folder?: string };
   if (!brandId) return NextResponse.json({ error: 'Falta brandId' }, { status: 400 });
 
   const sb = getSupabase();
@@ -27,7 +32,8 @@ export async function POST(request: NextRequest) {
 
   const raw = (filename?.split('.').pop() || 'png').toLowerCase().replace(/[^a-z0-9]/g, '');
   const ext = EXT_OK.includes(raw) ? raw.replace('jpeg', 'jpg') : 'png';
-  const path = `${user.id}/${brandId}/canvas/${crypto.randomUUID()}.${ext}`;
+  const carpeta = (folder ?? 'canvas').replace(/[^a-z0-9-]/gi, '') || 'canvas';
+  const path = `${user.id}/${brandId}/${carpeta}/${crypto.randomUUID()}.${ext}`;
 
   const { data, error } = await sb.storage.from(BUCKET).createSignedUploadUrl(path);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });

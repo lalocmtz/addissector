@@ -19,6 +19,8 @@ import {
 } from 'lucide-react';
 import AppHeader from '@/components/AppHeader';
 import BrainSync from '@/components/BrainSync';
+import Sheet, { type SheetCol } from '@/components/Sheet';
+import { createBrowserClient } from '@/lib/supabase-browser';
 import { beginPending, endPending, usePendingWarning } from '@/lib/pending-saves';
 import { useMe } from '@/lib/use-me';
 import { ANGLE_STATUS, AWARENESS_STAGES } from '@/lib/plan';
@@ -47,6 +49,9 @@ interface Persona {
 }
 interface Angle {
   id: string; code: string | null; name: string | null; persona_id: string | null;
+  // La biblioteca de conceptos: qué es, un ejemplo y la referencia visual.
+  definition: string | null; example: string | null;
+  reference_url: string | null; reference_kind: string | null;
   pain: string | null; mechanism: string | null; psychology: string | null; objection: string | null;
   status: string | null; evidence: string | null; source: string | null;
   // Estaban en la tabla y en el GET, pero no en el tipo ni en la UI: datos que
@@ -57,6 +62,9 @@ interface Angle {
 interface LibAd {
   ad_id?: string; ad_name?: string | null; spend?: number | null; purchases?: number | null;
   revenue?: number | null; angle_id?: string | null;
+  // Con qué avatar se produjo ese anuncio. Lo llena el clasificador al analizar,
+  // así que la columna "Avatares" de Conceptos se alimenta sola.
+  persona_id?: string | null; persona?: string | null; thumbnail_url?: string | null;
 }
 interface AngleStats { n: number; spend: number; purchases: number; revenue: number; roas: number | null; cpa: number | null }
 interface Note {
@@ -71,14 +79,16 @@ interface Note {
 const TABS = [
   { id: 'chat', label: 'Chat', icon: Brain },
   { id: 'personas', label: 'Personas', icon: Users },
-  { id: 'angulos', label: 'Ángulos', icon: Compass },
+  { id: 'conceptos', label: 'Conceptos', icon: Compass },
   { id: 'hooks', label: 'Hooks', icon: Zap },
   { id: 'aprendizajes', label: 'Aprendizajes', icon: Lightbulb },
   { id: 'fuentes', label: 'Fuentes', icon: Globe },
 ] as const;
 
 /** Pestañas viejas que pueden seguir en links guardados. */
-const TAB_ALIASES: Record<string, TabId> = { pruebas: 'aprendizajes', externo: 'fuentes', conceptos: 'angulos' };
+/** Pestañas viejas que pueden seguir en links guardados. `angulos` se quedó en
+ *  marcadores y en el historial: sigue funcionando y cae en Conceptos. */
+const TAB_ALIASES: Record<string, TabId> = { pruebas: 'aprendizajes', externo: 'fuentes', angulos: 'conceptos' };
 
 type TabId = (typeof TABS)[number]['id'];
 
@@ -420,7 +430,7 @@ function CerebroInner() {
           <BrainSync key={activeBrandId} brandId={activeBrandId} />
           {tab === 'chat' && <ChatTab brandId={activeBrandId} brandName={activeBrand?.name ?? ''} />}
           {tab === 'personas' && <PersonasTab key={activeBrandId} brandId={activeBrandId} />}
-          {tab === 'angulos' && <AnglesTab key={activeBrandId} brandId={activeBrandId} />}
+          {tab === 'conceptos' && <ConceptosTab key={activeBrandId} brandId={activeBrandId} />}
           {tab === 'hooks' && <HooksTab key={activeBrandId} brandId={activeBrandId} />}
           {tab === 'aprendizajes' && <AprendizajesTab key={activeBrandId} brandId={activeBrandId} />}
           {tab === 'fuentes' && <FuentesTab key={activeBrandId} brandId={activeBrandId} />}
@@ -701,69 +711,174 @@ function SectionRow({ section, open, onToggle, onSave, onDelete }: {
 }
 
 // ===========================================================================
-// 2 · PERSONAS — el banco de avatares. A quién le hablas.
+// 2 · PERSONAS — el banco de avatares, como hoja de cálculo.
+//
+// Antes era una tarjeta por avatar con diez campos abiertos: setenta cajas de
+// texto apiladas para siete avatares. Comparar el "hueco de educación" de dos
+// avatares —que es justo lo que se hace con un banco de avatares— obligaba a
+// scrollear entre ellos y recordar. Ahora cada avatar es un renglón, cada campo
+// una columna, el nombre se queda fijo a la izquierda, y el renglón se abre a
+// lo ancho cuando un campo necesita espacio de verdad.
 // ===========================================================================
 
+/** Celda compacta: dos renglones, sin etiqueta (el encabezado ya la dice). */
+function Celda({ value, placeholder, rows = 2, onSave }: {
+  value: string | null; placeholder?: string; rows?: number;
+  onSave: (v: string) => void | Promise<unknown>;
+}) {
+  return <Field value={value} rows={rows} placeholder={placeholder} onSave={onSave} />;
+}
+
+/** Cuenta los anuncios que el clasificador ligó a cada avatar / concepto. */
+function contarPor(ads: LibAd[], campo: 'persona_id' | 'angle_id'): Map<string, number> {
+  const m = new Map<string, number>();
+  for (const a of ads) {
+    const id = a[campo];
+    if (id) m.set(id, (m.get(id) ?? 0) + 1);
+  }
+  return m;
+}
+
 function PersonasTab({ brandId }: { brandId: string | null }) {
-  const { items, loading, create, patch, remove } = useBank<Persona>('/api/plan/personas', brandId);
+  const { items, loading, error, setError, create, patch, remove } = useBank<Persona>('/api/plan/personas', brandId);
+  const lib = useAngleStats(brandId);
+  const porPersona = useMemo(() => contarPor(lib.ads, 'persona_id'), [lib.ads]);
+
+  const cols: SheetCol<Persona>[] = [
+    {
+      key: 'callout', label: 'Callout', width: 230,
+      hint: 'La frase con la que se reconoce en el primer segundo del anuncio.',
+      render: (p) => <Celda value={p.callout} placeholder="Se reconoce en el primer segundo…" onSave={(v) => patch(p.id, { callout: v })} />,
+    },
+    {
+      key: 'pains', label: 'Problemas', width: 240,
+      hint: 'Qué le duele y qué conductas ya cambió por eso.',
+      render: (p) => <Celda value={p.pains} placeholder="Qué le duele" onSave={(v) => patch(p.id, { pains: v })} />,
+    },
+    {
+      key: 'education_gap', label: 'Hueco de educación', width: 260,
+      hint: 'Qué creencia falsa hay que actualizar ANTES de que la solución tenga sentido.',
+      render: (p) => <Celda value={p.education_gap} placeholder="La creencia que hay que corregir primero" onSave={(v) => patch(p.id, { education_gap: v })} />,
+    },
+    {
+      key: 'solutions', label: 'Soluciones', width: 240,
+      hint: 'El mecanismo del producto dicho en sus términos.',
+      render: (p) => <Celda value={p.solutions} placeholder="Qué hace el producto por ella" onSave={(v) => patch(p.id, { solutions: v })} />,
+    },
+    {
+      key: 'desires', label: 'Deseos', width: 220,
+      hint: 'Qué quiere que pase después de comprar.',
+      render: (p) => <Celda value={p.desires} placeholder="Qué quiere después de comprar" onSave={(v) => patch(p.id, { desires: v })} />,
+    },
+    {
+      key: 'objections', label: 'Objeciones', width: 220,
+      hint: 'Por qué no compraría.',
+      render: (p) => <Celda value={p.objections} placeholder="Por qué no compraría" onSave={(v) => patch(p.id, { objections: v })} />,
+    },
+    {
+      key: 'offer_fit', label: 'Oferta', width: 170,
+      hint: 'Unidad simple, pack de 3, o ninguna oferta.',
+      render: (p) => <Celda value={p.offer_fit} rows={2} placeholder="Pack de 3 / unidad / ninguna" onSave={(v) => patch(p.id, { offer_fit: v })} />,
+    },
+    {
+      key: 'awareness', label: 'Conciencia', width: 140,
+      hint: 'En qué etapa de conciencia está cuando ve el anuncio.',
+      render: (p) => (
+        <select
+          value={p.awareness_stage ?? ''}
+          onChange={(e) => patch(p.id, { awareness_stage: e.target.value || null })}
+          className={INPUT_CLS}
+        >
+          <option value="">—</option>
+          {AWARENESS_STAGES.map((x) => <option key={x.id} value={x.id}>{x.label}</option>)}
+        </select>
+      ),
+    },
+    {
+      key: 'ads', label: 'Anuncios', width: 90,
+      hint: 'Cuántos anuncios de los últimos 30 días se le hicieron a este avatar. Se llena solo al analizarlos.',
+      render: (p) => {
+        const n = porPersona.get(p.id) ?? 0;
+        return (
+          <p className="text-xs text-ink-3 font-[family-name:var(--font-mono)] tabular-nums pt-1.5">
+            {lib.loading ? '…' : n === 0 ? <span className="text-ink-4">—</span> : n}
+          </p>
+        );
+      },
+    },
+  ];
 
   return (
     <div>
       <TabHead
         title="Personas"
-        hint="A quién le hablas. Cada anuncio nace de una persona con un dolor concreto."
+        hint="A quién le hablas. Un renglón por avatar; el nombre se queda fijo al desplazarte. Abre un renglón con la flecha para escribir a gusto."
         action={
           <button
-            onClick={() => create({ name: 'Persona nueva', status: 'activa' })}
+            onClick={() => { void create({ name: 'Avatar nuevo', status: 'activa' }); }}
             disabled={!brandId}
             className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg gradient-blue text-on-accent disabled:opacity-50 shrink-0"
           >
-            <Plus className="w-3.5 h-3.5" /> Agregar persona
+            <Plus className="w-3.5 h-3.5" /> Agregar avatar
           </button>
         }
       />
+      {error && <ErrorBanner error={error} onClose={() => setError(null)} />}
       {loading ? <Loading /> : items.length === 0 ? (
         <Empty>
           Sé específico. “Mujeres 25-45” no es una persona, es un censo. Escribe a quién le duele
           algo, qué le duele y qué ya intentó para quitárselo.
         </Empty>
       ) : (
-        <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {items.map((p) => (
-            <div key={p.id} className="rounded-xl border border-line bg-surface p-4 space-y-3 min-w-0">
-              <div className="flex items-start gap-2 min-w-0">
-                <div className="flex-1 min-w-0">
-                  <Field value={p.name} placeholder="Nombre de la persona" onSave={(v) => patch(p.id, { name: v })} />
-                </div>
-                <button
-                  onClick={() => { if (confirm('¿Eliminar esta persona?')) remove(p.id); }}
-                  className="text-ink-4 hover:text-danger mt-1.5 shrink-0"
-                  title="Eliminar"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              </div>
-              <IaMark source={p.source} />
-              <Field label="Descripción" value={p.description} rows={2} placeholder="Quién es, en una frase que puedas imaginar" onSave={(v) => patch(p.id, { description: v })} />
-              <Field label="Línea de callout (el primer frame)" value={p.callout} rows={2} placeholder="La frase con la que se reconoce en el primer segundo" onSave={(v) => patch(p.id, { callout: v })} />
-              <Field label="Problemas" value={p.pains} rows={3} placeholder="Qué le duele y qué conductas ya cambió por eso" onSave={(v) => patch(p.id, { pains: v })} />
-              <Field label="Hueco de educación" value={p.education_gap} rows={3} placeholder="Qué creencia falsa hay que actualizar ANTES de que la solución tenga sentido" onSave={(v) => patch(p.id, { education_gap: v })} />
-              <Field label="Soluciones (qué hace el producto por ella)" value={p.solutions} rows={3} placeholder="El mecanismo dicho en sus términos" onSave={(v) => patch(p.id, { solutions: v })} />
-              <Field label="Sensibilidad de oferta" value={p.offer_fit} rows={2} placeholder="Unidad simple, pack de 3, o ninguna oferta" onSave={(v) => patch(p.id, { offer_fit: v })} />
-              <Field label="Deseos" value={p.desires} rows={2} placeholder="Qué quiere que pase después de comprar" onSave={(v) => patch(p.id, { desires: v })} />
-              <Field label="Objeciones" value={p.objections} rows={2} placeholder="Por qué no compraría" onSave={(v) => patch(p.id, { objections: v })} />
-              <Field label="Evidencia" value={p.evidence} rows={2} placeholder="Reseña, comentario o mensaje que lo prueba" onSave={(v) => patch(p.id, { evidence: v })} />
+        <Sheet
+          rows={items}
+          cols={cols}
+          rowKey={(p) => p.id}
+          stickyLabel="Avatar"
+          stickyWidth={210}
+          sticky={(p) => (
+            <div className="space-y-1">
+              <Field value={p.name} placeholder="Nombre del avatar" onSave={(v) => patch(p.id, { name: v })} />
+              <SourceChip source={p.source} />
             </div>
-          ))}
-        </div>
+          )}
+          detail={(p) => (
+            <div className="grid md:grid-cols-2 gap-4">
+              <Field label="Descripción" value={p.description} rows={4} placeholder="Quién es, en una frase que puedas imaginar" onSave={(v) => patch(p.id, { description: v })} />
+              <Field label="Evidencia" value={p.evidence} rows={4} placeholder="Reseña, comentario o mensaje que lo prueba" onSave={(v) => patch(p.id, { evidence: v })} />
+              <Field label="Hueco de educación" value={p.education_gap} rows={5} placeholder="Qué creencia falsa hay que actualizar ANTES de que la solución tenga sentido" onSave={(v) => patch(p.id, { education_gap: v })} />
+              <Field label="Problemas" value={p.pains} rows={5} placeholder="Qué le duele y qué conductas ya cambió por eso" onSave={(v) => patch(p.id, { pains: v })} />
+            </div>
+          )}
+          onRemove={(p) => { if (confirm('¿Eliminar este avatar?')) remove(p.id); }}
+        />
       )}
     </div>
   );
 }
 
+/** Franja roja compartida por los bancos. */
+function ErrorBanner({ error, onClose }: { error: string; onClose: () => void }) {
+  return (
+    <div className="mb-4 rounded-lg border border-danger bg-danger-soft px-3 py-2 text-sm text-danger flex items-start gap-2">
+      <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+      <span className="min-w-0 break-words">{error}</span>
+      <button onClick={onClose} className="ml-auto shrink-0 text-ink-4 hover:text-ink-1"><X className="w-3.5 h-3.5" /></button>
+    </div>
+  );
+}
+
 // ===========================================================================
-// 3 · ÁNGULOS — la razón de compra. Cada tarjeta dice de dónde salió el
-// ángulo y cómo le fue con dinero real (últimos 30 días de /api/library).
+// 3 · CONCEPTOS — la biblioteca de formatos creativos.
+//
+// Dejaron de ser "ángulos" (la razón de compra) para ser lo que realmente se
+// reutiliza al producir: el FORMATO. Un concepto se carga una vez —qué es, un
+// ejemplo, y la referencia en imagen o video que se puede previsualizar— y de
+// ahí se adapta a cada avatar. La columna "Avatares" no se escribe: sale de los
+// anuncios ya analizados, así que la biblioteca aprende sola a qué avatar se le
+// hizo cada concepto.
+//
+// El estado sigue saliendo del gasto de los últimos 30 días, no de una opinión.
 // ===========================================================================
 
 type AngleVerdictId = 'sin_datos' | 'muestra_chica' | 'funciona' | 'sobrevive' | 'no_funciona';
@@ -808,6 +923,34 @@ function statsByAngle(ads: LibAd[]): Map<string, AngleStats> {
   return acc;
 }
 
+/** Qué avatares recibieron ya un anuncio de cada concepto, con cuántos. */
+function avataresPorConcepto(ads: LibAd[]): Map<string, { name: string; n: number }[]> {
+  const acc = new Map<string, Map<string, { name: string; n: number }>>();
+  for (const ad of ads) {
+    if (!ad.angle_id) continue;
+    const key = ad.persona_id ?? '—';
+    const nombre = ad.persona ?? 'Sin avatar';
+    const m = acc.get(ad.angle_id) ?? new Map();
+    const cur = m.get(key) ?? { name: nombre, n: 0 };
+    cur.n += 1;
+    m.set(key, cur);
+    acc.set(ad.angle_id, m);
+  }
+  const out = new Map<string, { name: string; n: number }[]>();
+  for (const [id, m] of acc) out.set(id, [...m.values()].sort((a, b) => b.n - a.n));
+  return out;
+}
+
+/** La miniatura del primer anuncio de cada concepto: referencia gratis. */
+function miniaturaPorConcepto(ads: LibAd[]): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const ad of ads) {
+    if (!ad.angle_id || !ad.thumbnail_url || out.has(ad.angle_id)) continue;
+    out.set(ad.angle_id, ad.thumbnail_url);
+  }
+  return out;
+}
+
 /** Una sola llamada a /api/library (últimos 30 días) para toda la pestaña. */
 function useAngleStats(brandId: string | null) {
   const [ads, setAds] = useState<LibAd[]>([]);
@@ -833,17 +976,94 @@ function useAngleStats(brandId: string | null) {
     }
   }, [brandId]);
 
-  // La carga va dentro de un microtask: así el efecto nunca hace setState síncrono.
   useEffect(() => { void Promise.resolve().then(load); }, [load]);
 
   const stats = useMemo(() => statsByAngle(ads), [ads]);
-  return { stats, eco, currency, loading };
+  return { ads, stats, eco, currency, loading };
 }
 
-function AnglesTab({ brandId }: { brandId: string | null }) {
+/** Sube una imagen o un video de referencia al bucket y devuelve su URL pública. */
+function ReferenciaCelda({ concepto, brandId, fallback, onSave }: {
+  concepto: Angle;
+  brandId: string | null;
+  /** Miniatura de un anuncio del concepto, cuando todavía no hay referencia propia. */
+  fallback: string | null;
+  onSave: (payload: Record<string, unknown>) => void;
+}) {
+  const [subiendo, setSubiendo] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const subir = async (file: File) => {
+    if (!brandId) return;
+    setSubiendo(true);
+    setErr(null);
+    try {
+      const r = await fetch('/api/canvas/upload-url', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ brandId, filename: file.name, folder: 'conceptos' }),
+      });
+      const j = (await r.json()) as { path?: string; token?: string; url?: string; error?: string };
+      if (!r.ok || !j.path || !j.token || !j.url) throw new Error(j.error ?? 'No se pudo preparar la subida');
+      const sb = createBrowserClient();
+      const up = await sb.storage.from('brand-assets').uploadToSignedUrl(j.path, j.token, file, { contentType: file.type || undefined });
+      if (up.error) throw new Error(up.error.message);
+      onSave({ reference_url: j.url, reference_kind: file.type.startsWith('video') ? 'video' : 'image' });
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Falló la subida');
+    } finally {
+      setSubiendo(false);
+      if (inputRef.current) inputRef.current.value = '';
+    }
+  };
+
+  const url = concepto.reference_url;
+  const esVideo = concepto.reference_kind === 'video';
+
+  return (
+    <div className="space-y-1">
+      <div className="relative rounded-md border border-line bg-canvas overflow-hidden" style={{ aspectRatio: '4 / 5' }}>
+        {url ? (
+          esVideo
+            ? <video src={url} className="w-full h-full object-cover" muted playsInline controls preload="metadata" />
+            : <img src={url} alt="" className="w-full h-full object-cover" />
+        ) : fallback ? (
+          <img src={fallback} alt="" className="w-full h-full object-cover opacity-60" />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center text-ink-4">
+            <Upload className="w-4 h-4" />
+          </div>
+        )}
+        {subiendo && (
+          <div className="absolute inset-0 grid place-items-center bg-canvas/80">
+            <Loader2 className="w-4 h-4 animate-spin text-accent" />
+          </div>
+        )}
+      </div>
+      <div className="flex items-center gap-2">
+        <button onClick={() => inputRef.current?.click()} disabled={!brandId || subiendo} className="text-[10px] text-accent hover:underline disabled:opacity-50">
+          {url ? 'Cambiar' : 'Subir'}
+        </button>
+        {url && (
+          <button onClick={() => onSave({ reference_url: '', reference_kind: '' })} className="text-[10px] text-ink-4 hover:text-danger">
+            Quitar
+          </button>
+        )}
+      </div>
+      {!url && fallback && <p className="text-[9px] text-ink-4 leading-tight">De un anuncio</p>}
+      {err && <p className="text-[9px] text-danger leading-tight break-words">{err}</p>}
+      <input ref={inputRef} type="file" accept="image/*,video/*" className="hidden" onChange={(e) => e.target.files?.[0] && void subir(e.target.files[0])} />
+    </div>
+  );
+}
+
+function ConceptosTab({ brandId }: { brandId: string | null }) {
   const { items, loading, error, setError, create, patch, remove } = useBank<Angle>('/api/plan/angles', brandId);
   const personas = useBank<Persona>('/api/plan/personas', brandId);
   const lib = useAngleStats(brandId);
+  const avatares = useMemo(() => avataresPorConcepto(lib.ads), [lib.ads]);
+  const minis = useMemo(() => miniaturaPorConcepto(lib.ads), [lib.ads]);
 
   // Más gasto primero; los que no tienen anuncios ligados, al final.
   const sorted = useMemo(() => {
@@ -857,183 +1077,177 @@ function AnglesTab({ brandId }: { brandId: string | null }) {
     });
   }, [items, lib.stats]);
 
+  const cols: SheetCol<Angle>[] = [
+    {
+      key: 'ref', label: 'Referencia', width: 130,
+      hint: 'La imagen o el video que muestra el concepto. Si no subes nada, se usa la miniatura de un anuncio suyo.',
+      render: (a) => (
+        <ReferenciaCelda
+          concepto={a}
+          brandId={brandId}
+          fallback={minis.get(a.id) ?? null}
+          onSave={(payload) => { void patch(a.id, payload); }}
+        />
+      ),
+    },
+    {
+      key: 'definition', label: 'Qué es', width: 280,
+      hint: 'El concepto en una frase que un editor pueda ejecutar sin preguntarte nada.',
+      render: (a) => <Celda value={a.definition} rows={4} placeholder="El formato, explicado para quien lo va a editar" onSave={(v) => patch(a.id, { definition: v })} />,
+    },
+    {
+      key: 'example', label: 'Ejemplo', width: 260,
+      hint: 'Un caso concreto del concepto aplicado. Sirve de molde.',
+      render: (a) => <Celda value={a.example} rows={4} placeholder="Un ejemplo concreto" onSave={(v) => patch(a.id, { example: v })} />,
+    },
+    {
+      key: 'avatares', label: 'Avatares', width: 190,
+      hint: 'A qué avatares ya se les adaptó este concepto. Se llena solo conforme se analizan los anuncios.',
+      render: (a) => {
+        const lista = avatares.get(a.id) ?? [];
+        if (lib.loading) return <p className="text-[10px] text-ink-4 pt-1.5">…</p>;
+        if (!lista.length) return <p className="text-[10px] text-ink-4 pt-1.5">Todavía a ninguno</p>;
+        return (
+          <div className="flex flex-wrap gap-1 pt-1">
+            {lista.map((x) => (
+              <span key={x.name} className="text-[10px] px-1.5 py-0.5 rounded border border-line text-ink-3 whitespace-nowrap">
+                {x.name} <span className="text-ink-4">×{x.n}</span>
+              </span>
+            ))}
+          </div>
+        );
+      },
+    },
+    {
+      key: 'resultado', label: 'Resultado 30d', width: 190,
+      hint: 'Lo que hicieron con dinero real los anuncios de este concepto. Sale del gasto, no de una opinión.',
+      render: (a) => {
+        const st = lib.stats.get(a.id);
+        const v = ANGLE_VERDICT[angleVerdictId(st, lib.eco)];
+        return (
+          <div className="space-y-1 pt-1">
+            <span className={`inline-block text-[10px] px-1.5 py-0.5 rounded border font-medium ${v.cls}`}>{v.label}</span>
+            <p className="text-[10px] text-ink-4 font-[family-name:var(--font-mono)] tabular-nums leading-snug">
+              {lib.loading ? '…' : st && st.n > 0
+                ? `${st.n} anuncio${st.n === 1 ? '' : 's'} · ${fmtMoney(st.spend, lib.currency)} · ${fmtRoas(st.roas)}`
+                : 'Sin anuncios ligados'}
+            </p>
+          </div>
+        );
+      },
+    },
+    {
+      key: 'awareness', label: 'Conciencia', width: 140,
+      hint: 'De aquí sale el segmento CONCIENCIA del nombre del anuncio.',
+      render: (a) => (
+        <select
+          value={a.awareness_stage ?? ''}
+          onChange={(e) => patch(a.id, { awareness_stage: e.target.value || null })}
+          className={INPUT_CLS}
+        >
+          <option value="">—</option>
+          {AWARENESS_STAGES.map((x) => <option key={x.id} value={x.id}>{x.label}</option>)}
+        </select>
+      ),
+    },
+  ];
+
   return (
     <div>
       <TabHead
-        title="Ángulos"
-        hint="Un ángulo es la razón de compra. Los que detectó la IA vienen de los anuncios de Meta; el estado sale del gasto de los últimos 30 días, no de una opinión."
+        title="Conceptos"
+        hint="La biblioteca de formatos que reutilizas. Carga el concepto una vez con su referencia y de ahí lo adaptas a cada avatar; la columna Avatares se llena sola conforme se analizan los anuncios."
         action={
           <button
-            onClick={() => { void create({ name: 'Ángulo nuevo', status: 'sin_probar', source: 'manual' }); }}
+            onClick={() => { void create({ name: 'Concepto nuevo', status: 'sin_probar', source: 'manual' }); }}
             disabled={!brandId}
             className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg gradient-blue text-on-accent disabled:opacity-50 shrink-0"
           >
-            <Plus className="w-3.5 h-3.5" /> Agregar ángulo
+            <Plus className="w-3.5 h-3.5" /> Agregar concepto
           </button>
         }
       />
-      {error && (
-        <div className="mb-4 rounded-lg border border-danger bg-danger-soft px-3 py-2 text-sm text-danger flex items-start gap-2">
-          <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
-          <span className="min-w-0 break-words">{error}</span>
-          <button onClick={() => setError(null)} className="ml-auto shrink-0 text-ink-4 hover:text-ink-1"><X className="w-3.5 h-3.5" /></button>
-        </div>
-      )}
+      {error && <ErrorBanner error={error} onClose={() => setError(null)} />}
       {loading ? <Loading /> : items.length === 0 ? (
         <Empty>
-          Aquí vive la razón por la que alguien compra, no el formato del video. Escribe el dolor
-          y el mecanismo que lo resuelve; el estado se llena solo cuando haya anuncios ligados.
+          Un concepto es el FORMATO que reutilizas, no la razón de compra: “reacción a comentario”,
+          “tres razones en 15 segundos”, “antes y después sin voz”. Cárgalo con su referencia y de
+          ahí lo adaptas a cada avatar.
         </Empty>
       ) : (
-        <div className="grid md:grid-cols-2 gap-4">
-          {sorted.map((a) => (
-            <AngleCard
-              key={a.id}
-              angle={a}
-              stats={lib.stats.get(a.id)}
-              statsLoading={lib.loading}
-              eco={lib.eco}
-              currency={lib.currency}
-              personas={personas.items}
-              codigosHermanos={items.filter((x) => x.id !== a.id).map((x) => (x.code ?? '').trim().toUpperCase())}
-              onPatch={(payload) => patch(a.id, payload)}
-              onRemove={() => { if (confirm('¿Eliminar este ángulo?')) remove(a.id); }}
-            />
-          ))}
-        </div>
+        <Sheet
+          rows={sorted}
+          cols={cols}
+          rowKey={(a) => a.id}
+          stickyLabel="Concepto"
+          stickyWidth={230}
+          sticky={(a) => (
+            <div className="space-y-1">
+              <Field value={a.name} placeholder="Nombre del concepto" onSave={(v) => patch(a.id, { name: v })} />
+              <div className="flex items-center gap-1.5">
+                <div className="w-24 shrink-0">
+                  <Field value={a.code} mono placeholder="CÓDIGO" validate={validarCodigo(items, a.id)} onSave={(v) => patch(a.id, { code: v.toUpperCase() })} />
+                </div>
+                <SourceChip source={a.source} />
+              </div>
+            </div>
+          )}
+          detail={(a) => (
+            <div className="space-y-4">
+              <div className="grid md:grid-cols-2 gap-4">
+                <div className="min-w-0">
+                  <p className="text-[10px] uppercase tracking-wide text-ink-4 mb-1">Avatar principal</p>
+                  <select
+                    value={a.persona_id ?? ''}
+                    onChange={(e) => patch(a.id, { persona_id: e.target.value || null })}
+                    className={INPUT_CLS}
+                  >
+                    <option value="">Sin avatar</option>
+                    {personas.items.map((p) => <option key={p.id} value={p.id}>{p.name ?? 'Sin nombre'}</option>)}
+                  </select>
+                </div>
+                <div className="min-w-0">
+                  <p className="text-[10px] uppercase tracking-wide text-ink-4 mb-1">Estado manual (no cambia el calculado)</p>
+                  <select
+                    value={a.status ?? ''}
+                    onChange={(e) => patch(a.id, { status: e.target.value || 'sin_probar' })}
+                    className={INPUT_CLS}
+                  >
+                    <option value="sin_probar">Sin probar</option>
+                    {ANGLE_STATUS.map((x) => <option key={x.id} value={x.id}>{x.label}</option>)}
+                  </select>
+                </div>
+              </div>
+              <IaMark source={a.source} evidence={a.evidence} />
+              <div className="grid md:grid-cols-2 gap-4">
+                <Field label="Dolor" value={a.pain} rows={3} placeholder="Qué problema real ataca" onSave={(v) => patch(a.id, { pain: v })} />
+                <Field label="Mecanismo (producto)" value={a.mechanism} rows={3} placeholder="Por qué el producto resuelve el dolor" onSave={(v) => patch(a.id, { mechanism: v })} />
+                <Field label="Psicología" value={a.psychology} rows={3} placeholder="La palanca mental que activa" onSave={(v) => patch(a.id, { psychology: v })} />
+                <Field label="Objeción" value={a.objection} rows={3} placeholder="Qué duda hay que tumbar" onSave={(v) => patch(a.id, { objection: v })} />
+                <Field label="Deseo" value={a.desire} rows={3} placeholder="Qué quiere que pase después de comprar" onSave={(v) => patch(a.id, { desire: v })} />
+                <Field label="Aprendizajes" value={a.learnings} rows={3} placeholder="Qué te enseñaron los anuncios de este concepto" onSave={(v) => patch(a.id, { learnings: v })} />
+              </div>
+            </div>
+          )}
+          onRemove={(a) => { if (confirm('¿Eliminar este concepto?')) remove(a.id); }}
+        />
       )}
     </div>
   );
 }
 
-function AngleCard({ angle: a, stats, statsLoading, eco, currency, personas, codigosHermanos, onPatch, onRemove }: {
-  angle: Angle;
-  stats: AngleStats | undefined;
-  statsLoading: boolean;
-  eco: Economics;
-  currency: string | null;
-  personas: Persona[];
-  codigosHermanos: string[];
-  onPatch: (payload: Record<string, unknown>) => Promise<boolean> | void;
-  onRemove: () => void;
-}) {
-  const [more, setMore] = useState(false);
-  const verdict = ANGLE_VERDICT[angleVerdictId(stats, eco)];
-
-  /** 8 caracteres A-Z0-9, unico en la marca. El guion esta prohibido porque es
-   *  el separador del nombre de anuncio (ANGULO-Tnn-CONCIENCIA-…) y romperia
-   *  el parseo. */
-  const validarCodigo = useCallback((v: string): string | null => {
+/** 3–12 caracteres A-Z0-9, único en la marca. El guion está prohibido porque
+ *  separa las partes del nombre del anuncio y rompería el parseo. Los códigos
+ *  que puso la IA llegan a 11, así que el tope no puede ser 8. */
+function validarCodigo(todos: Angle[], id: string) {
+  return (v: string): string | null => {
     const c = v.trim().toUpperCase();
     if (!c) return 'El código no puede quedar vacío.';
     if (c.includes('-')) return 'Sin guiones: el guion separa las partes del nombre del anuncio.';
-    if (!/^[A-Z0-9]{8}$/.test(c)) return 'Deben ser 8 caracteres, solo A-Z y 0-9.';
-    if (codigosHermanos.includes(c)) return 'Ya hay otro ángulo con ese código.';
+    if (!/^[A-Z0-9]{3,12}$/.test(c)) return 'Entre 3 y 12 caracteres, solo A-Z y 0-9.';
+    if (todos.some((x) => x.id !== id && (x.code ?? '').trim().toUpperCase() === c)) return 'Ya hay otro concepto con ese código.';
     return null;
-  }, [codigosHermanos]);
-
-  return (
-    <div className="rounded-xl border border-line bg-surface p-4 space-y-3 min-w-0">
-      {/* Código + nombre + borrar */}
-      <div className="flex items-start gap-2 min-w-0">
-        <div className="w-36 shrink-0 min-w-0">
-          <Field value={a.code} mono placeholder="CÓDIGO" validate={validarCodigo} onSave={(v) => onPatch({ code: v.toUpperCase() })} />
-        </div>
-        <div className="flex-1 min-w-0">
-          <Field value={a.name} placeholder="Nombre del ángulo" onSave={(v) => onPatch({ name: v })} />
-        </div>
-        <button onClick={onRemove} className="text-ink-4 hover:text-danger mt-1.5 shrink-0" title="Eliminar">
-          <X className="w-3.5 h-3.5" />
-        </button>
-      </div>
-
-      {/* Persona */}
-      <div className="min-w-0">
-        <p className="text-[10px] uppercase tracking-wide text-ink-4 mb-1">Persona</p>
-        <select
-          value={a.persona_id ?? ''}
-          onChange={(e) => onPatch({ persona_id: e.target.value || null })}
-          className={INPUT_CLS}
-        >
-          <option value="">Sin persona</option>
-          {personas.map((p) => (
-            <option key={p.id} value={p.id}>{p.name ?? 'Sin nombre'}</option>
-          ))}
-        </select>
-      </div>
-
-      {/* Origen */}
-      <IaMark source={a.source} />
-
-      {/* Estado calculado + evidencia de los últimos 30 días */}
-      <div className="rounded-lg border border-line bg-canvas px-3 py-2 space-y-1 min-w-0">
-        <div className="flex flex-wrap items-center gap-2 min-w-0">
-          <span className={`text-[10px] px-2 py-0.5 rounded border font-medium shrink-0 ${verdict.cls}`}>
-            {verdict.label}
-          </span>
-          <span className="text-[10px] text-ink-4">Estado calculado</span>
-        </div>
-        <p className="text-[11px] text-ink-3 break-words font-[family-name:var(--font-mono)] tabular-nums">
-          {statsLoading
-            ? 'Cargando últimos 30 días…'
-            : stats && stats.n > 0
-              ? `Últimos 30 días: ${stats.n} anuncio${stats.n === 1 ? '' : 's'} · ${fmtMoney(stats.spend, currency)} · ROAS ${fmtRoas(stats.roas)} · CPA ${stats.cpa == null ? '—' : fmtMoney(stats.cpa, currency)}`
-              : 'Sin anuncios ligados todavía'}
-        </p>
-      </div>
-
-      <Field label="Dolor" value={a.pain} rows={2} placeholder="Qué problema real ataca" onSave={(v) => onPatch({ pain: v })} />
-      <Field label="Mecanismo (producto)" value={a.mechanism} rows={2} placeholder="Por qué el producto resuelve el dolor" onSave={(v) => onPatch({ mechanism: v })} />
-
-      {/* Más: lo que no hace falta ver siempre */}
-      <button
-        onClick={() => setMore((v) => !v)}
-        className="flex items-center gap-1 text-[11px] text-ink-4 hover:text-ink-2"
-      >
-        {more ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
-        {more ? 'Menos' : 'Más'}
-      </button>
-      {more && (
-        <div className="space-y-3 pt-1 border-t border-line min-w-0">
-          <Field label="Psicología (por qué convierte)" value={a.psychology} rows={2} placeholder="La palanca mental que activa" onSave={(v) => onPatch({ psychology: v })} />
-          <Field label="Objeción" value={a.objection} rows={2} placeholder="Qué duda hay que tumbar" onSave={(v) => onPatch({ objection: v })} />
-          <Field label="Evidencia" value={a.evidence} rows={2} placeholder="Qué te hace creer que este ángulo jala" onSave={(v) => onPatch({ evidence: v })} />
-          <Field label="Deseo" value={a.desire} rows={2} placeholder="Qué quiere que pase después de comprar" onSave={(v) => onPatch({ desire: v })} />
-          <Field label="Aprendizajes" value={a.learnings} rows={3} placeholder="Qué te enseñaron los anuncios de este ángulo" onSave={(v) => onPatch({ learnings: v })} />
-          <div className="min-w-0">
-            <p className="text-[10px] uppercase tracking-wide text-ink-4 mb-1">Conciencia</p>
-            <select
-              value={a.awareness_stage ?? ''}
-              onChange={(e) => onPatch({ awareness_stage: e.target.value || null })}
-              className={INPUT_CLS}
-            >
-              <option value="">Sin definir</option>
-              {AWARENESS_STAGES.map((x) => <option key={x.id} value={x.id}>{x.label}</option>)}
-            </select>
-            <p className="text-[10px] text-ink-4 mt-1 break-words">
-              De aquí sale el segmento CONCIENCIA del nombre del anuncio.
-            </p>
-          </div>
-          <div className="min-w-0">
-            <p className="text-[10px] uppercase tracking-wide text-ink-4 mb-1">Estado manual (opcional)</p>
-            <select
-              value={a.status ?? ''}
-              onChange={(e) => onPatch({ status: e.target.value || 'sin_probar' })}
-              className={INPUT_CLS}
-            >
-              <option value="sin_probar">Sin probar</option>
-              {ANGLE_STATUS.map((s) => (
-                <option key={s.id} value={s.id}>{s.label}</option>
-              ))}
-            </select>
-            <p className="text-[10px] text-ink-4 mt-1 break-words">
-              No cambia el estado calculado de arriba; es solo tu nota.
-            </p>
-          </div>
-        </div>
-      )}
-    </div>
-  );
+  };
 }
 
 // ===========================================================================
