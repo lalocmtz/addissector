@@ -21,7 +21,7 @@ import { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
-  Scan, ChevronDown, Check, Plus, LogOut, BarChart3, Library, Brain, Film, SunMoon, FlaskConical, Settings, Menu, X, LayoutDashboard,
+  Scan, ChevronDown, Check, Plus, LogOut, BarChart3, Library, Brain, Film, SunMoon, FlaskConical, Settings, Menu, X, LayoutDashboard, ShoppingBag,
 } from 'lucide-react';
 import type { MeData, BrandRow } from '@/lib/use-me';
 import { useT, useLocale, setLocaleCookie, type Locale } from '@/lib/i18n';
@@ -38,6 +38,15 @@ const WORK = [
   { href: '/workshop', key: 'nav.workshop', icon: FlaskConical },
   { href: '/cerebro', key: 'nav.brain', icon: Brain },
   { href: '/meta', key: 'nav.meta', icon: BarChart3 },
+] as const;
+
+/** Un vendedor de TikTok Shop no tiene cuenta publicitaria ni tandas: su
+ *  trabajo entero es la biblioteca de videos por producto. Mostrarle /meta
+ *  sería mandarlo a una pantalla que nunca va a tener datos. */
+const WORK_TIKTOK = [
+  { href: '/tiktok', key: 'nav.tiktok', icon: ShoppingBag },
+  { href: '/cerebro', key: 'nav.brain', icon: Brain },
+  { href: '/canvas', key: 'nav.canvas', icon: LayoutDashboard },
 ] as const;
 
 const TOOLS = [
@@ -142,7 +151,7 @@ export default function AppHeader({ me, activeBrand, onBrandChange }: AppHeaderP
 
       <nav className="px-3 flex-1 overflow-y-auto">
         <p className="text-[10px] uppercase tracking-wider text-ink-4 px-3 pt-2 pb-1.5">{t('nav.sectionWork')}</p>
-        <div className="space-y-0.5">{WORK.map(({ href, key, icon }) => item(href, key, icon))}</div>
+        <div className="space-y-0.5">{(activeBrand?.kind === 'tiktok_shop' ? WORK_TIKTOK : WORK).map(({ href, key, icon }) => item(href, key, icon))}</div>
         <p className="text-[10px] uppercase tracking-wider text-ink-4 px-3 pt-5 pb-1.5">{t('nav.sectionTools')}</p>
         <div className="space-y-0.5">{TOOLS.map(({ href, key, icon }) => item(href, key, icon))}</div>
       </nav>

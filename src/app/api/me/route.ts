@@ -22,7 +22,7 @@ export async function GET() {
     const sb = getSupabase();
     const [{ data: profile }, { data: brands }] = await Promise.all([
       sb.from('profiles').select('id,email,full_name').eq('id', user.id).maybeSingle(),
-      sb.from('brands').select('id,name,tone,palette,product,economics,created_at').eq('user_id', user.id).order('created_at'),
+      sb.from('brands').select('id,name,kind,tone,palette,product,economics,created_at').eq('user_id', user.id).order('created_at'),
     ]);
 
     return NextResponse.json({

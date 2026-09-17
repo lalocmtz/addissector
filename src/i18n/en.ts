@@ -8,6 +8,7 @@ export const en: Record<string, string> = {
   'nav.sectionTools': 'Tools',
   'nav.plan': 'Planning',
   'nav.library': 'Library',
+  'nav.tiktok': 'Products',
   'nav.brain': 'Brain',
   'nav.analyze': 'Analyze video',
   'nav.brands': 'Your brands',

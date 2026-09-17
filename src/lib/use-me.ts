@@ -16,6 +16,8 @@ export interface BrandEconomics {
 export interface BrandRow {
   id: string;
   name: string;
+  /** 'meta' = marca DTC con cuenta publicitaria · 'tiktok_shop' = vendedor. */
+  kind?: string | null;
   tone: string | null;
   palette: string | null;
   product: string | null;

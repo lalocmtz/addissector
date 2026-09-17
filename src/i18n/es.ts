@@ -7,6 +7,7 @@ export const es: Record<string, string> = {
   'nav.sectionTools': 'Herramientas',
   'nav.plan': 'Planificación',
   'nav.library': 'Biblioteca',
+  'nav.tiktok': 'Productos',
   'nav.brain': 'Cerebro',
   'nav.analyze': 'Analizar video',
   'nav.brands': 'Tus marcas',
