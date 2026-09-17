@@ -1360,6 +1360,7 @@ interface HookAd {
   meta_id: string; ad_id: string | null; name: string | null; thumbnail_url: string | null;
   asset_kind: string | null; spend: number; purchases: number | null; roas: number | null;
   cpa: number | null; hook_rate: number | null; hold_rate: number | null;
+  persona: string | null; concepto: string | null;
 }
 
 interface HookItem {
@@ -1367,6 +1368,8 @@ interface HookItem {
   status: string | null; source: string | null; evidence: string | null;
   ad_ids: string[] | null; created_at: string;
   kind: HookKind; ads: HookAd[]; spend: number;
+  /** Ponderadas por gasto: un anuncio de 5 pesos no puede mandar el promedio. */
+  hold_rate: number | null; hook_rate: number | null;
 }
 
 const HOOK_KIND: Record<HookKind, { label: string; cls: string }> = {
@@ -1494,6 +1497,13 @@ function HookAdRow({ ad, eco, currency }: { ad: HookAd; eco: Economics; currency
         ) : (
           <p className="text-[11px] text-ink-4">Sin gasto en los últimos 30 días</p>
         )}
+        {(ad.persona || ad.concepto) && (
+          <p className="text-[10px] text-ink-4 break-words leading-snug mt-0.5">
+            {ad.persona && <span>Avatar: {ad.persona}</span>}
+            {ad.persona && ad.concepto && ' · '}
+            {ad.concepto && <span>Concepto: {ad.concepto}</span>}
+          </p>
+        )}
       </div>
     </div>
   );
@@ -1597,6 +1607,8 @@ function HooksTab({ brandId }: { brandId: string | null }) {
   const [title, setTitle] = useState('');
   const [kind, setKind] = useState<HookKind>('voz');
   const [saving, setSaving] = useState(false);
+  /** Un hook se juzga por cuánta gente se quedó, no por cuánto se gastó en él. */
+  const [orden, setOrden] = useState<'retencion' | 'gasto'>('retencion');
 
   const add = async () => {
     if (!title.trim() || saving) return;
@@ -1616,19 +1628,43 @@ function HooksTab({ brandId }: { brandId: string | null }) {
     return { total: hooks.length, voz, headline: hooks.length - voz, ads: adIds.size };
   }, [hooks]);
 
-  // El servidor ya manda gasto desc con los sin anuncio al final; aquí solo filtramos.
-  const visible = useMemo(() => hooks.filter((h) => {
-    if (kindFilter !== 'todos' && h.kind !== kindFilter) return false;
-    if (originFilter === 'ia' && !isAiSource(h.source)) return false;
-    if (originFilter === 'manual' && isAiSource(h.source)) return false;
-    return true;
-  }), [hooks, kindFilter, originFilter]);
+  // El servidor manda gasto desc; el orden por retención es el que dice qué
+  // hook copiar, así que es el de entrada.
+  const visible = useMemo(() => {
+    const filtrados = hooks.filter((h) => {
+      if (kindFilter !== 'todos' && h.kind !== kindFilter) return false;
+      if (originFilter === 'ia' && !isAiSource(h.source)) return false;
+      if (originFilter === 'manual' && isAiSource(h.source)) return false;
+      return true;
+    });
+    if (orden === 'gasto') return filtrados;
+    return [...filtrados].sort((a, b) => {
+      // Sin retención medida no hay con qué ordenar: esos van al final.
+      if (a.hold_rate == null && b.hold_rate == null) return b.spend - a.spend;
+      if (a.hold_rate == null) return 1;
+      if (b.hold_rate == null) return -1;
+      return b.hold_rate - a.hold_rate;
+    });
+  }, [hooks, kindFilter, originFilter, orden]);
 
   return (
     <div>
       <TabHead
         title="Hooks"
-        hint="Los primeros segundos, palabra por palabra: lo que se dijo (voz) y lo que se leyó en pantalla (headline), con los números del anuncio que los corrió."
+        hint="Los primeros segundos, palabra por palabra. Se llena solo con cada análisis: cada hook trae el anuncio que lo corrió, a qué avatar se le dijo y con qué concepto. Ordenados por retención, que es lo que dice cuál copiar."
+        action={
+          <div className="flex rounded-md border border-line overflow-hidden shrink-0">
+            {([['retencion', 'Retención'], ['gasto', 'Gasto']] as const).map(([id, label]) => (
+              <button
+                key={id}
+                onClick={() => setOrden(id)}
+                className={`px-2.5 py-1.5 text-xs transition-colors ${orden === id ? 'bg-surface-2 text-ink font-medium' : 'text-ink-3 hover:text-ink'}`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        }
       />
 
       {/* Nuevo hook: una sola fila */}
@@ -1726,6 +1762,129 @@ function fmtDate(iso: string | null | undefined): string | null {
   return d.toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
+/** ------------------------------------------------------------------------
+ *  Destilado: el bloque de texto que SÍ se usa.
+ *
+ *  La lista de aprendizajes era información correcta que nadie lee y que no se
+ *  puede aplicar. Esto la convierte en un prompt para pegar en el chat que va a
+ *  escribir el siguiente anuncio: qué ganó en la ventana, con qué avatar, con
+ *  qué concepto, con qué hook literal, y qué perdió.
+ *
+ *  Tres ventanas porque contestan cosas distintas: 7 días es qué está pasando
+ *  ahora, 30 es qué es cierto de la cuenta, y 15 evita confundir una racha con
+ *  un patrón.
+ *  --------------------------------------------------------------------- */
+
+interface Ventana {
+  dias: number; desde: string; hasta: string;
+  gasto: number; ingreso: number; roas: number | null;
+  ganadores: number; perdedores: number; prompt: string;
+}
+
+function Destilado({ brandId, currency }: { brandId: string | null; currency?: string | null }) {
+  const [ventanas, setVentanas] = useState<Ventana[]>([]);
+  const [cur, setCur] = useState<string | null>(currency ?? null);
+  const [dias, setDias] = useState(7);
+  const [cargando, setCargando] = useState(true);
+  const [copiado, setCopiado] = useState(false);
+  const [abierto, setAbierto] = useState(false);
+
+  const cargar = useCallback(async () => {
+    await Promise.resolve();
+    if (!brandId) { setVentanas([]); setCargando(false); return; }
+    try {
+      const r = await fetch(`/api/brain/digest?brand=${brandId}`);
+      const d = (await r.json().catch(() => ({}))) as { ventanas?: Ventana[]; currency?: string | null };
+      setVentanas(Array.isArray(d.ventanas) ? d.ventanas : []);
+      setCur(d.currency ?? null);
+    } catch {
+      setVentanas([]);
+    } finally {
+      setCargando(false);
+    }
+  }, [brandId]);
+
+  useEffect(() => { void Promise.resolve().then(cargar); }, [cargar]);
+
+  const v = ventanas.find((x) => x.dias === dias) ?? null;
+
+  const copiar = async () => {
+    if (!v) return;
+    try {
+      await navigator.clipboard.writeText(v.prompt);
+      setCopiado(true);
+      setTimeout(() => setCopiado(false), 2000);
+    } catch { /* sin portapapeles: queda el textarea para seleccionar a mano */ }
+  };
+
+  return (
+    <div className="rounded-xl border border-line bg-surface mb-5">
+      <div className="flex flex-wrap items-center gap-2 px-4 py-3">
+        <Sparkles className="w-4 h-4 text-accent shrink-0" />
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-medium text-ink">Destilado para pegar</p>
+          <p className="text-[11px] text-ink-4 break-words">
+            Lo que funcionó en la ventana, listo para pegarlo donde escribes el siguiente anuncio.
+          </p>
+        </div>
+        <div className="flex rounded-md border border-line overflow-hidden shrink-0">
+          {[7, 15, 30].map((d) => (
+            <button
+              key={d}
+              onClick={() => { setDias(d); setAbierto(true); }}
+              className={`px-2.5 py-1.5 text-xs transition-colors ${dias === d ? 'bg-surface-2 text-ink font-medium' : 'text-ink-3 hover:text-ink'}`}
+            >
+              {d} días
+            </button>
+          ))}
+        </div>
+        <button
+          onClick={() => void copiar()}
+          disabled={!v}
+          className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg gradient-blue text-on-accent disabled:opacity-50 shrink-0"
+        >
+          {copiado ? <CheckCircle2 className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+          {copiado ? 'Copiado' : 'Copiar'}
+        </button>
+      </div>
+
+      {cargando ? (
+        <p className="px-4 pb-3 text-xs text-ink-4">Cargando…</p>
+      ) : !v ? (
+        <p className="px-4 pb-3 text-xs text-ink-4">Sin datos suficientes todavía.</p>
+      ) : (
+        <>
+          <div className="px-4 pb-3 flex flex-wrap items-baseline gap-x-5 gap-y-1 font-[family-name:var(--font-mono)] tabular-nums text-[11px] text-ink-3">
+            <span>{v.desde} → {v.hasta}</span>
+            <span>{fmtMoney(v.gasto, cur)}</span>
+            <span>ROAS {fmtRoas(v.roas)}</span>
+            <span className="text-ok">{v.ganadores} ganaron</span>
+            <span className="text-danger">{v.perdedores} perdieron</span>
+          </div>
+          <div className="px-4 pb-4">
+            <button
+              onClick={() => setAbierto((x) => !x)}
+              className="flex items-center gap-1 text-[11px] text-ink-4 hover:text-ink-2 mb-2"
+            >
+              {abierto ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+              {abierto ? 'Ocultar el texto' : 'Ver el texto antes de copiarlo'}
+            </button>
+            {abierto && (
+              <textarea
+                readOnly
+                value={v.prompt}
+                rows={18}
+                onFocus={(e) => e.currentTarget.select()}
+                className="w-full rounded-lg border border-line bg-canvas px-3 py-2 text-[11px] leading-relaxed text-ink-2 font-[family-name:var(--font-mono)] resize-y"
+              />
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function AprendizajesTab({ brandId }: { brandId: string | null }) {
   const { items, loading, create, patch, remove } = useBank<Learning>('/api/learnings', brandId);
   const [text, setText] = useState('');
@@ -1746,8 +1905,10 @@ function AprendizajesTab({ brandId }: { brandId: string | null }) {
     <div>
       <TabHead
         title="Aprendizajes"
-        hint="Lo que ya confirmaste con dinero real. La IA cita cada aprendizaje activo cuando le pides guiones."
+        hint="Lo que ya confirmaste con dinero real. Arriba, el destilado de 7 / 15 / 30 días listo para copiar; abajo, las frases sueltas que la IA cita cuando le pides guiones."
       />
+
+      <Destilado brandId={brandId} />
 
       {/* Agregar */}
       <div className="rounded-xl border border-line bg-surface p-4 mb-5 space-y-2 min-w-0">

@@ -49,6 +49,9 @@ interface MetaAdRow {
   name: string | null;
   thumbnail_url: string | null;
   asset_kind: string | null;
+  /** Los llena el clasificador al analizar: por eso el banco se alimenta solo. */
+  persona_id: string | null;
+  angle_id: string | null;
 }
 
 interface HookAd {
@@ -59,6 +62,9 @@ interface HookAd {
   name: string | null;
   thumbnail_url: string | null;
   asset_kind: string | null;
+  /** A quién se le hizo y con qué concepto. Sale del análisis, no se escribe. */
+  persona: string | null;
+  concepto: string | null;
   spend: number;
   purchases: number | null;
   roas: number | null;
@@ -102,6 +108,15 @@ async function GET(request: NextRequest) {
   const fromStr = from.toISOString().slice(0, 10);
 
   // Solo hace falta cargar los anuncios que algún hook referencia.
+  // Nombres de avatar y concepto: el hook no sirve sin saber a quién se le dijo.
+  const [personasRes, conceptosRes] = await Promise.all([
+    sb.from('personas').select('id,name').eq('brand_id', brandId),
+    sb.from('angles').select('id,code,name').eq('brand_id', brandId),
+  ]);
+  const nombrePersona = new Map(((personasRes.data ?? []) as { id: string; name: string }[]).map((p) => [p.id, p.name]));
+  const nombreConcepto = new Map(((conceptosRes.data ?? []) as { id: string; code: string | null; name: string }[])
+    .map((c) => [c.id, c.code ? `${c.code} · ${c.name}` : c.name]));
+
   const metaIds = Array.from(new Set(hooks.flatMap((h) => h.ad_ids ?? []).filter(Boolean)));
   let adsById = new Map<string, MetaAdRow>();
   let aggByAdId = new Map<string, ReturnType<typeof aggregateByAd>[number]>();
@@ -109,7 +124,7 @@ async function GET(request: NextRequest) {
   if (metaIds.length > 0) {
     try {
       const metaRows = await fetchAll(() =>
-        sb.from('meta_ads').select('id,ad_id,name,thumbnail_url,asset_kind')
+        sb.from('meta_ads').select('id,ad_id,name,thumbnail_url,asset_kind,persona_id,angle_id')
           .eq('brand_id', brandId).in('id', metaIds).order('id'),
       ) as unknown as MetaAdRow[];
       adsById = new Map(metaRows.map((a) => [a.id, a]));
@@ -141,6 +156,8 @@ async function GET(request: NextRequest) {
           name: a.name,
           thumbnail_url: a.thumbnail_url,
           asset_kind: a.asset_kind,
+          persona: a.persona_id ? nombrePersona.get(a.persona_id) ?? null : null,
+          concepto: a.angle_id ? nombreConcepto.get(a.angle_id) ?? null : null,
           spend: agg?.spend ?? 0,
           purchases: agg?.purchases ?? null,
           roas: agg?.roas ?? null,
@@ -151,7 +168,17 @@ async function GET(request: NextRequest) {
       })
       .sort((x, y) => y.spend - x.spend);
     const spend = ads.reduce((s, a) => s + a.spend, 0);
-    return { ...h, kind: kindOf(h), ads, spend };
+    // Un hook se juzga por cuánta gente se quedó, no por cuánto se gastó en él.
+    // Se pondera por gasto para que un anuncio de 5 pesos no mande.
+    const conDatos = ads.filter((a) => a.hold_rate != null && a.spend > 0);
+    const pesoTotal = conDatos.reduce((s, a) => s + a.spend, 0);
+    const hold = pesoTotal > 0
+      ? conDatos.reduce((s, a) => s + (a.hold_rate ?? 0) * a.spend, 0) / pesoTotal
+      : null;
+    const hookRate = pesoTotal > 0
+      ? ads.filter((a) => a.hook_rate != null && a.spend > 0).reduce((s, a) => s + (a.hook_rate ?? 0) * a.spend, 0) / pesoTotal
+      : null;
+    return { ...h, kind: kindOf(h), ads, spend, hold_rate: hold, hook_rate: hookRate };
   });
 
   // Más gasto primero; sin anuncios al final (empate → más reciente primero).
