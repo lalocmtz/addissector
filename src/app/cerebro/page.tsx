@@ -15,7 +15,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import {
   Loader2, Send, Trash2, Plus, X, Brain, Lightbulb, ChevronDown, ChevronRight, Save,
   FileText, Upload, Users, Compass, Zap, CheckCircle2, Globe, Search, Sparkles, PenLine,
-  Copy, ArrowLeftRight, AlertTriangle,
+  Copy, ArrowLeftRight, AlertTriangle, Film,
 } from 'lucide-react';
 import AppHeader from '@/components/AppHeader';
 import BrainSync from '@/components/BrainSync';
@@ -78,7 +78,7 @@ interface Note {
 
 const TABS = [
   { id: 'chat', label: 'Chat', icon: Brain },
-  { id: 'personas', label: 'Personas', icon: Users },
+  { id: 'avatares', label: 'Avatares', icon: Users },
   { id: 'conceptos', label: 'Conceptos', icon: Compass },
   { id: 'hooks', label: 'Hooks', icon: Zap },
   { id: 'aprendizajes', label: 'Aprendizajes', icon: Lightbulb },
@@ -88,7 +88,7 @@ const TABS = [
 /** Pestañas viejas que pueden seguir en links guardados. */
 /** Pestañas viejas que pueden seguir en links guardados. `angulos` se quedó en
  *  marcadores y en el historial: sigue funcionando y cae en Conceptos. */
-const TAB_ALIASES: Record<string, TabId> = { pruebas: 'aprendizajes', externo: 'fuentes', angulos: 'conceptos' };
+const TAB_ALIASES: Record<string, TabId> = { pruebas: 'aprendizajes', externo: 'fuentes', angulos: 'conceptos', personas: 'avatares' };
 
 type TabId = (typeof TABS)[number]['id'];
 
@@ -429,7 +429,7 @@ function CerebroInner() {
         <div className="max-w-[1400px] mx-auto">
           <BrainSync key={activeBrandId} brandId={activeBrandId} />
           {tab === 'chat' && <ChatTab brandId={activeBrandId} brandName={activeBrand?.name ?? ''} />}
-          {tab === 'personas' && <PersonasTab key={activeBrandId} brandId={activeBrandId} />}
+          {tab === 'avatares' && <PersonasTab key={activeBrandId} brandId={activeBrandId} />}
           {tab === 'conceptos' && <ConceptosTab key={activeBrandId} brandId={activeBrandId} />}
           {tab === 'hooks' && <HooksTab key={activeBrandId} brandId={activeBrandId} />}
           {tab === 'aprendizajes' && <AprendizajesTab key={activeBrandId} brandId={activeBrandId} />}
@@ -711,17 +711,22 @@ function SectionRow({ section, open, onToggle, onSave, onDelete }: {
 }
 
 // ===========================================================================
-// 2 · PERSONAS — el banco de avatares, como hoja de cálculo.
+// 2 · PERSONAS — lista a la izquierda, ficha completa a la derecha.
 //
-// Antes era una tarjeta por avatar con diez campos abiertos: setenta cajas de
-// texto apiladas para siete avatares. Comparar el "hueco de educación" de dos
-// avatares —que es justo lo que se hace con un banco de avatares— obligaba a
-// scrollear entre ellos y recordar. Ahora cada avatar es un renglón, cada campo
-// una columna, el nombre se queda fijo a la izquierda, y el renglón se abre a
-// lo ancho cuando un campo necesita espacio de verdad.
+// Dos intentos fallaron antes por la misma razón, invertida. La tarjeta por
+// avatar apilaba diez campos abiertos: con siete avatares eran setenta cajas de
+// texto y no se podía comparar. La hoja de cálculo arregló comparar y rompió
+// leer: los avatares de esta marca traen párrafos, no etiquetas, y un párrafo
+// dentro de una celda de 240px no se lee.
+//
+// Son SIETE avatares, no setecientos: no hace falta verlos todos a la vez. La
+// lista de la izquierda muestra nada más nombre y una línea, que es lo que se
+// necesita para elegir; la ficha de la derecha muestra UNO completo, a ancho
+// cómodo, con su rendimiento real arriba y sus anuncios abajo. Así se analiza
+// un avatar de verdad en vez de ojearlos todos a medias.
 // ===========================================================================
 
-/** Celda compacta: dos renglones, sin etiqueta (el encabezado ya la dice). */
+/** Celda compacta de la hoja de Conceptos: sin etiqueta, el encabezado la dice. */
 function Celda({ value, placeholder, rows = 2, onSave }: {
   value: string | null; placeholder?: string; rows?: number;
   onSave: (v: string) => void | Promise<unknown>;
@@ -739,83 +744,39 @@ function contarPor(ads: LibAd[], campo: 'persona_id' | 'angle_id'): Map<string, 
   return m;
 }
 
+/** Primeras palabras de un campo, para la línea de la lista. */
+function resumen(p: Persona): string {
+  const fuente = (p.description ?? p.callout ?? p.pains ?? '').replace(/\s+/g, ' ').trim();
+  return fuente.length > 90 ? `${fuente.slice(0, 90)}…` : fuente;
+}
+
+/** Los anuncios de un avatar, del más caro al más barato. */
+function anunciosDe(ads: LibAd[], personaId: string): LibAd[] {
+  return ads
+    .filter((a) => a.persona_id === personaId)
+    .sort((a, b) => (Number(b.spend) || 0) - (Number(a.spend) || 0));
+}
+
 function PersonasTab({ brandId }: { brandId: string | null }) {
   const { items, loading, error, setError, create, patch, remove } = useBank<Persona>('/api/plan/personas', brandId);
   const lib = useAngleStats(brandId);
   const porPersona = useMemo(() => contarPor(lib.ads, 'persona_id'), [lib.ads]);
+  const [sel, setSel] = useState<string | null>(null);
 
-  const cols: SheetCol<Persona>[] = [
-    {
-      key: 'callout', label: 'Callout', width: 230,
-      hint: 'La frase con la que se reconoce en el primer segundo del anuncio.',
-      render: (p) => <Celda value={p.callout} placeholder="Se reconoce en el primer segundo…" onSave={(v) => patch(p.id, { callout: v })} />,
-    },
-    {
-      key: 'pains', label: 'Problemas', width: 240,
-      hint: 'Qué le duele y qué conductas ya cambió por eso.',
-      render: (p) => <Celda value={p.pains} placeholder="Qué le duele" onSave={(v) => patch(p.id, { pains: v })} />,
-    },
-    {
-      key: 'education_gap', label: 'Hueco de educación', width: 260,
-      hint: 'Qué creencia falsa hay que actualizar ANTES de que la solución tenga sentido.',
-      render: (p) => <Celda value={p.education_gap} placeholder="La creencia que hay que corregir primero" onSave={(v) => patch(p.id, { education_gap: v })} />,
-    },
-    {
-      key: 'solutions', label: 'Soluciones', width: 240,
-      hint: 'El mecanismo del producto dicho en sus términos.',
-      render: (p) => <Celda value={p.solutions} placeholder="Qué hace el producto por ella" onSave={(v) => patch(p.id, { solutions: v })} />,
-    },
-    {
-      key: 'desires', label: 'Deseos', width: 220,
-      hint: 'Qué quiere que pase después de comprar.',
-      render: (p) => <Celda value={p.desires} placeholder="Qué quiere después de comprar" onSave={(v) => patch(p.id, { desires: v })} />,
-    },
-    {
-      key: 'objections', label: 'Objeciones', width: 220,
-      hint: 'Por qué no compraría.',
-      render: (p) => <Celda value={p.objections} placeholder="Por qué no compraría" onSave={(v) => patch(p.id, { objections: v })} />,
-    },
-    {
-      key: 'offer_fit', label: 'Oferta', width: 170,
-      hint: 'Unidad simple, pack de 3, o ninguna oferta.',
-      render: (p) => <Celda value={p.offer_fit} rows={2} placeholder="Pack de 3 / unidad / ninguna" onSave={(v) => patch(p.id, { offer_fit: v })} />,
-    },
-    {
-      key: 'awareness', label: 'Conciencia', width: 140,
-      hint: 'En qué etapa de conciencia está cuando ve el anuncio.',
-      render: (p) => (
-        <select
-          value={p.awareness_stage ?? ''}
-          onChange={(e) => patch(p.id, { awareness_stage: e.target.value || null })}
-          className={INPUT_CLS}
-        >
-          <option value="">—</option>
-          {AWARENESS_STAGES.map((x) => <option key={x.id} value={x.id}>{x.label}</option>)}
-        </select>
-      ),
-    },
-    {
-      key: 'ads', label: 'Anuncios', width: 90,
-      hint: 'Cuántos anuncios de los últimos 30 días se le hicieron a este avatar. Se llena solo al analizarlos.',
-      render: (p) => {
-        const n = porPersona.get(p.id) ?? 0;
-        return (
-          <p className="text-xs text-ink-3 font-[family-name:var(--font-mono)] tabular-nums pt-1.5">
-            {lib.loading ? '…' : n === 0 ? <span className="text-ink-4">—</span> : n}
-          </p>
-        );
-      },
-    },
-  ];
+  // El primero de la lista queda elegido: abrir la pestaña en blanco no dice nada.
+  const activo = useMemo(
+    () => items.find((p) => p.id === sel) ?? items[0] ?? null,
+    [items, sel],
+  );
 
   return (
     <div>
       <TabHead
-        title="Personas"
-        hint="A quién le hablas. Un renglón por avatar; el nombre se queda fijo al desplazarte. Abre un renglón con la flecha para escribir a gusto."
+        title="Avatares"
+        hint="A quién le hablas. Elige un avatar de la lista y léelo completo: sus campos, los conceptos que ya se le adaptaron y cómo le fue con dinero real."
         action={
           <button
-            onClick={() => { void create({ name: 'Avatar nuevo', status: 'activa' }); }}
+            onClick={async () => { await create({ name: 'Avatar nuevo', status: 'activa' }); }}
             disabled={!brandId}
             className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg gradient-blue text-on-accent disabled:opacity-50 shrink-0"
           >
@@ -830,28 +791,167 @@ function PersonasTab({ brandId }: { brandId: string | null }) {
           algo, qué le duele y qué ya intentó para quitárselo.
         </Empty>
       ) : (
-        <Sheet
-          rows={items}
-          cols={cols}
-          rowKey={(p) => p.id}
-          stickyLabel="Avatar"
-          stickyWidth={210}
-          sticky={(p) => (
-            <div className="space-y-1">
-              <Field value={p.name} placeholder="Nombre del avatar" onSave={(v) => patch(p.id, { name: v })} />
-              <SourceChip source={p.source} />
-            </div>
+        <div className="flex flex-col lg:flex-row gap-5 items-start">
+          {/* Lista: nombre y una línea. Nada más — elegir no necesita más. */}
+          <div className="w-full lg:w-72 shrink-0 lg:sticky lg:top-4 space-y-1">
+            {items.map((p) => {
+              const on = activo?.id === p.id;
+              const n = porPersona.get(p.id) ?? 0;
+              return (
+                <button
+                  key={p.id}
+                  onClick={() => setSel(p.id)}
+                  className={`w-full text-left rounded-lg border px-3 py-2.5 transition-colors ${
+                    on ? 'border-accent bg-accent-soft' : 'border-line bg-surface hover:border-line-strong'
+                  }`}
+                >
+                  <div className="flex items-start gap-2">
+                    <p className={`text-sm font-medium min-w-0 flex-1 break-words ${on ? 'text-ink' : 'text-ink-2'}`}>
+                      {(p.name ?? 'Sin nombre').split('—')[0].trim() || 'Sin nombre'}
+                    </p>
+                    {n > 0 && (
+                      <span className="text-[10px] text-ink-4 font-[family-name:var(--font-mono)] tabular-nums shrink-0 mt-0.5">
+                        {n}
+                      </span>
+                    )}
+                  </div>
+                  {resumen(p) && (
+                    <p className="text-[11px] text-ink-4 mt-0.5 leading-snug break-words">{resumen(p)}</p>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Ficha: uno solo, completo, a ancho cómodo. */}
+          {activo && (
+            <PersonaFicha
+              key={activo.id}
+              persona={activo}
+              ads={anunciosDe(lib.ads, activo.id)}
+              eco={lib.eco}
+              currency={lib.currency}
+              cargando={lib.loading}
+              onPatch={(payload) => patch(activo.id, payload)}
+              onRemove={() => { if (confirm('¿Eliminar este avatar?')) { remove(activo.id); setSel(null); } }}
+            />
           )}
-          detail={(p) => (
-            <div className="grid md:grid-cols-2 gap-4">
-              <Field label="Descripción" value={p.description} rows={4} placeholder="Quién es, en una frase que puedas imaginar" onSave={(v) => patch(p.id, { description: v })} />
-              <Field label="Evidencia" value={p.evidence} rows={4} placeholder="Reseña, comentario o mensaje que lo prueba" onSave={(v) => patch(p.id, { evidence: v })} />
-              <Field label="Hueco de educación" value={p.education_gap} rows={5} placeholder="Qué creencia falsa hay que actualizar ANTES de que la solución tenga sentido" onSave={(v) => patch(p.id, { education_gap: v })} />
-              <Field label="Problemas" value={p.pains} rows={5} placeholder="Qué le duele y qué conductas ya cambió por eso" onSave={(v) => patch(p.id, { pains: v })} />
-            </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PersonaFicha({ persona: p, ads, eco, currency, cargando, onPatch, onRemove }: {
+  persona: Persona;
+  ads: LibAd[];
+  eco: Economics;
+  currency: string | null;
+  cargando: boolean;
+  onPatch: (payload: Record<string, unknown>) => Promise<boolean> | void;
+  onRemove: () => void;
+}) {
+  const total = useMemo(() => {
+    const spend = ads.reduce((s, a) => s + (Number(a.spend) || 0), 0);
+    const revenue = ads.reduce((s, a) => s + (Number(a.revenue) || 0), 0);
+    const purchases = ads.reduce((s, a) => s + (Number(a.purchases) || 0), 0);
+    return { spend, revenue, purchases, roas: spend > 0 ? revenue / spend : null };
+  }, [ads]);
+
+  const tono = total.roas == null ? 'text-ink-4'
+    : total.roas >= eco.target ? 'text-ok'
+    : total.roas < eco.breakeven ? 'text-danger'
+    : 'text-warn';
+
+  return (
+    <div className="flex-1 min-w-0 rounded-xl border border-line bg-surface p-5 space-y-5">
+      {/* Nombre + origen + borrar */}
+      <div className="flex items-start gap-3">
+        <div className="flex-1 min-w-0 space-y-2">
+          <Field value={p.name} placeholder="Nombre del avatar" onSave={(v) => onPatch({ name: v })} />
+          <IaMark source={p.source} />
+        </div>
+        <button onClick={onRemove} className="text-ink-4 hover:text-danger shrink-0 mt-1" title="Eliminar avatar">
+          <X className="w-4 h-4" />
+        </button>
+      </div>
+
+      {/* Cómo se comporta, con dinero real. Arriba, porque cambia cómo lees lo demás. */}
+      <div className="rounded-lg border border-line bg-canvas px-4 py-3">
+        <p className="text-[10px] uppercase tracking-wide text-ink-4 mb-1.5">Últimos 30 días</p>
+        {cargando ? (
+          <p className="text-xs text-ink-4">Cargando…</p>
+        ) : ads.length === 0 ? (
+          <p className="text-xs text-ink-4">Todavía no hay anuncios ligados a este avatar.</p>
+        ) : (
+          <div className="flex flex-wrap items-baseline gap-x-6 gap-y-1 font-[family-name:var(--font-mono)] tabular-nums">
+            <span className="text-sm text-ink-2">{ads.length} anuncio{ads.length === 1 ? '' : 's'}</span>
+            <span className="text-sm text-ink-2">{fmtMoney(total.spend, currency)}</span>
+            <span className={`text-lg font-semibold ${tono}`}>{fmtRoas(total.roas)}</span>
+            <span className="text-xs text-ink-4">{total.purchases} compra{total.purchases === 1 ? '' : 's'} · equilibrio {eco.breakeven.toFixed(2)}</span>
+          </div>
+        )}
+      </div>
+
+      {/* Los campos, a ancho completo y con espacio para leer. */}
+      <div className="space-y-4">
+        <Field label="Descripción" value={p.description} rows={3} placeholder="Quién es, en una frase que puedas imaginar" onSave={(v) => onPatch({ description: v })} />
+        <Field label="Línea de callout (el primer frame)" value={p.callout} rows={2} placeholder="La frase con la que se reconoce en el primer segundo" onSave={(v) => onPatch({ callout: v })} />
+        <Field label="Problemas" value={p.pains} rows={4} placeholder="Qué le duele y qué conductas ya cambió por eso" onSave={(v) => onPatch({ pains: v })} />
+        <Field label="Hueco de educación" value={p.education_gap} rows={6} placeholder="Qué creencia falsa hay que actualizar ANTES de que la solución tenga sentido" onSave={(v) => onPatch({ education_gap: v })} />
+        <Field label="Soluciones (qué hace el producto por ella)" value={p.solutions} rows={4} placeholder="El mecanismo dicho en sus términos" onSave={(v) => onPatch({ solutions: v })} />
+        <div className="grid md:grid-cols-2 gap-4">
+          <Field label="Deseos" value={p.desires} rows={4} placeholder="Qué quiere que pase después de comprar" onSave={(v) => onPatch({ desires: v })} />
+          <Field label="Objeciones" value={p.objections} rows={4} placeholder="Por qué no compraría" onSave={(v) => onPatch({ objections: v })} />
+        </div>
+        <div className="grid md:grid-cols-2 gap-4 items-start">
+          <Field label="Sensibilidad de oferta" value={p.offer_fit} rows={2} placeholder="Unidad simple, pack de 3, o ninguna oferta" onSave={(v) => onPatch({ offer_fit: v })} />
+          <div className="min-w-0">
+            <p className="text-[10px] uppercase tracking-wide text-ink-4 mb-1">Conciencia</p>
+            <select
+              value={p.awareness_stage ?? ''}
+              onChange={(e) => onPatch({ awareness_stage: e.target.value || null })}
+              className={INPUT_CLS}
+            >
+              <option value="">Sin definir</option>
+              {AWARENESS_STAGES.map((x) => <option key={x.id} value={x.id}>{x.label}</option>)}
+            </select>
+          </div>
+        </div>
+        <Field label="Evidencia" value={p.evidence} rows={4} placeholder="Reseña, comentario o mensaje que lo prueba" onSave={(v) => onPatch({ evidence: v })} />
+      </div>
+
+      {/* Sus anuncios: el flujo completo, sin salir de la ficha. */}
+      {ads.length > 0 && (
+        <div>
+          <p className="text-[10px] uppercase tracking-wide text-ink-4 mb-2">
+            Sus anuncios · los que más gastaron primero
+          </p>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+            {ads.slice(0, 12).map((a) => {
+              const roas = Number(a.spend) > 0 ? (Number(a.revenue) || 0) / Number(a.spend) : null;
+              const t = roas == null ? 'text-ink-4' : roas >= eco.target ? 'text-ok' : roas < eco.breakeven ? 'text-danger' : 'text-warn';
+              return (
+                <div key={a.ad_id} className="rounded-lg border border-line bg-canvas overflow-hidden">
+                  <div className="bg-surface-2" style={{ aspectRatio: '4 / 5' }}>
+                    {a.thumbnail_url
+                      ? <img src={a.thumbnail_url} alt="" className="w-full h-full object-cover" />
+                      : <div className="w-full h-full grid place-items-center text-ink-4"><Film className="w-5 h-5" /></div>}
+                  </div>
+                  <div className="px-2 py-1.5">
+                    <p className="text-[10px] text-ink-3 truncate" title={a.ad_name ?? ''}>{a.ad_name ?? 'Sin nombre'}</p>
+                    <p className="text-[10px] font-[family-name:var(--font-mono)] tabular-nums text-ink-4">
+                      {fmtMoney(Number(a.spend) || 0, currency)} · <span className={t}>{fmtRoas(roas)}</span>
+                    </p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          {ads.length > 12 && (
+            <p className="text-[10px] text-ink-4 mt-2">y {ads.length - 12} más</p>
           )}
-          onRemove={(p) => { if (confirm('¿Eliminar este avatar?')) remove(p.id); }}
-        />
+        </div>
       )}
     </div>
   );
