@@ -169,6 +169,8 @@ export interface RawAd {
     image_url?: string;
     thumbnail_url?: string;
     effective_object_story_id?: string;
+    /** Media de Instagram del anuncio: la ruta de descarga que no depende de la Página. */
+    effective_instagram_media_id?: string;
     object_story_spec?: {
       page_id?: string;
       instagram_actor_id?: string;
@@ -181,7 +183,7 @@ export interface RawAd {
 
 const AD_FIELDS =
   'id,name,status,effective_status,created_time,adset_id,campaign_id,' +
-  'creative{id,video_id,image_url,thumbnail_url,effective_object_story_id,object_story_spec,asset_feed_spec}';
+  'creative{id,video_id,image_url,thumbnail_url,effective_object_story_id,effective_instagram_media_id,object_story_spec,asset_feed_spec}';
 
 /** Todos los anuncios de la cuenta con su creativo. Pagina de 100 en 100. */
 export async function fetchAds(actId: string, maxPages = 40, token?: string | null): Promise<RawAd[]> {
@@ -309,12 +311,49 @@ export async function advideoCatalog(actId: string, token?: string | null) {
 }
 
 /**
+ * El MP4 vía Instagram — la ruta que funciona con el token de anuncios solo.
+ *
+ * Probado contra Meta el 20-oct-2026: el nodo /{video_id} rechaza los videos de
+ * creadores y de anuncios de colaboración (OSCAR, TEJON, CREADORA…) con #283 o
+ * #10, porque el video vive en la Página o cuenta del creador, no en la de la
+ * marca — ningún token de la marca lo abre. Pero el creativo trae
+ * `effective_instagram_media_id` y ese nodo entrega `media_url` con el token de
+ * la cuenta publicitaria: 57 de 57 anuncios analizables del top 30 (Feel Ink +
+ * Skinglow), MP4 progresivo con audio (ftypisom) desde cdninstagram. Es además
+ * un MP4 normal, no el fragmento DASH (`tag=dash_h264-…`) que hoy devuelve
+ * /{video_id} y que Gemini a veces no logra procesar. Los únicos que no
+ * responden son los de catálogo / Advantage+, que de todos modos no aplican.
+ */
+export interface InstagramMedia { kind: 'video' | 'image'; url: string; thumbnail: string | null }
+
+export async function instagramMedia(ad: RawAd, token?: string | null): Promise<InstagramMedia | null> {
+  const igId = ad.creative?.effective_instagram_media_id;
+  if (!igId) return null;
+  type Node = { media_type?: string; media_url?: string; thumbnail_url?: string };
+  const m = await graph<Node & { children?: { data?: Node[] } }>(
+    igId, { fields: 'media_type,media_url,thumbnail_url,children{media_type,media_url,thumbnail_url}' }, adToken(token)
+  );
+  const pick = (n: Node | undefined): InstagramMedia | null => {
+    if (!n?.media_url) return null;
+    if (n.media_type === 'VIDEO') return { kind: 'video', url: n.media_url, thumbnail: n.thumbnail_url ?? null };
+    if (n.media_type === 'IMAGE') return { kind: 'image', url: n.media_url, thumbnail: n.media_url };
+    return null;
+  };
+  if (m.media_type === 'CAROUSEL_ALBUM') {
+    const kids = m.children?.data ?? [];
+    return pick(kids.find((k) => k.media_type === 'VIDEO')) ?? pick(kids[0]);
+  }
+  return pick(m);
+}
+
+/**
  * Resuelve el asset descargable de un anuncio probando, en orden:
- *   1. nodo /{video_id} con TOKEN DE PÁGINA  (la ruta buena)
+ *   0. el media de Instagram del creativo   (la ruta que no pide permisos de Página)
+ *   1. nodo /{video_id} con TOKEN DE PÁGINA
  *   2. nodo /{video_id} con token de la cuenta
  *   3. la videoteca /act_<id>/advideos
  *   4. el post de la página vía effective_object_story_id
- *   5. imagen del creativo (estáticos)
+ *   5. imagen del creativo (estáticos), y si no hay, la de Instagram
  * Nunca lanza: si todo falla devuelve kind 'none' con el motivo.
  */
 export async function resolveAsset(
@@ -322,6 +361,22 @@ export async function resolveAsset(
 ): Promise<ResolvedAsset> {
   const vids = videoIdsOf(ad);
   const errors: string[] = [];
+
+  // 0 — Instagram. Va primero: abre los videos de creadores que la Página no
+  // entrega y devuelve un MP4 progresivo en vez de un fragmento DASH. El
+  // prefijo "instagram:" en el error marca que esta ruta ya se intentó (el sync
+  // lo usa para reintentar UNA vez lo bloqueado antes de que existiera).
+  let ig: InstagramMedia | null = null;
+  try {
+    ig = await instagramMedia(ad, token);
+    if (!ig) errors.push(ad.creative?.effective_instagram_media_id ? 'instagram:sin-media' : 'instagram:sin-id');
+  } catch (e) {
+    errors.push(`instagram:${(e as Error).message.slice(0, 60)}`);
+  }
+  if (ig?.kind === 'video') {
+    return { kind: 'video', url: ig.url, strategy: 'instagram-media',
+             thumbnail: ig.thumbnail ?? imageUrlOf(ad), duration: null, videoId: vids[0] ?? null };
+  }
   // pageIdOf solo sabe leer object_story_spec. Los anuncios de creativo
   // dinámico (asset_feed_spec) no lo traen, y sin page_id no hay token de
   // página: el video queda bloqueado con #283 aunque el token esté completo.
@@ -379,11 +434,14 @@ export async function resolveAsset(
   if (img && vids.length === 0) {
     return { kind: 'image', url: img, strategy: 'creative-image', thumbnail: img, duration: null, videoId: null };
   }
+  if (ig?.kind === 'image' && vids.length === 0) {
+    return { kind: 'image', url: ig.url, strategy: 'instagram-media', thumbnail: ig.url, duration: null, videoId: null };
+  }
 
   return {
     kind: 'none', url: null,
     strategy: vids.length ? 'video-bloqueado' : 'sin-asset',
     thumbnail: imageUrlOf(ad), duration: null, videoId: vids[0] ?? null,
-    error: errors.slice(0, 2).join(' · ') || undefined,
+    error: errors.slice(0, 3).join(' · ') || undefined,
   };
 }

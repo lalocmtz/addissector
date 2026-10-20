@@ -38,22 +38,34 @@ export async function GET(request: NextRequest) {
   // Resumen para la barra de progreso
   const { data: todos } = await sb
     .from('meta_ads')
-    .select('queue_status,asset_url')
+    .select('queue_status,asset_url,asset_strategy,queue_error')
     .eq('brand_id', brandId)
     .eq('user_id', user.id);
+  // `omitido` mezclaba tres cosas distintas y por eso la tarjeta decía
+  // "Sin video 928": casi todo eran anuncios FUERA del top (sin señal), que
+  // nunca se descargan a propósito. Se separan para que el progreso se mida
+  // solo sobre lo que sí está en juego.
   const resumen = {
     pendiente: 0, listo: 0, error: 0, omitido: 0,
     sinResolver: 0, total: (todos ?? []).length,
+    sinSenal: 0, noAplica: 0, bloqueado: 0, enJuego: 0,
   };
   for (const r of todos ?? []) {
     const est = (r.queue_status ?? 'pendiente') as string;
     if (est === 'listo') resumen.listo++;
-    else if (est === 'omitido') resumen.omitido++;
+    else if (est === 'omitido') {
+      resumen.omitido++;
+      const strat = String(r.asset_strategy ?? '');
+      if (strat === 'sin-senal' || strat === 'poco-gasto') resumen.sinSenal++;
+      else if (/cat[aá]logo|advantage/i.test(String(r.queue_error ?? ''))) resumen.noAplica++;
+      else resumen.bloqueado++;
+    }
     else if (!r.asset_url) resumen.sinResolver++;   // aun no descubierto en Meta
     else if (est === 'error') resumen.error++;
     else resumen.pendiente++;
   }
 
+  resumen.enJuego = resumen.total - resumen.sinSenal;
   return NextResponse.json({ items: data ?? [], resumen });
 }
 

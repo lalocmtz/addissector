@@ -13,16 +13,17 @@ import { resolveAsset, type RawAd, GRAPH_VERSION, adToken } from '@/lib/meta-api
 
 export const AD_FIELDS =
   'id,name,status,effective_status,created_time,adset_id,campaign_id,' +
-  'creative{id,video_id,image_url,thumbnail_url,effective_object_story_id,object_story_spec,asset_feed_spec}';
+  'creative{id,video_id,image_url,thumbnail_url,effective_object_story_id,effective_instagram_media_id,object_story_spec,asset_feed_spec}';
 
 export const META_ASSET_COLUMNS =
-  'id,name,ad_id,video_id,brand_id,asset_url,asset_kind,asset_strategy,thumbnail_url,duration,brands(meta_ad_account_id)';
+  'id,name,ad_id,video_id,page_id,brand_id,asset_url,asset_kind,asset_strategy,thumbnail_url,duration,brands(meta_ad_account_id)';
 
 export interface MetaAssetRow {
   id: string;
   name: string;
   ad_id: string | null;
   video_id?: string | null;
+  page_id?: string | null;
   brand_id: string;
   asset_url: string | null;
   asset_kind: string | null;
@@ -77,12 +78,15 @@ export async function openMetaAsset(sb: SupabaseClient, row: MetaAssetRow): Prom
       u.searchParams.set('access_token', token);
       const ad = (await (await fetch(u, { cache: 'no-store' })).json()) as RawAd & { error?: { message?: string } };
       if (ad.error) throw new Error(ad.error.message ?? 'Meta rechazó la consulta');
-      const fresh = await resolveAsset(ad, actId, token);
+      // page_id de la fila como respaldo: un creativo armado sobre un post
+      // existente no trae object_story_spec, y sin página el nodo del video
+      // contestaba sin `source` y sin error ("Meta no entregó el archivo").
+      const fresh = await resolveAsset(ad, actId, token, row.page_id ?? null);
       if (!fresh.url) resolveError = fresh.error ?? 'Meta no entregó el archivo';
       if (fresh.url) {
         await sb.from('meta_ads').update({
           asset_url: fresh.url, asset_kind: fresh.kind,
-          asset_strategy: fresh.strategy, thumbnail_url: fresh.thumbnail, asset_error: null,
+          asset_strategy: fresh.strategy, thumbnail_url: fresh.thumbnail ?? row.thumbnail_url ?? null, asset_error: null,
         }).eq('id', row.id);
         row.asset_url = fresh.url;
         row.asset_kind = fresh.kind;

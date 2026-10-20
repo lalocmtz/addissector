@@ -175,7 +175,7 @@ async function syncCreatives(
 
   const { data: rows2 } = await sb
     .from('meta_ads')
-    .select('id,name,ad_id,asset_kind,asset_url,queue_status,creative_id,asset_strategy,updated_at')
+    .select('id,name,ad_id,asset_kind,asset_url,asset_error,queue_status,queue_attempts,creative_id,asset_strategy,updated_at')
     .eq('brand_id', brandId);
   const byAdId = new Map((rows2 ?? []).map((r) => [r.ad_id as string, r]));
 
@@ -207,9 +207,20 @@ async function syncCreatives(
     // before the current token was saved. Otherwise every round re-asks Meta
     // for the same 12 videos and the barrido never ends.
     const tokenSavedAt = acc.updated_at ?? '';
-    const blockedBeforeToken = (prev?.asset_strategy === 'video-bloqueado' || prev?.asset_kind === 'none') && String(prev?.updated_at ?? '') < tokenSavedAt;
+    // Same for a block recorded before the Instagram route existed (its error
+    // carries no "instagram:" attempt): that route opens creator videos the
+    // Page node refuses, so each old block deserves exactly one more try.
+    const wasBlocked = prev?.asset_strategy === 'video-bloqueado' || prev?.asset_kind === 'none';
+    const triedInstagram = String(prev?.asset_error ?? '').includes('instagram:');
+    const blockedBeforeToken = wasBlocked && (String(prev?.updated_at ?? '') < tokenSavedAt || !triedInstagram);
     const skippedForSpend = prev?.queue_status === 'omitido' && (prev?.asset_strategy === 'poco-gasto' || prev?.asset_strategy === 'sin-senal' || blockedBeforeToken);
-    const alreadyDone = Boolean(prev?.asset_url) || prev?.queue_status === 'listo' || (prev?.queue_status === 'omitido' && !(skippedForSpend && passesGate(ad.id)));
+    // A file that failed 3+ times (expired link Meta would not renew, or a
+    // DASH fragment Gemini could not read) used to stay in "error" forever.
+    // If it did not come from Instagram or a manual upload, resolve it again:
+    // the Instagram route hands over a fresh, plain MP4.
+    const stuck = prev?.queue_status === 'error' && (prev?.queue_attempts ?? 0) >= 3
+      && prev?.asset_strategy !== 'instagram-media' && prev?.asset_strategy !== 'manual';
+    const alreadyDone = !(stuck && passesGate(ad.id)) && (Boolean(prev?.asset_url) || prev?.queue_status === 'listo' || (prev?.queue_status === 'omitido' && !(skippedForSpend && passesGate(ad.id))));
     if (alreadyDone) continue;
     if (resolved >= limit || limited) { remaining++; continue; }
 
@@ -267,6 +278,7 @@ async function syncCreatives(
           video_id: asset.videoId ?? vids[0] ?? null,
           queue_status: asset.kind === 'none' ? 'omitido' : 'pendiente',
           queue_error: asset.kind === 'none' ? (asset.error ?? 'no downloadable asset') : null,
+          queue_attempts: 0,
         });
         if (asset.kind === 'none') blocked++; else queued++;
         await sleep(250); // Meta limits by rhythm, not by total

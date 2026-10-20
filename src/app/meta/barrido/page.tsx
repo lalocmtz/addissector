@@ -44,7 +44,17 @@ interface QueueItem {
   duration: number | null;
 }
 
-interface Resumen { pendiente: number; listo: number; error: number; omitido: number; sinResolver: number; total: number }
+interface Resumen {
+  pendiente: number; listo: number; error: number; omitido: number; sinResolver: number; total: number;
+  /** Fuera del top: Meta casi no les dio gasto. No se descargan a propósito. */
+  sinSenal?: number;
+  /** Catálogo / Advantage+: no tienen UN creativo que analizar. */
+  noAplica?: number;
+  /** Ni Instagram ni la Página entregan el archivo: hay que subirlo a mano. */
+  bloqueado?: number;
+  /** Lo que sí cuenta: total menos sin señal. */
+  enJuego?: number;
+}
 
 const esperar = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -491,8 +501,11 @@ export default function BarridoPage() {
     setPaso('');
   }, [activeBrandId, analizarUno, analizarRapido, apunta, cargarMotor, cargarResumen, refresh]);
 
-  const pct = resumen && resumen.total > 0
-    ? Math.round(((resumen.listo + resumen.omitido) / resumen.total) * 100) : 0;
+  // El progreso se mide sobre lo que está en juego (el top por gasto), no
+  // sobre los ~900 anuncios sin señal que nunca se descargan a propósito.
+  const enJuego = resumen ? (resumen.enJuego ?? resumen.total) : 0;
+  const resueltos = resumen ? resumen.listo + (resumen.noAplica ?? 0) : 0;
+  const pct = enJuego > 0 ? Math.round((resueltos / enJuego) * 100) : 0;
 
   return (
     <div className="min-h-screen bg-surface text-ink">
@@ -555,7 +568,7 @@ export default function BarridoPage() {
         {resumen && (
           <div className="mt-6 rounded-xl border border-surface-2 bg-surface-2 p-5">
             <div className="flex items-baseline justify-between">
-              <span className="text-sm text-ink-3">Progreso de la cuenta</span>
+              <span className="text-sm text-ink-3">Progreso del top por gasto</span>
               <span className="text-2xl font-semibold text-ink">{pct}%</span>
             </div>
             <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-surface-2">
@@ -563,12 +576,12 @@ export default function BarridoPage() {
             </div>
             <div className="mt-4 grid grid-cols-2 gap-3 text-sm sm:grid-cols-6">
               {([
-                ['Total', resumen.total, 'var(--color-ink)'],
+                ['En juego', enJuego, 'var(--color-ink)'],
                 ['Analizados', resumen.listo, 'var(--color-ok)'],
-                ['Pendientes', resumen.pendiente, 'var(--color-warn)'],
+                ['En cola', resumen.pendiente, 'var(--color-warn)'],
+                ['Por descargar', resumen.sinResolver, 'var(--color-accent)'],
                 ['Con error', resumen.error, 'var(--color-danger)'],
-                ['Sin video', resumen.omitido, 'var(--color-ink-3)'],
-                ['Sin descubrir', resumen.sinResolver, 'var(--color-accent)'],
+                ['Súbelo tú', resumen.bloqueado ?? 0, 'var(--color-danger)'],
               ] as const).map(([label, v, color]) => (
                 <div key={label}>
                   <div className="text-xs text-ink-4">{label}</div>
@@ -576,6 +589,12 @@ export default function BarridoPage() {
                 </div>
               ))}
             </div>
+            {((resumen.sinSenal ?? 0) > 0 || (resumen.noAplica ?? 0) > 0) && (
+              <p className="mt-3 text-xs text-ink-4">
+                {(resumen.noAplica ?? 0) > 0 && <>{resumen.noAplica} de catálogo / Advantage+ no aplican (no tienen un creativo único). </>}
+                {(resumen.sinSenal ?? 0) > 0 && <>{resumen.sinSenal} anuncios fuera del top no se descargan: Meta casi no les dio gasto, no hay señal que analizar.</>}
+              </p>
+            )}
           </div>
         )}
 
