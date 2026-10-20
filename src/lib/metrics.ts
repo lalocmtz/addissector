@@ -35,6 +35,11 @@ export interface AdDailyRow {
   spend: number;
   revenue: number | null;
   purchases: number | null;
+  /** Atribución incremental de Meta (meta-sync v7): lo que el anuncio causó. */
+  purchases_incr?: number | null;
+  revenue_incr?: number | null;
+  /** Compras atribuidas por 1 día de VISTA (sin clic). */
+  purchases_view?: number | null;
   atc: number | null;
   impressions: number | null;
   reach?: number | null;
@@ -68,7 +73,7 @@ export interface AdDailyRow {
 /** The columns a consumer should select from ad_daily. */
 export const AD_DAILY_COLUMNS =
   'ad_id,ad_name,date,source,metrics_version,status,adset_id,adset_name,campaign_id,campaign_name,' +
-  'spend,revenue,purchases,atc,impressions,reach,freq,link_clicks,plays,v3s,thruplay,v15s,v25,v50,v75,v100,' +
+  'spend,revenue,purchases,purchases_incr,revenue_incr,purchases_view,atc,impressions,reach,freq,link_clicks,plays,v3s,thruplay,v15s,v25,v50,v75,v100,' +
   'roas,cpa,cpc,cpm,cost_atc,hook_rate,hold_rate,ret25,ret50,ret75,ret100,cvr,result_rate';
 
 const pct = (num: number, den: number): number | null => (den > 0 ? (num / den) * 100 : null);
@@ -79,6 +84,9 @@ export interface Totals {
   spend: number;
   revenue: number | null;
   purchases: number | null;
+  purchases_incr: number | null;
+  revenue_incr: number | null;
+  purchases_view: number | null;
   atc: number | null;
   impressions: number | null;
   link_clicks: number | null;
@@ -96,7 +104,7 @@ export interface Totals {
 
 export function sumRows(rows: AdDailyRow[]): Totals {
   const t: Totals = {
-    spend: 0, revenue: null, purchases: null, atc: null, impressions: null, link_clicks: null,
+    spend: 0, revenue: null, purchases: null, purchases_incr: null, revenue_incr: null, purchases_view: null, atc: null, impressions: null, link_clicks: null,
     plays: null, v3s: null, thruplay: null, v25: null, v50: null, v75: null, v100: null, freq: null, days: 0,
   };
   let freqW = 0, freqImp = 0;
@@ -107,6 +115,9 @@ export function sumRows(rows: AdDailyRow[]): Totals {
     t.spend += r.spend ?? 0;
     t.revenue = add(t.revenue, r.revenue);
     t.purchases = add(t.purchases, r.purchases);
+    t.purchases_incr = add(t.purchases_incr, r.purchases_incr);
+    t.revenue_incr = add(t.revenue_incr, r.revenue_incr);
+    t.purchases_view = add(t.purchases_view, r.purchases_view);
     t.atc = add(t.atc, r.atc);
     t.impressions = add(t.impressions, r.impressions);
     t.link_clicks = add(t.link_clicks, r.link_clicks);
@@ -127,6 +138,11 @@ export function sumRows(rows: AdDailyRow[]): Totals {
 export interface Rates {
   roas: number | null;
   cpa: number | null;
+  /** ROAS y CPA con atribución incremental: lo que regresa el siguiente peso. */
+  roas_incr: number | null;
+  cpa_incr: number | null;
+  /** Parte de las compras que vienen de 1 día de vista, sin clic (0–1). */
+  view_share: number | null;
   cpc: number | null;
   cpm: number | null;
   cost_atc: number | null;
@@ -147,6 +163,9 @@ export function ratesOf(t: Totals): Rates {
   return {
     roas: t.revenue != null ? div(t.revenue, t.spend) : null,
     cpa: t.purchases != null && t.purchases > 0 ? t.spend / t.purchases : null,
+    roas_incr: t.revenue_incr != null ? div(t.revenue_incr, t.spend) : null,
+    cpa_incr: t.purchases_incr != null && t.purchases_incr > 0 ? t.spend / t.purchases_incr : null,
+    view_share: t.purchases_view != null && t.purchases ? t.purchases_view / t.purchases : null,
     cpc: clicks > 0 ? t.spend / clicks : null,
     cpm: imp > 0 ? (t.spend / imp) * 1000 : null,
     cost_atc: t.atc != null && t.atc > 0 ? t.spend / t.atc : null,
@@ -227,7 +246,7 @@ export function aggregateByAd(rows: AdDailyRow[], momentum?: { minSpend: number;
 export function rollupAggregates(ads: AdAggregate[]): Totals & Rates & { ads: number } {
   const add = (cur: number | null, v: number | null): number | null => (v == null ? cur : (cur ?? 0) + v);
   const t: Totals = {
-    spend: 0, revenue: null, purchases: null, atc: null, impressions: null, link_clicks: null,
+    spend: 0, revenue: null, purchases: null, purchases_incr: null, revenue_incr: null, purchases_view: null, atc: null, impressions: null, link_clicks: null,
     plays: null, v3s: null, thruplay: null, v25: null, v50: null, v75: null, v100: null, freq: null, days: 0,
   };
   let freqW = 0, freqImp = 0;
@@ -236,6 +255,9 @@ export function rollupAggregates(ads: AdAggregate[]): Totals & Rates & { ads: nu
     t.days += a.days;
     t.revenue = add(t.revenue, a.revenue);
     t.purchases = add(t.purchases, a.purchases);
+    t.purchases_incr = add(t.purchases_incr, a.purchases_incr);
+    t.revenue_incr = add(t.revenue_incr, a.revenue_incr);
+    t.purchases_view = add(t.purchases_view, a.purchases_view);
     t.atc = add(t.atc, a.atc);
     t.impressions = add(t.impressions, a.impressions);
     t.link_clicks = add(t.link_clicks, a.link_clicks);

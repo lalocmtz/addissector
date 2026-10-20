@@ -19,6 +19,7 @@ import { getSupabase } from '@/lib/supabase';
 import { getSessionUser } from '@/lib/supabase-server';
 import { GRAPH_VERSION } from '@/lib/meta-api';
 import { GEMINI_SETTING_KEY } from '@/lib/gemini';
+import { KIE_SETTING_KEY } from '@/lib/kie';
 
 export const runtime = 'nodejs';
 
@@ -93,14 +94,26 @@ async function geminiState(userId: string): Promise<{ has_key: boolean; tail: st
   return { has_key: false, tail: null, from: null };
 }
 
+/** { has_key, tail } de la clave de Kie.ai (adaptador de estáticos). */
+async function kieState(userId: string): Promise<{ has_key: boolean; tail: string | null }> {
+  try {
+    const { data } = await getSupabase().from('app_settings').select('value').eq('user_id', userId).eq('key', KIE_SETTING_KEY).maybeSingle();
+    const v = typeof data?.value === 'string' ? data.value.trim() : '';
+    if (v) return { has_key: true, tail: v.slice(-4) };
+  } catch { /* sin tabla */ }
+  const env = (process.env.KIE_API_KEY ?? '').trim();
+  return env ? { has_key: true, tail: env.slice(-4) } : { has_key: false, tail: null };
+}
+
 export async function GET(request: NextRequest) {
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: 'No autenticado' }, { status: 401 });
   const brandId = request.nextUrl.searchParams.get('brand');
   if (!brandId) return NextResponse.json({ error: 'Falta brand' }, { status: 400 });
   const gemini = await geminiState(user.id);
+  const kie = await kieState(user.id);
   const acc = await accountOf(brandId, user.id);
-  if (!acc) return NextResponse.json({ account: null, gemini });
+  if (!acc) return NextResponse.json({ account: null, gemini, kie });
   const token = acc.access_token ?? process.env.META_ACCESS_TOKEN ?? null;
   const check = token ? await checkToken(token, acc.ad_account_id) : null;
   return NextResponse.json({
@@ -108,13 +121,26 @@ export async function GET(request: NextRequest) {
     check,
     sync: { last_synced_at: acc.last_synced_at, last_sync_error: acc.last_sync_error },
     gemini,
+    kie,
   });
 }
 
 export async function PATCH(request: NextRequest) {
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: 'No autenticado' }, { status: 401 });
-  const body = (await request.json()) as { brandId?: string; token?: string; geminiKey?: string };
+  const body = (await request.json()) as { brandId?: string; token?: string; geminiKey?: string; kieKey?: string };
+
+  // --- Kie.ai key (por usuario) ----------------------------------------------
+  if (typeof body.kieKey === 'string') {
+    const key = body.kieKey.trim();
+    if (key.length < 16 || /\s/.test(key)) return NextResponse.json({ error: 'Eso no parece una clave de Kie.ai' }, { status: 400 });
+    const { error } = await getSupabase().from('app_settings').upsert(
+      { user_id: user.id, key: KIE_SETTING_KEY, value: key, updated_at: new Date().toISOString() },
+      { onConflict: 'user_id,key' },
+    );
+    if (error) return NextResponse.json({ error: `No se pudo guardar la clave: ${error.message}` }, { status: 500 });
+    return NextResponse.json({ ok: true, kie: { has_key: true, tail: key.slice(-4) } });
+  }
 
   // --- Gemini key (per user, not per brand) ---------------------------------
   if (typeof body.geminiKey === 'string') {

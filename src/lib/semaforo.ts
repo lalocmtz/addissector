@@ -10,7 +10,9 @@
 //                   o 14 d ≥ 3 × CPA con ROAS < killRoas
 //   limitar       = ≥ 10% del gasto de 14 d y ROAS 14 d < limitRoas
 //   escalar       = ≥ 10% del gasto, ROAS 7 y 14 d ≥ King Goal y arriba del
-//                   promedio de la cuenta en ambas ventanas
+//                   promedio de la cuenta en ambas ventanas, Y su ROAS
+//                   INCREMENTAL de 14 d cubre el equilibrio (el siguiente peso
+//                   tiene que regresar dinero, no solo el reportado)
 //   iterar        = ROAS 14 d ≥ King Goal (con poco gasto: la cola de foco)
 //   mantener      = entre el equilibrio y el King Goal
 //   debajo        = debajo del equilibrio, sin llegar todavía al corte
@@ -29,6 +31,8 @@ export interface VentanaAd {
   purchases: number | null;
   revenue: number | null;
   roas: number | null;
+  /** ROAS con atribución incremental de Meta; null si no hay datos. */
+  roasIncr?: number | null;
 }
 
 export interface EntradaSemaforo {
@@ -121,18 +125,23 @@ export function semaforoDe(x: EntradaSemaforo, eco: Economics): Semaforo {
     return sale('limitar', `Se lleva ${pct} con ROAS ${r2(r14)}: debajo de ${r2(u.limitRoas)}, deja poco margen.`);
   }
 
-  // 4 · Escalar: ganador de ruptura.
+  // 4 · Escalar: ganador de ruptura, confirmado por el incremental.
+  const i14 = x.d14?.roasIncr ?? null;
+  const incrOk = i14 == null || i14 >= eco.breakeven;
   if (
     x.share14 >= u.share && r7 != null && r14 != null &&
     r7 >= eco.target && r14 >= eco.target &&
-    r7 > (x.cuentaRoas7 ?? 0) && r14 > (x.cuentaRoas14 ?? 0)
+    r7 > (x.cuentaRoas7 ?? 0) && r14 > (x.cuentaRoas14 ?? 0) && incrOk
   ) {
-    return sale('escalar', `Se lleva ${pct} con ROAS ${r2(r7)} (7 d) y ${r2(r14)} (14 d), arriba del King Goal y de la cuenta.`);
+    const inc = i14 != null ? `; incremental ${r2(i14)}` : '';
+    return sale('escalar', `Se lleva ${pct} con ROAS ${r2(r7)} (7 d) y ${r2(r14)} (14 d), arriba del King Goal y de la cuenta${inc}.`);
   }
 
   // 5 · Iterar: funciona y todavía tiene espacio.
   if (r14 != null && r14 >= eco.target) {
-    const extra = x.share14 >= u.share ? ' Gasta mucho, pero 7 d no confirma para escalar.' : '';
+    const extra = x.share14 >= u.share
+      ? (!incrOk ? ` Gasta mucho, pero su ROAS incremental (${r2(i14)}) no cubre el equilibrio: no escalar.` : ' Gasta mucho, pero 7 d no confirma para escalar.')
+      : '';
     return sale('iterar', `ROAS 14 d de ${r2(r14)} con ${p14} compras y solo ${pct}.${extra}`);
   }
 

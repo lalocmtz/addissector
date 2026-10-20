@@ -1,5 +1,13 @@
 // =============================================================================
-// meta-sync v5 — the ONLY writer of ad_daily and of ad_account.currency.
+// meta-sync v7 — the ONLY writer of ad_daily and of ad_account.currency.
+//
+// v7: besides the account's default attribution (purchases / revenue, what
+// Ads Manager shows), every row also stores purchases and value under three
+// windows: 7-day click, 1-day view and Meta's INCREMENTAL attribution
+// (action_attribution_windows=incrementality — the conversions the ad
+// caused, not just the ones it touched). Verified on Feel Ink 20-oct-2026:
+// 14 days = 482 default / 413 incremental purchases. If Meta ever rejects the
+// windows, the sync falls back to the v6 request and keeps writing.
 //
 // Runs hourly from pg_cron (job "meta-sync-hourly") and on demand:
 //   ?days=7                      last N days, every active ad_account
@@ -89,6 +97,23 @@ function actionPick(list: unknown, types: string[]): number | null {
   return null;
 }
 
+/** Same pick as actionPick, but reading one attribution window of each entry
+ *  (e.g. "7d_click", "1d_view", "incrementality") instead of `value`. */
+function actionPickKey(list: unknown, types: string[], key: string): number | null {
+  if (!Array.isArray(list) || list.length === 0) return null;
+  for (const t of types) {
+    let total = 0, found = false;
+    for (const a of list as Array<Record<string, unknown>>) {
+      if (a.action_type !== t || a[key] === undefined) continue;
+      const v = Number(a[key]);
+      if (Number.isFinite(v)) { total += v; found = true; }
+    }
+    if (found) return total;
+  }
+  return null;
+}
+const WINDOWS = ["7d_click", "1d_view", "incrementality"];
+
 /** Widest family first. The order is the precedence, not a set to add up. */
 const PURCHASE = ["omni_purchase", "purchase", "offsite_conversion.fb_pixel_purchase"];
 const ATC = ["omni_add_to_cart", "add_to_cart", "offsite_conversion.fb_pixel_add_to_cart"];
@@ -143,26 +168,37 @@ async function graphAll(firstUrl: string, cap: number): Promise<Json[]> {
   return out;
 }
 
-function insightsUrl(act: string, token: string, since: string, until: string, fields: string[]) {
+function insightsUrl(act: string, token: string, since: string, until: string, fields: string[], windows = false) {
   const q = new URLSearchParams({
     level: "ad", time_increment: "1", limit: String(INSIGHTS_LIMIT),
     fields: fields.join(","),
     time_range: JSON.stringify({ since, until }),
     access_token: token,
   });
+  // With explicit windows Meta still returns the default attribution in
+  // `value` and adds one key per window to each action entry.
+  if (windows) q.set("action_attribution_windows", JSON.stringify(WINDOWS));
   return `${GRAPH}/${act}/insights?${q}`;
 }
 
-async function fetchInsights(act: string, token: string, since: string, until: string) {
-  try {
-    return await graphAll(insightsUrl(act, token, since, until, [...CORE_FIELDS, ...OPTIONAL_FIELDS]), 200);
-  } catch (e) {
-    if (e instanceof MetaError && e.code === 100) {
-      // An optional field is not valid on this version: degrade, don't die.
-      return await graphAll(insightsUrl(act, token, since, until, CORE_FIELDS), 200);
+async function fetchInsights(act: string, token: string, since: string, until: string): Promise<{ rows: Json[]; windows: boolean }> {
+  // Most complete first. A #100 (invalid field or parameter) degrades one
+  // step instead of killing the sync: optional fields go first, windows last.
+  const attempts: Array<[string[], boolean]> = [
+    [[...CORE_FIELDS, ...OPTIONAL_FIELDS], true],
+    [CORE_FIELDS, true],
+    [CORE_FIELDS, false],
+  ];
+  let last: unknown = null;
+  for (const [fields, windows] of attempts) {
+    try {
+      return { rows: await graphAll(insightsUrl(act, token, since, until, fields, windows), 200), windows };
+    } catch (e) {
+      if (e instanceof MetaError && e.code === 100) { last = e; continue; }
+      throw e;
     }
-    throw e;
   }
+  throw last;
 }
 
 Deno.serve(async (req) => {
@@ -204,7 +240,7 @@ Deno.serve(async (req) => {
       }
 
       // 2. Daily insights, one row per ad per day
-      const raw = await fetchInsights(act, token, since, until);
+      const { rows: raw, windows } = await fetchInsights(act, token, since, until);
 
       // 3. Ad dimension: status, names, created_time (paged at 100 for the nested fields)
       const ads = await graphAll(
@@ -237,6 +273,7 @@ Deno.serve(async (req) => {
           adset_id: r.adset_id ?? null, adset_name: r.adset_name ?? null,
           campaign_id: r.campaign_id ?? null, campaign_name: r.campaign_name ?? null,
           spend: 0, revenue: null, purchases: null, atc: null, impressions: 0, reach: null, freq: null,
+          purchases_click: null, revenue_click: null, purchases_view: null, revenue_view: null, purchases_incr: null, revenue_incr: null,
           link_clicks: null, plays: null, v3s: null, thruplay: null, v15s: null,
           v25: null, v50: null, v75: null, v100: null, play_curve: null,
           updated_at: new Date().toISOString(),
@@ -254,6 +291,14 @@ Deno.serve(async (req) => {
         cur.purchases = add(cur.purchases, actionPick(r.actions, PURCHASE));
         cur.revenue = add(cur.revenue, actionPick(r.action_values, PURCHASE));
         cur.atc = add(cur.atc, actionPick(r.actions, ATC));
+        if (windows) {
+          cur.purchases_click = add(cur.purchases_click, actionPickKey(r.actions, PURCHASE, "7d_click"));
+          cur.revenue_click = add(cur.revenue_click, actionPickKey(r.action_values, PURCHASE, "7d_click"));
+          cur.purchases_view = add(cur.purchases_view, actionPickKey(r.actions, PURCHASE, "1d_view"));
+          cur.revenue_view = add(cur.revenue_view, actionPickKey(r.action_values, PURCHASE, "1d_view"));
+          cur.purchases_incr = add(cur.purchases_incr, actionPickKey(r.actions, PURCHASE, "incrementality"));
+          cur.revenue_incr = add(cur.revenue_incr, actionPickKey(r.action_values, PURCHASE, "incrementality"));
+        }
         cur.plays = add(cur.plays, videoView(r.video_play_actions));
         cur.v3s = add(cur.v3s, videoView(r.actions));           // 3-second video plays
         cur.thruplay = add(cur.thruplay, videoView(r.video_thruplay_watched_actions));
@@ -307,13 +352,13 @@ Deno.serve(async (req) => {
       }
 
       await sb.from("ad_account").update({ last_synced_at: new Date().toISOString(), last_sync_error: null }).eq("id", acc.id);
-      const detail = `v5 ${since}→${until}: ${raw.length} insight rows, ${daily.length} ad-days, ${adRows.length} ads, ${Math.round((Date.now() - startedAt) / 1000)}s`;
+      const detail = `v7${windows ? "" : " (sin ventanas)"} ${since}→${until}: ${raw.length} insight rows, ${daily.length} ad-days, ${adRows.length} ads, ${Math.round((Date.now() - startedAt) / 1000)}s`;
       await sb.from("sync_logs").insert({ brand_id: acc.brand_id, ok: true, rows_upserted: upserted, detail });
       results.push({ account: act, ok: true, rows: upserted, ads: adsSeen, currency: meta.currency ?? null });
     } catch (e) {
       const msg = e instanceof MetaError ? `[${e.code}] ${e.message}${e.waitMin ? ` (wait ${e.waitMin} min)` : ""}` : String(e);
       await sb.from("ad_account").update({ last_sync_error: msg }).eq("id", acc.id);
-      await sb.from("sync_logs").insert({ brand_id: acc.brand_id, ok: false, rows_upserted: upserted, detail: `v5 ${since}→${until}: ${msg}`.slice(0, 1800) });
+      await sb.from("sync_logs").insert({ brand_id: acc.brand_id, ok: false, rows_upserted: upserted, detail: `v7 ${since}→${until}: ${msg}`.slice(0, 1800) });
       results.push({ account: act, ok: false, error: msg, rateLimited: isRateLimit(e), waitMin: e instanceof MetaError ? e.waitMin : 0 });
     }
   }

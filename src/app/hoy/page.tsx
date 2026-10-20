@@ -19,8 +19,9 @@ interface Ventana {
   id: string; label: string; desde: string; hasta: string;
   spend: number; revenue: number | null; purchases: number | null; roas: number | null; cpa: number | null;
   cpm: number | null; freq: number | null; aov: number | null; gpt: number | null; margen: number | null; margenPct: number | null;
+  roasIncr: number | null; comprasIncr: number | null; cpaIncr: number | null; margenIncr: number | null; vistaPct: number | null; cobertura: number;
 }
-interface Mini { spend: number; purchases: number | null; roas: number | null; cpa?: number | null; cpm?: number | null; freq?: number | null; hook?: number | null }
+interface Mini { spend: number; purchases: number | null; roas: number | null; cpa?: number | null; cpm?: number | null; freq?: number | null; hook?: number | null; roasIncr?: number | null; vistaPct?: number | null }
 interface Anuncio {
   ad_id: string; nombre: string; campana: string | null; conjunto: string | null; thumbnail_url: string | null; kind: string | null;
   analizado: boolean; luz: Luz; color: 'verde' | 'ambar' | 'rojo' | 'gris'; titulo: string; porque: string; accion: string; cayendo: boolean;
@@ -127,11 +128,15 @@ export default function HoyPage() {
                   {([
                     ['Gasto', (c: Ventana) => money(c.spend), null],
                     ['Compras', (c: Ventana) => (c.purchases ?? 0).toLocaleString('es-MX'), null],
-                    ['ROAS', (c: Ventana) => num(c.roas), (c: Ventana) => roasCls(c.roas)],
+                    ['ROAS reportado', (c: Ventana) => num(c.roas), (c: Ventana) => roasCls(c.roas)],
+                    ['ROAS incremental', (c: Ventana) => num(c.roasIncr), (c: Ventana) => `${roasCls(c.roasIncr)} bg-accent-soft/40`],
                     ['CPA', (c: Ventana) => money(c.cpa), null],
+                    ['CPA incremental', (c: Ventana) => money(c.cpaIncr), null],
                     ['Ticket (AOV)', (c: Ventana) => money(c.aov), null],
                     ['GPT (AOV − CPA)', (c: Ventana) => money(c.gpt), null],
                     ['Margen antes de fijos', (c: Ventana) => c.margen == null ? '—' : `${money(c.margen)} · ${pct(c.margenPct)}`, (c: Ventana) => (c.margen ?? 0) < 0 ? 'text-danger' : ''],
+                    ['Margen si cuentas solo lo incremental', (c: Ventana) => money(c.margenIncr), (c: Ventana) => (c.margenIncr ?? 0) < 0 ? 'text-danger' : ''],
+                    ['Compras por vista (sin clic)', (c: Ventana) => pct(c.vistaPct), null],
                     ['CPM', (c: Ventana) => money(c.cpm), null],
                     ['Frecuencia diaria', (c: Ventana) => num(c.freq), null],
                   ] as const).map(([label, f, cls]) => (
@@ -143,6 +148,13 @@ export default function HoyPage() {
                 </tbody>
               </table>
             </section>
+
+            <p className="mt-2 text-xs text-ink-3">
+              <span className="font-medium text-ink-2">Reportado</span> = lo que ve Ads Manager (cualquier compra que el anuncio tocó).{' '}
+              <span className="font-medium text-ink-2">Incremental</span> = las compras que Meta estima que tus anuncios causaron; es lo que regresa el siguiente peso y manda para subir presupuesto.{' '}
+              <span className="font-medium text-ink-2">Frecuencia diaria</span> = a quién le está mostrando Meta: debajo de 1.15 gente nueva, arriba de 1.35 gente que ya te conoce.
+              {data.cuenta.some((c) => c.roasIncr == null && c.spend > 0) && ' Las ventanas en "—" todavía no tienen el incremental completo (se está rellenando).'}
+            </p>
 
             {/* 2 · Presupuesto */}
             <section className={`mt-4 flex items-start gap-3 rounded-xl px-4 py-3 text-sm ${data.presupuesto.subir ? 'bg-ok-soft text-ok' : 'bg-warn-soft text-warn'}`}>
@@ -206,6 +218,8 @@ export default function HoyPage() {
                         {a.cayendo && <span className="rounded-full bg-warn-soft px-2 py-0.5 text-xs text-warn">Cayendo en 7 d</span>}
                         {a.rol && <span className="rounded-full bg-surface-2 px-2 py-0.5 text-xs text-ink-3">{ROL_TXT[a.rol]}</span>}
                         {a.sinGasto3d && <span className="rounded-full bg-surface-2 px-2 py-0.5 text-xs text-ink-4">Sin gasto en 3 d</span>}
+                        {(a.d14?.vistaPct ?? 0) >= 0.4 && <span className="rounded-full bg-warn-soft px-2 py-0.5 text-xs text-warn" title="40% o más de sus compras vienen de 1 día de vista, sin clic">Mucha compra por vista</span>}
+                        {a.d14?.roasIncr != null && eco && a.d14.roasIncr < eco.breakeven && (a.d14.roas ?? 0) >= eco.breakeven && <span className="rounded-full bg-warn-soft px-2 py-0.5 text-xs text-warn">Incremental debajo del equilibrio</span>}
                         {!a.analizado && <span className="rounded-full bg-surface-2 px-2 py-0.5 text-xs text-ink-4">Sin analizar</span>}
                       </div>
                       <div className="mt-1 truncate text-sm font-medium" title={a.nombre}>{a.nombre}</div>
@@ -214,14 +228,16 @@ export default function HoyPage() {
                     </div>
                     <div className="hidden shrink-0 grid-cols-4 gap-x-4 gap-y-1 text-right text-xs tabular-nums sm:grid">
                       <div className="text-ink-4">Hoy</div><div className="text-ink-4">3 d</div><div className="text-ink-4">7 d</div><div className="text-ink-4">14 d</div>
-                      {[a.hoy, a.d3, a.d7, a.d14].map((w, i) => <div key={`r${i}`} className={roasCls(w?.roas)}>{num(w?.roas)}</div>)}
+                      {[a.hoy, a.d3, a.d7, a.d14].map((w, i) => <div key={`r${i}`} className={roasCls(w?.roas)} title="ROAS reportado">{num(w?.roas)}</div>)}
+                      {[null, null, a.d7, a.d14].map((w, i) => <div key={`i${i}`} className={w ? roasCls(w.roasIncr) : 'text-ink-4'} title="ROAS incremental">{w ? `inc ${num(w.roasIncr)}` : ''}</div>)}
                       {[a.hoy, a.d3, a.d7, a.d14].map((w, i) => <div key={`s${i}`} className="text-ink-3">{money(w?.spend)}</div>)}
                       {[a.hoy, a.d3, a.d7, a.d14].map((w, i) => <div key={`p${i}`} className="text-ink-3">{w?.purchases ?? 0} c</div>)}
+                      {[null, null, a.d7, a.d14].map((w, i) => <div key={`f${i}`} className="text-ink-3" title="Frecuencia diaria">{w ? `frec ${num(w.freq)}` : ''}</div>)}
                     </div>
                     <div className="hidden w-28 shrink-0 text-right text-xs tabular-nums md:block">
                       <div className="text-ink-4">CPA 14 d</div><div>{money(a.d14?.cpa)}</div>
                       <div className="mt-1 text-ink-4">GPT · gasto</div><div>{money(a.gpt14)} · {pct(a.share14)}</div>
-                      <div className="mt-1 text-ink-4">Hook · frec.</div><div>{a.d14?.hook != null ? `${num(a.d14.hook, 0)}%` : '—'} · {num(a.d14?.freq)}</div>
+                      <div className="mt-1 text-ink-4">Hook · CPM</div><div>{a.d14?.hook != null ? `${num(a.d14.hook, 0)}%` : '—'} · {money(a.d14?.cpm)}</div>
                     </div>
                     {(a.luz === 'iterar' || a.luz === 'escalar') && (
                       <Link href={`/lanzar?iterar=${a.ad_id}`} className="self-center rounded-lg bg-ok-soft px-3 py-2 text-xs font-medium text-ok">Iterar</Link>

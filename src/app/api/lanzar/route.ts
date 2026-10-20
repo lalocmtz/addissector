@@ -1,6 +1,10 @@
 // =============================================================================
-// /api/lanzar — la tarjeta 3:2:2. Una tarjeta = una prueba = un conjunto con
-// 3 anuncios (una ejecución cada uno), cada anuncio con 2 textos y 2 titulares.
+// /api/lanzar — el lote. Un lote = una prueba = un conjunto de anuncios:
+// 1 concepto × 1 avatar × 1 trabajo (atención / valor / confianza), con 3 a 6
+// ejecuciones, cada anuncio con 2 textos y 2 titulares.
+//   Conjunto en Meta:  FI-012 | RUBEN | VS-CALCOMANIA | ATENCION
+//   Anuncios:          FI-012-A1, FI-012-A2, …
+// Las tarjetas viejas (3:2:2 con -E1…-E3) se siguen leyendo igual.
 //
 // Se guarda sobre las tablas que ya existían: `experiment` (la tarjeta; sus 7
 // decisiones viven en `brief` con kind '322') y `experiment_variant` (las 3
@@ -19,6 +23,7 @@ import { getSessionUser } from '@/lib/supabase-server';
 import { fetchAll } from '@/lib/fetch-all';
 import { sumRows, ratesOf, AD_DAILY_COLUMNS, type AdDailyRow } from '@/lib/metrics';
 import { resolveEconomics, targetCpa } from '@/lib/meta';
+import { nombreLote } from '@/lib/lote';
 
 export const runtime = 'nodejs';
 export const maxDuration = 30;
@@ -64,7 +69,7 @@ export async function GET(request: NextRequest) {
   const tarjetas = (exps ?? []).filter((e) => (e.brief as { kind?: string } | null)?.kind === '322');
   const ids = tarjetas.map((t) => t.id);
   const { data: vars } = ids.length
-    ? await sb.from('experiment_variant').select('id,experiment_id,variant,ad_name,hook,script,visual_notes,format,status').in('experiment_id', ids).order('variant')
+    ? await sb.from('experiment_variant').select('id,experiment_id,variant,ad_name,hook,script,visual_notes,format,status,beats').in('experiment_id', ids).order('variant')
     : { data: [] };
 
   // Resultados: los anuncios cuyo nombre en Meta trae el código de la tarjeta.
@@ -83,7 +88,7 @@ export async function GET(request: NextRequest) {
     const primero = [...dias].sort()[0] ?? null;
     resultados[t.id] = {
       anuncios: new Set(mias.map((x) => x.ad_id)).size,
-      spend: tot.spend, purchases: tot.purchases, roas: r.roas, cpa: r.cpa, hook: r.hook_rate,
+      spend: tot.spend, purchases: tot.purchases, roas: r.roas, cpa: r.cpa, hook: r.hook_rate, roasIncr: r.roas_incr, freq: tot.freq,
       diasConGasto: dias.size, primerDia: primero,
     };
   }
@@ -102,7 +107,7 @@ export async function GET(request: NextRequest) {
   });
 }
 
-interface Ejecucion { hook?: string; guion?: string; visual?: string }
+interface Ejecucion { hook?: string; guion?: string; visual?: string; imagen?: string; beats?: unknown }
 
 export async function POST(request: NextRequest) {
   const user = await getSessionUser();
@@ -128,7 +133,8 @@ export async function POST(request: NextRequest) {
   if (!['atencion', 'valor', 'confianza'].includes(trabajo)) faltan.push('trabajo');
   if (!['video', 'estatico'].includes(formato)) faltan.push('formato (video o estático, uno solo)');
   if (tipo === 'iteracion' && !CAPA_A_VARIABLE[capa]) faltan.push('capa que cambia');
-  if (ejecuciones.filter((e) => (e.hook ?? '').trim()).length < 3) faltan.push('3 ejecuciones con su hook');
+  const utiles = ejecuciones.filter((e) => (e.hook ?? '').trim() || (e.imagen ?? '').trim());
+  if (utiles.length < 3) faltan.push('al menos 3 ejecuciones (hook o imagen)');
   if (faltan.length) return NextResponse.json({ error: `Falta: ${faltan.join(', ')}` }, { status: 400 });
 
   const { data: ultimo } = await sb.from('experiment').select('number').eq('brand_id', brandId).order('number', { ascending: false }).limit(1).maybeSingle();
@@ -136,11 +142,23 @@ export async function POST(request: NextRequest) {
   const code = `${prefijo(String(brand.name ?? ''))}-${String(number).padStart(3, '0')}`;
   const now = new Date().toISOString();
 
+  // El avatar del nombre: el que se eligió de la lista o el escrito a mano.
+  let avatar = s('avatar');
+  if (!avatar && s('personaId')) {
+    const { data: p } = await sb.from('personas').select('name').eq('id', s('personaId')).eq('brand_id', brandId).maybeSingle();
+    avatar = String(p?.name ?? '');
+  }
+  const lote = nombreLote(code, avatar, s('conceptoCorto') || concepto, trabajo);
+
   const brief = {
     kind: '322', tipo, capa: tipo === 'iteracion' ? capa : null,
     origen: tipo === 'iteracion' ? { ad_id: s('origenAdId') || null, nombre: s('origenNombre') || null } : null,
     angulo: s('angulo'), trabajo, formato, mensaje: s('mensaje'), objecion: s('objecion'),
     textos: textos.slice(0, 2), titulares: titulares.slice(0, 2),
+    lote, avatar: avatar || null, talento: s('talento') || null,
+    fuente: s('fuente') || 'manual', // manual | guion | estatico | iterar
+    justificacion: s('justificacion') || null,
+    referencia: s('referencia') || null,
   };
   const { data: exp, error } = await sb.from('experiment').insert({
     user_id: user.id, brand_id: brandId, number, code, name: concepto,
@@ -154,10 +172,11 @@ export async function POST(request: NextRequest) {
   }).select('id,code').single();
   if (error || !exp) return NextResponse.json({ error: error?.message ?? 'No se pudo crear' }, { status: 500 });
 
-  const filas = ejecuciones.slice(0, 3).map((e, i) => ({
+  const filas = utiles.slice(0, 6).map((e, i) => ({
     user_id: user.id, brand_id: brandId, experiment_id: exp.id,
-    ad_name: `${code}-E${i + 1}`, variant: `E${i + 1}`,
+    ad_name: `${code}-A${i + 1}`, variant: `A${i + 1}`,
     hook: (e.hook ?? '').trim() || null, script: (e.guion ?? '').trim() || null, visual_notes: (e.visual ?? '').trim() || null,
+    beats: e.imagen || e.beats ? { imagen: (e.imagen ?? '').trim() || null, detalle: e.beats ?? null } : null,
     format: formato, status: 'planned', created_at: now, updated_at: now,
   }));
   const { error: verr } = await sb.from('experiment_variant').insert(filas);
@@ -165,7 +184,7 @@ export async function POST(request: NextRequest) {
     await sb.from('experiment').delete().eq('id', exp.id);
     return NextResponse.json({ error: verr.message }, { status: 500 });
   }
-  return NextResponse.json({ ok: true, id: exp.id, code: exp.code });
+  return NextResponse.json({ ok: true, id: exp.id, code: exp.code, lote });
 }
 
 export async function PATCH(request: NextRequest) {
