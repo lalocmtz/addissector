@@ -22,7 +22,7 @@ export const runtime = 'nodejs';
 export const TOP_N = 30;
 export const TOP_WINDOW_DAYS = 30;
 
-export type TopState = 'analizado' | 'en_cola' | 'por_descargar' | 'subir';
+export type TopState = 'analizado' | 'en_cola' | 'por_descargar' | 'subir' | 'no_aplica';
 
 export async function GET(request: NextRequest) {
   const user = await getSessionUser();
@@ -55,6 +55,8 @@ export async function GET(request: NextRequest) {
     let state: TopState;
     let reason: string | null = null;
     if (m?.analyzed_at || m?.creative_id || m?.queue_status === 'listo') state = 'analizado';
+    // Catálogo / Advantage+: no tiene UN creativo. No es pendiente ni "súbelo tú".
+    else if (m?.queue_status === 'omitido' && /cat[aá]logo|advantage/i.test(String(m?.queue_error ?? ''))) state = 'no_aplica';
     else if (m?.asset_url && (m.queue_status === 'pendiente' || m.queue_status == null || (m.queue_status === 'error' && (m.queue_attempts ?? 0) < 3))) state = 'en_cola';
     else if (m?.asset_kind === 'none' || m?.asset_error || (m?.queue_status === 'error' && (m.queue_attempts ?? 0) >= 3)) {
       state = 'subir';
@@ -68,6 +70,6 @@ export async function GET(request: NextRequest) {
     };
   });
 
-  const counts = items.reduce<Record<TopState, number>>((acc, x) => { acc[x.state]++; return acc; }, { analizado: 0, en_cola: 0, por_descargar: 0, subir: 0 });
+  const counts = items.reduce<Record<TopState, number>>((acc, x) => { acc[x.state]++; return acc; }, { analizado: 0, en_cola: 0, por_descargar: 0, subir: 0, no_aplica: 0 });
   return NextResponse.json({ window: { from, to, days: TOP_WINDOW_DAYS, n: TOP_N }, items, counts });
 }

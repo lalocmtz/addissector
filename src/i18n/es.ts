@@ -467,6 +467,8 @@ export const es: Record<string, string> = {
 
   // Producción — tandas de piezas: crear → copiar códigos → producir → subir a Meta → en prueba → veredicto
   'nav.workshop': 'Producción',
+  'nav.today': 'Hoy',
+  'nav.launch': 'Lanzar',
   'ws.title': 'Producción',
   'ws.subtitle': 'Arma tandas de piezas, copia los códigos, súbelas a Meta con ese nombre y aquí se miden solas.',
   'ws.guide.button': 'Guía',

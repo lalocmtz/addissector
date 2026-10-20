@@ -122,6 +122,7 @@ export default function BarridoPage() {
   const [actual, setActual] = useState<string | null>(null);
   const [paso, setPaso] = useState<string>('');
   const [resumen, setResumen] = useState<Resumen | null>(null);
+  const [top, setTop] = useState<{ n: number; c: Record<string, number> } | null>(null);
   const [topRefresh, setTopRefresh] = useState(0);
   const [log, setLog] = useState<LogLine[]>([]);
   const detener = useRef(false);
@@ -137,8 +138,17 @@ export default function BarridoPage() {
   const cargarResumen = useCallback(async () => {
     if (!activeBrandId) return;
     try {
-      const r = await fetch(`/api/meta/queue?brand=${activeBrandId}&limit=1`);
+      const [r, t] = await Promise.all([
+        fetch(`/api/meta/queue?brand=${activeBrandId}&limit=1`),
+        fetch(`/api/meta/top?brand=${activeBrandId}`),
+      ]);
       if (r.ok) setResumen((await r.json()).resumen);
+      // La tarjeta cuenta el top 30 VIGENTE. Contar meta_ads entera mezclaba
+      // anuncios que algún día estuvieron en el top y daba "43 Súbelo tú" falsos.
+      if (t.ok) {
+        const j = await t.json();
+        setTop({ n: (j.items ?? []).length, c: j.counts ?? {} });
+      }
     } catch { /* silencioso */ }
   }, [activeBrandId]);
 
@@ -503,8 +513,8 @@ export default function BarridoPage() {
 
   // El progreso se mide sobre lo que está en juego (el top por gasto), no
   // sobre los ~900 anuncios sin señal que nunca se descargan a propósito.
-  const enJuego = resumen ? (resumen.enJuego ?? resumen.total) : 0;
-  const resueltos = resumen ? resumen.listo + (resumen.noAplica ?? 0) : 0;
+  const enJuego = top ? top.n : resumen ? (resumen.enJuego ?? resumen.total) : 0;
+  const resueltos = top ? (top.c.analizado ?? 0) + (top.c.no_aplica ?? 0) : resumen ? resumen.listo + (resumen.noAplica ?? 0) : 0;
   const pct = enJuego > 0 ? Math.round((resueltos / enJuego) * 100) : 0;
 
   return (
@@ -576,12 +586,12 @@ export default function BarridoPage() {
             </div>
             <div className="mt-4 grid grid-cols-2 gap-3 text-sm sm:grid-cols-6">
               {([
-                ['En juego', enJuego, 'var(--color-ink)'],
-                ['Analizados', resumen.listo, 'var(--color-ok)'],
-                ['En cola', resumen.pendiente, 'var(--color-warn)'],
-                ['Por descargar', resumen.sinResolver, 'var(--color-accent)'],
-                ['Con error', resumen.error, 'var(--color-danger)'],
-                ['Súbelo tú', resumen.bloqueado ?? 0, 'var(--color-danger)'],
+                ['En el top', enJuego, 'var(--color-ink)'],
+                ['Analizados', top ? top.c.analizado ?? 0 : resumen.listo, 'var(--color-ok)'],
+                ['En cola', top ? top.c.en_cola ?? 0 : resumen.pendiente, 'var(--color-warn)'],
+                ['Por descargar', top ? top.c.por_descargar ?? 0 : resumen.sinResolver, 'var(--color-accent)'],
+                ['Súbelo tú', top ? top.c.subir ?? 0 : resumen.bloqueado ?? 0, 'var(--color-danger)'],
+                ['No aplica', top ? top.c.no_aplica ?? 0 : resumen.noAplica ?? 0, 'var(--color-ink-3)'],
               ] as const).map(([label, v, color]) => (
                 <div key={label}>
                   <div className="text-xs text-ink-4">{label}</div>
@@ -591,7 +601,7 @@ export default function BarridoPage() {
             </div>
             {((resumen.sinSenal ?? 0) > 0 || (resumen.noAplica ?? 0) > 0) && (
               <p className="mt-3 text-xs text-ink-4">
-                {(resumen.noAplica ?? 0) > 0 && <>{resumen.noAplica} de catálogo / Advantage+ no aplican (no tienen un creativo único). </>}
+                
                 {(resumen.sinSenal ?? 0) > 0 && <>{resumen.sinSenal} anuncios fuera del top no se descargan: Meta casi no les dio gasto, no hay señal que analizar.</>}
               </p>
             )}

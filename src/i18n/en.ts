@@ -471,6 +471,8 @@ export const en: Record<string, string> = {
 
   // Production — batches of pieces: create → copy codes → produce → upload to Meta → in test → verdict
   'nav.workshop': 'Production',
+  'nav.today': 'Today',
+  'nav.launch': 'Launch',
   'ws.title': 'Production',
   'ws.subtitle': 'Build batches of pieces, copy the codes, upload them to Meta under that name and they measure themselves here.',
   'ws.guide.button': 'Guide',

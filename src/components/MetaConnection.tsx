@@ -182,7 +182,7 @@ export function MetaTokenCard({ brandId, onGeminiChange }: { brandId: string | n
 // Top 30
 // ---------------------------------------------------------------------------
 
-type TopState = 'analizado' | 'en_cola' | 'por_descargar' | 'subir';
+type TopState = 'analizado' | 'en_cola' | 'por_descargar' | 'subir' | 'no_aplica';
 interface TopItem {
   rank: number; ad_id: string; ad_name: string; meta_id: string | null; kind: 'video' | 'image';
   spend: number; purchases: number; roas: number | null; cpa: number | null;
@@ -195,6 +195,7 @@ const STATE: Record<TopState, { label: string; cls: string; hint: string }> = {
   en_cola: { label: 'En cola', cls: 'bg-accent-soft text-accent', hint: 'El archivo ya está; el barrido lo analiza.' },
   por_descargar: { label: 'Se descarga solo', cls: 'bg-warn-soft text-warn', hint: 'Falta traerlo de Meta con el token (botón "Traer de Meta").' },
   subir: { label: 'Súbelo tú', cls: 'bg-danger-soft text-danger', hint: 'Meta no entrega este archivo. Súbelo aquí y entra a la cola.' },
+  no_aplica: { label: 'No aplica', cls: 'bg-surface-2 text-ink-3', hint: 'Catálogo / Advantage+: no tiene un creativo único que analizar.' },
 };
 
 export function MetaTop30({ brandId, currency, refreshKey }: { brandId: string | null; currency: string | null; refreshKey?: number }) {
@@ -285,7 +286,7 @@ export function MetaTop30({ brandId, currency, refreshKey }: { brandId: string |
       )}
       {c && (
         <p className="mt-2 text-xs text-ink-3">
-          {c.analizado} de {data?.items.length ?? 0} ya están en el Cerebro. {c.analizado < (data?.items.length ?? 0) ? `Faltan ${(data?.items.length ?? 0) - c.analizado}: sube el archivo de cada uno y se analiza al momento.` : 'Top 30 completo.'}
+          {c.analizado} de {data?.items.length ?? 0} ya están en el Cerebro{c.no_aplica ? ` (${c.no_aplica} de catálogo no aplican)` : ''}. {c.analizado + (c.no_aplica ?? 0) < (data?.items.length ?? 0) ? `Faltan ${(data?.items.length ?? 0) - c.analizado - (c.no_aplica ?? 0)}: se descargan y analizan con el barrido.` : 'Top 30 completo.'}
           {' '}
           <button type="button" onClick={() => setShowAll((v) => !v)} className="underline text-ink-2 hover:text-ink">{showAll ? 'Ocultar analizados' : 'Ver también los analizados'}</button>
         </p>
