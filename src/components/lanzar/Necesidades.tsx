@@ -11,7 +11,7 @@ export interface Necesidad {
   id: string; prioridad: 1 | 2 | 3; titulo: string; porque: string;
   puerta: 'iterar' | 'guiones' | 'adaptar' | 'decidir' | 'hoy'; datos?: Record<string, unknown>;
 }
-export interface Pendientes { idea: number; produccion: number; prueba: number; semana: number; cuota: number }
+export interface Pendientes { idea: number; produccion: number; prueba: number; semana: number; cuota: number; semanaVideo?: number; cuotaVideo?: number; semanaEstatico?: number; cuotaEstatico?: number; gastoDia?: number }
 
 const BOTON: Record<Necesidad['puerta'], string> = { iterar: 'Iterar', guiones: 'Escribir guiones', adaptar: 'Adaptar', decidir: 'Decidir', hoy: 'Ir a Hoy' };
 const COLOR = { 1: 'border-l-danger', 2: 'border-l-accent', 3: 'border-l-line-strong' };
@@ -56,12 +56,15 @@ export default function Necesidades({ necesidades, pendientes, cargando, onAccio
         {pendientes ? (
           <dl className="mt-3 space-y-2">
             <div className="flex justify-between"><dt className="text-ink-3">Lotes esta semana</dt><dd className={`font-semibold ${pendientes.semana >= pendientes.cuota ? 'text-ok' : 'text-warn'}`}>{pendientes.semana} de {pendientes.cuota}</dd></div>
+            {pendientes.cuotaVideo != null && (
+              <div className="flex justify-between text-xs"><dt className="text-ink-4">Video · estáticos</dt><dd>{pendientes.semanaVideo}/{pendientes.cuotaVideo} · {pendientes.semanaEstatico}/{pendientes.cuotaEstatico}</dd></div>
+            )}
             <div className="flex justify-between"><dt className="text-ink-3">Ideas listas</dt><dd className="font-semibold">{pendientes.idea}</dd></div>
             <div className="flex justify-between"><dt className="text-ink-3">En producción</dt><dd className="font-semibold">{pendientes.produccion}</dd></div>
             <div className="flex justify-between"><dt className="text-ink-3">En prueba</dt><dd className="font-semibold">{pendientes.prueba}</dd></div>
           </dl>
         ) : <div className="mt-3 h-24 animate-pulse rounded bg-surface" />}
-        <p className="mt-3 text-xs text-ink-4">Un lote se lee completo a los 7 días y se decide el día 8.</p>
+        <p className="mt-3 text-xs text-ink-4">La cuota sale del presupuesto: 20% del gasto diario{pendientes?.gastoDia ? ` (~$${pendientes.gastoDia.toLocaleString('es-MX')})` : ''} entre 1 CPA por lote al día. Se sube el martes, se lee a los 7 días y se decide el martes siguiente.</p>
       </div>
     </section>
   );

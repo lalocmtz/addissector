@@ -21,8 +21,8 @@ export const HECHOS_FEEL_INK = `HECHOS DE LA MARCA (no inventes otros; si falta 
 
 /** Avatares y talentos: quién sale a cuadro. */
 export const TALENTOS = {
-  founder: 'Founder (Eduardo, dueño de la marca): a cámara, credibilidad de quien la creó, tono directo y cercano; ideal para confianza, mecanismo, "por qué la hice", responder comentarios.',
-  modelo: 'Modelos (Rodolfo, Oscar u otros a cuadro): demostración, aplicación, revelación 24 h, lifestyle; ideal para atención y valor con prueba visual.',
+  founder: 'Founder (Óscar, socio y cara de Feel Ink): a cámara, credibilidad de quien la creó, tono directo y cercano; ideal para confianza, mecanismo, "por qué la hice", responder comentarios.',
+  modelo: 'Modelos (Rodolfo u otros a cuadro): demostración, aplicación, revelación 24 h, lifestyle; ideal para atención y valor con prueba visual.',
   creador: 'Creadores UGC: testimonio en primera persona, diario de días, respuesta a comentarios, se ve orgánico; ideal para confianza y para escalar volumen.',
 } as const;
 export type Talento = keyof typeof TALENTOS;

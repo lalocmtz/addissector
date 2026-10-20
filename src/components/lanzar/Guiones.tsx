@@ -20,7 +20,7 @@ export interface Guion {
 }
 
 const TALENTOS = [
-  { id: 'founder', label: 'Founder', ayuda: 'Tú a cámara: confianza, mecanismo, responder comentarios' },
+  { id: 'founder', label: 'Founder', ayuda: 'Óscar a cámara: confianza, mecanismo, responder comentarios' },
   { id: 'modelo', label: 'Modelos', ayuda: 'Demostración, aplicación, revelación 24 h' },
   { id: 'creador', label: 'Creadores', ayuda: 'UGC, testimonio, diario de días' },
 ] as const;

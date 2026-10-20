@@ -37,7 +37,7 @@ export default function Tablero({ tarjetas, personas, targetCpa, ahora, resaltar
   const [nota, setNota] = useState('');
 
   return (
-    <section className="mt-8 grid gap-4 lg:grid-cols-4">
+    <section id="tablero" className="mt-8 grid gap-4 lg:grid-cols-4">
       {ETAPAS.map((et) => {
         const xs = tarjetas.filter((t) => t.etapa === et.id);
         return (

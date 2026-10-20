@@ -15,10 +15,11 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import {
   Loader2, Send, Trash2, Plus, X, Brain, Lightbulb, ChevronDown, ChevronRight, Save,
   FileText, Upload, Users, Compass, Zap, CheckCircle2, Globe, Search, Sparkles, PenLine,
-  Copy, ArrowLeftRight, AlertTriangle, Film,
+  Copy, ArrowLeftRight, AlertTriangle, Film, TrendingUp,
 } from 'lucide-react';
 import AppHeader from '@/components/AppHeader';
 import BrainSync from '@/components/BrainSync';
+import CerebroQueFunciona from '@/components/CerebroQueFunciona';
 import Sheet, { type SheetCol } from '@/components/Sheet';
 import { createBrowserClient } from '@/lib/supabase-browser';
 import { beginPending, endPending, usePendingWarning } from '@/lib/pending-saves';
@@ -78,6 +79,7 @@ interface Note {
 
 const TABS = [
   { id: 'chat', label: 'Chat', icon: Brain },
+  { id: 'funciona', label: 'Qué funciona', icon: TrendingUp },
   { id: 'avatares', label: 'Avatares', icon: Users },
   { id: 'conceptos', label: 'Conceptos', icon: Compass },
   { id: 'hooks', label: 'Hooks', icon: Zap },
@@ -88,7 +90,7 @@ const TABS = [
 /** Pestañas viejas que pueden seguir en links guardados. */
 /** Pestañas viejas que pueden seguir en links guardados. `angulos` se quedó en
  *  marcadores y en el historial: sigue funcionando y cae en Conceptos. */
-const TAB_ALIASES: Record<string, TabId> = { pruebas: 'aprendizajes', externo: 'fuentes', angulos: 'conceptos', personas: 'avatares' };
+const TAB_ALIASES: Record<string, TabId> = { destilado: 'funciona', pruebas: 'aprendizajes', externo: 'fuentes', angulos: 'conceptos', personas: 'avatares' };
 
 type TabId = (typeof TABS)[number]['id'];
 
@@ -429,6 +431,7 @@ function CerebroInner() {
         <div className="max-w-[1400px] mx-auto">
           <BrainSync key={activeBrandId} brandId={activeBrandId} />
           {tab === 'chat' && <ChatTab brandId={activeBrandId} brandName={activeBrand?.name ?? ''} />}
+          {tab === 'funciona' && <CerebroQueFunciona key={activeBrandId} brandId={activeBrandId} />}
           {tab === 'avatares' && <PersonasTab key={activeBrandId} brandId={activeBrandId} />}
           {tab === 'conceptos' && <ConceptosTab key={activeBrandId} brandId={activeBrandId} />}
           {tab === 'hooks' && <HooksTab key={activeBrandId} brandId={activeBrandId} />}
@@ -1762,129 +1765,6 @@ function fmtDate(iso: string | null | undefined): string | null {
   return d.toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
-/** ------------------------------------------------------------------------
- *  Destilado: el bloque de texto que SÍ se usa.
- *
- *  La lista de aprendizajes era información correcta que nadie lee y que no se
- *  puede aplicar. Esto la convierte en un prompt para pegar en el chat que va a
- *  escribir el siguiente anuncio: qué ganó en la ventana, con qué avatar, con
- *  qué concepto, con qué hook literal, y qué perdió.
- *
- *  Tres ventanas porque contestan cosas distintas: 7 días es qué está pasando
- *  ahora, 30 es qué es cierto de la cuenta, y 15 evita confundir una racha con
- *  un patrón.
- *  --------------------------------------------------------------------- */
-
-interface Ventana {
-  dias: number; desde: string; hasta: string;
-  gasto: number; ingreso: number; roas: number | null;
-  ganadores: number; perdedores: number; prompt: string;
-}
-
-function Destilado({ brandId, currency }: { brandId: string | null; currency?: string | null }) {
-  const [ventanas, setVentanas] = useState<Ventana[]>([]);
-  const [cur, setCur] = useState<string | null>(currency ?? null);
-  const [dias, setDias] = useState(7);
-  const [cargando, setCargando] = useState(true);
-  const [copiado, setCopiado] = useState(false);
-  const [abierto, setAbierto] = useState(false);
-
-  const cargar = useCallback(async () => {
-    await Promise.resolve();
-    if (!brandId) { setVentanas([]); setCargando(false); return; }
-    try {
-      const r = await fetch(`/api/brain/digest?brand=${brandId}`);
-      const d = (await r.json().catch(() => ({}))) as { ventanas?: Ventana[]; currency?: string | null };
-      setVentanas(Array.isArray(d.ventanas) ? d.ventanas : []);
-      setCur(d.currency ?? null);
-    } catch {
-      setVentanas([]);
-    } finally {
-      setCargando(false);
-    }
-  }, [brandId]);
-
-  useEffect(() => { void Promise.resolve().then(cargar); }, [cargar]);
-
-  const v = ventanas.find((x) => x.dias === dias) ?? null;
-
-  const copiar = async () => {
-    if (!v) return;
-    try {
-      await navigator.clipboard.writeText(v.prompt);
-      setCopiado(true);
-      setTimeout(() => setCopiado(false), 2000);
-    } catch { /* sin portapapeles: queda el textarea para seleccionar a mano */ }
-  };
-
-  return (
-    <div className="rounded-xl border border-line bg-surface mb-5">
-      <div className="flex flex-wrap items-center gap-2 px-4 py-3">
-        <Sparkles className="w-4 h-4 text-accent shrink-0" />
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium text-ink">Destilado para pegar</p>
-          <p className="text-[11px] text-ink-4 break-words">
-            Lo que funcionó en la ventana, listo para pegarlo donde escribes el siguiente anuncio.
-          </p>
-        </div>
-        <div className="flex rounded-md border border-line overflow-hidden shrink-0">
-          {[7, 15, 30].map((d) => (
-            <button
-              key={d}
-              onClick={() => { setDias(d); setAbierto(true); }}
-              className={`px-2.5 py-1.5 text-xs transition-colors ${dias === d ? 'bg-surface-2 text-ink font-medium' : 'text-ink-3 hover:text-ink'}`}
-            >
-              {d} días
-            </button>
-          ))}
-        </div>
-        <button
-          onClick={() => void copiar()}
-          disabled={!v}
-          className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg gradient-blue text-on-accent disabled:opacity-50 shrink-0"
-        >
-          {copiado ? <CheckCircle2 className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-          {copiado ? 'Copiado' : 'Copiar'}
-        </button>
-      </div>
-
-      {cargando ? (
-        <p className="px-4 pb-3 text-xs text-ink-4">Cargando…</p>
-      ) : !v ? (
-        <p className="px-4 pb-3 text-xs text-ink-4">Sin datos suficientes todavía.</p>
-      ) : (
-        <>
-          <div className="px-4 pb-3 flex flex-wrap items-baseline gap-x-5 gap-y-1 font-[family-name:var(--font-mono)] tabular-nums text-[11px] text-ink-3">
-            <span>{v.desde} → {v.hasta}</span>
-            <span>{fmtMoney(v.gasto, cur)}</span>
-            <span>ROAS {fmtRoas(v.roas)}</span>
-            <span className="text-ok">{v.ganadores} ganaron</span>
-            <span className="text-danger">{v.perdedores} perdieron</span>
-          </div>
-          <div className="px-4 pb-4">
-            <button
-              onClick={() => setAbierto((x) => !x)}
-              className="flex items-center gap-1 text-[11px] text-ink-4 hover:text-ink-2 mb-2"
-            >
-              {abierto ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
-              {abierto ? 'Ocultar el texto' : 'Ver el texto antes de copiarlo'}
-            </button>
-            {abierto && (
-              <textarea
-                readOnly
-                value={v.prompt}
-                rows={18}
-                onFocus={(e) => e.currentTarget.select()}
-                className="w-full rounded-lg border border-line bg-canvas px-3 py-2 text-[11px] leading-relaxed text-ink-2 font-[family-name:var(--font-mono)] resize-y"
-              />
-            )}
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
-
 function AprendizajesTab({ brandId }: { brandId: string | null }) {
   const { items, loading, create, patch, remove } = useBank<Learning>('/api/learnings', brandId);
   const [text, setText] = useState('');
@@ -1905,10 +1785,8 @@ function AprendizajesTab({ brandId }: { brandId: string | null }) {
     <div>
       <TabHead
         title="Aprendizajes"
-        hint="Lo que ya confirmaste con dinero real. Arriba, el destilado de 7 / 15 / 30 días listo para copiar; abajo, las frases sueltas que la IA cita cuando le pides guiones."
+        hint="Lo que ya confirmaste con dinero real: las frases sueltas que la IA cita cuando le pides guiones. Lo que está ganando ahora vive en Qué funciona."
       />
-
-      <Destilado brandId={brandId} />
 
       {/* Agregar */}
       <div className="rounded-xl border border-line bg-surface p-4 mb-5 space-y-2 min-w-0">

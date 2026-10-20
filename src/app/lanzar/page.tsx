@@ -146,7 +146,7 @@ export default function LanzarPage() {
           onAccion={(p, s) => {
             if (p === 'decidir') {
               setResaltar(s.loteId ?? null);
-              setTimeout(() => document.getElementById(`lote-${s.loteId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50);
+              setTimeout(() => document.getElementById(s.loteId ? `lote-${s.loteId}` : 'tablero')?.scrollIntoView({ behavior: 'smooth', block: s.loteId ? 'center' : 'start' }), 50);
               return;
             }
             abrir(p, s);

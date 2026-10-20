@@ -29,7 +29,7 @@ export default function Iterar({ ganadores, marcado, onGuiones, onEstatico, onMa
               <div className="mt-0.5 text-ok">
                 {g.luz === 'escalar' ? 'Escalar' : 'Foco: iterar'} · ROAS 14 d {num(g.roas14)}{g.roasIncr14 != null ? ` · incr ${num(g.roasIncr14)}` : ''}
               </div>
-              <div className="text-ink-3">Gasto 14 d {money(g.gasto14)}{g.hook14 != null ? ` · hook ${Math.round(g.hook14 * 100)}%` : ''}{g.analizado ? ' · analizado' : ' · sin análisis (corre el barrido)'}</div>
+              <div className="text-ink-3">Gasto 14 d {money(g.gasto14)}{g.hook14 != null ? ` · hook ${Math.round(g.hook14)}%` : ''}{g.analizado ? ' · analizado' : ' · sin análisis (corre el barrido)'}</div>
               {g.cayendo && <div className="mt-0.5 inline-flex items-center gap-1 text-warn"><TrendingDown className="h-3 w-3" /> Cayendo: prepara el reemplazo ya</div>}
               <div className="mt-2 flex flex-wrap gap-1">
                 <button onClick={() => (video ? onGuiones(g) : onEstatico(g))} className="inline-flex items-center gap-1 rounded bg-accent px-2 py-1 font-medium text-on-accent">

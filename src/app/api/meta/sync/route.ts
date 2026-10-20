@@ -27,6 +27,7 @@ import { getSupabase } from '@/lib/supabase';
 import { getSessionUser } from '@/lib/supabase-server';
 import { fetchAds, fetchAdsByIds, resolveAsset, videoIdsOf, pageIdOf, sleep, esLimiteDePeticiones, MetaApiError, type RawAd } from '@/lib/meta-api';
 import { fetchAll } from '@/lib/fetch-all';
+import { resolveEconomics, targetCpa } from '@/lib/meta';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
@@ -143,6 +144,24 @@ export function rollingTopSpenders(
 // ---------------------------------------------------------------------------
 // Phase 2 — creatives: resolve the asset and queue
 // ---------------------------------------------------------------------------
+/** Anuncios que en los últimos `windowDays` días gastaron ≥ 1 CPA objetivo con ROAS ≥ King Goal. */
+function winnersOf(rows: { ad_id: string; date: string; spend: number; revenue: number }[], eco: ReturnType<typeof resolveEconomics>, windowDays: number): Set<string> {
+  const out = new Set<string>();
+  if (!rows.length) return out;
+  const ultimo = rows.reduce((m, r) => (r.date > m ? r.date : m), rows[0].date);
+  const d = new Date(`${ultimo}T00:00:00Z`); d.setUTCDate(d.getUTCDate() - (windowDays - 1));
+  const desde = d.toISOString().slice(0, 10);
+  const piso = targetCpa(eco) ?? eco.cac ?? eco.kill ?? 0;
+  const tot = new Map<string, { s: number; r: number }>();
+  for (const r of rows) {
+    if (r.date < desde) continue;
+    const t = tot.get(r.ad_id) ?? { s: 0, r: 0 };
+    t.s += r.spend; t.r += r.revenue; tot.set(r.ad_id, t);
+  }
+  for (const [id, t] of tot) if (t.s >= piso && t.s > 0 && t.r / t.s >= eco.target) out.add(id);
+  return out;
+}
+
 async function syncCreatives(
   sb: ReturnType<typeof getSupabase>, acc: AccountRow, limit: number, topN: number, windowDays: number, lookbackDays: number
 ) {
@@ -150,7 +169,7 @@ async function syncCreatives(
   const brandId = acc.brand_id;
   // El token vive en la BD (ad_account.access_token). Ver adToken() en meta-api.
   const token = acc.access_token ?? null;
-  const { data: brandRow } = await sb.from('brands').select('meta_page_id').eq('id', brandId).maybeSingle();
+  const { data: brandRow } = await sb.from('brands').select('meta_page_id,economics').eq('id', brandId).maybeSingle();
   const fallbackPageId = (brandRow?.meta_page_id as string | null) ?? null;
 
   // WHICH ads deserve a creative. The rule: the top N spenders of the trailing
@@ -162,11 +181,16 @@ async function syncCreatives(
   // ads but 91.3% of the spend and 93.6% of the revenue. Everything outside is
   // not "what does not work" — it is spend Meta never granted. Labelling it as
   // a loser would poison the brain, so it is marked sin_senal, never analyzed.
-  const daily = await fetchAll(() => sb.from('ad_daily').select('ad_id,date,spend').eq('brand_id', brandId).not('ad_id', 'is', null).order('date'));
-  const rows = daily.map((d) => ({ ad_id: d.ad_id as string, date: d.date as string, spend: Number(d.spend ?? 0) }));
+  const daily = await fetchAll(() => sb.from('ad_daily').select('ad_id,date,spend,revenue').eq('brand_id', brandId).not('ad_id', 'is', null).order('date'));
+  const rows = daily.map((d) => ({ ad_id: d.ad_id as string, date: d.date as string, spend: Number(d.spend ?? 0), revenue: Number(d.revenue ?? 0) }));
   const spendByAd = new Map<string, number>();
   for (const r of rows) spendByAd.set(r.ad_id, (spendByAd.get(r.ad_id) ?? 0) + r.spend);
   const topIds = rollingTopSpenders(rows, topN, windowDays, lookbackDays);
+  // Además del top por gasto: todo GANADOR de la ventana (gastó al menos 1 CPA
+  // objetivo y llegó al King Goal) aunque no esté en el top. Son los que el
+  // Cerebro necesita para decir qué hook y qué guion funcionan; muchos ganan
+  // con poco gasto y el top por gasto los dejaba sin analizar.
+  for (const id of winnersOf(rows, resolveEconomics(brandRow?.economics), windowDays)) topIds.add(id);
   const passesGate = (adId: string) => topIds.has(adId);
 
   // Only those ads are asked of Meta. Sweeping /act_<id>/ads with the nested

@@ -39,7 +39,8 @@ export interface Ganador {
 }
 
 const DIA = 86_400_000;
-const CUOTA_SEMANAL = 3;
+/** Parte del gasto diario que se reserva para probar lotes nuevos. */
+const PARTE_PRUEBA = 0.2;
 
 const corto = (x: unknown, n: number): string | null => {
   if (x == null) return null;
@@ -51,7 +52,7 @@ const corto = (x: unknown, n: number): string | null => {
 interface Lote {
   id: string; code: string; name: string; status: string; persona_id: string | null;
   created_at: string; started_at: string | null;
-  brief: { kind?: string; origen?: { ad_id?: string | null } | null; trabajo?: string; avatar?: string | null; lote?: string; capa?: string | null; tipo?: string } | null;
+  brief: { kind?: string; origen?: { ad_id?: string | null } | null; trabajo?: string; formato?: string; avatar?: string | null; lote?: string; capa?: string | null; tipo?: string } | null;
 }
 
 export async function contextoCreativo(sb: SupabaseClient, brandId: string, userId: string) {
@@ -113,9 +114,28 @@ export async function contextoCreativo(sb: SupabaseClient, brandId: string, user
   for (const g of ganadores.filter((x) => !x.cayendo && !iterados.has(x.ad_id)).slice(0, 3)) {
     nec.push({ id: `joya-${g.ad_id}`, prioridad: 2, puerta: 'iterar', titulo: `Iterar ${g.nombre ?? g.ad_id}`, porque: `ROAS 14 d ${g.roas14?.toFixed(2) ?? '—'}${g.roasIncr14 != null ? ` (incremental ${g.roasIncr14.toFixed(2)})` : ''} y sin lote de iteración en 30 días. Un ganador sin iterar es dinero que se queda en la mesa.`, datos: { ad_id: g.ad_id, nombre: g.nombre } });
   }
-  const semana = lotes.filter((l) => ahora - new Date(l.created_at).getTime() < 7 * DIA).length;
-  if (semana < CUOTA_SEMANAL) {
-    nec.push({ id: 'cuota', prioridad: 2, puerta: 'guiones', titulo: `Faltan ${CUOTA_SEMANAL - semana} lote(s) esta semana`, porque: `Van ${semana} de ${CUOTA_SEMANAL}. El volumen de creativos es la palanca: sin lotes nuevos la cuenta se fatiga.` });
+  // Cuota semanal = cuántos lotes caben en el presupuesto de prueba: cada lote
+  // necesita ~1 CPA objetivo al día durante 7 días. 2/3 video, 1/3 estático.
+  const eco0 = hoy.economics as { targetCpa?: number | null };
+  const cuenta = ('cuenta' in hoy ? hoy.cuenta : undefined) ?? [];
+  const gastoDia = (cuenta.find((c) => c.id === 'd7')?.spend ?? 0) / 7;
+  const cpa = eco0.targetCpa && eco0.targetCpa > 0 ? eco0.targetCpa : null;
+  const capacidad = cpa && gastoDia > 0 ? Math.max(3, Math.min(12, Math.floor((gastoDia * PARTE_PRUEBA) / cpa))) : 3;
+  const cuotaVideo = Math.round(capacidad * 2 / 3);
+  const cuotaEstatico = capacidad - cuotaVideo;
+  const recientes = lotes.filter((l) => ahora - new Date(l.created_at).getTime() < 7 * DIA);
+  const semana = recientes.length;
+  const semanaVideo = recientes.filter((l) => l.brief?.formato === 'video').length;
+  const semanaEstatico = recientes.filter((l) => l.brief?.formato === 'estatico').length;
+  const enPrueba = lotes.filter((l) => l.status === 'live' || l.status === 'evaluating').length;
+  if (enPrueba > capacidad) {
+    nec.push({ id: 'saturado', prioridad: 1, puerta: 'decidir', titulo: `Demasiados lotes en prueba (${enPrueba})`, porque: `El presupuesto de prueba (${Math.round(PARTE_PRUEBA * 100)}% de ~$${Math.round(gastoDia).toLocaleString('es-MX')} al día) alcanza para ~${capacidad} lotes a 1 CPA diario. Con más, ninguno junta datos para decidirse. Decide los más viejos antes de subir nuevos.` });
+  }
+  if (semanaVideo < cuotaVideo) {
+    nec.push({ id: 'cuota-video', prioridad: 2, puerta: 'guiones', titulo: `Faltan ${cuotaVideo - semanaVideo} lote(s) de video esta semana`, porque: `Van ${semanaVideo} de ${cuotaVideo}. El presupuesto de prueba alcanza para ${capacidad} lotes por semana: ${cuotaVideo} de video y ${cuotaEstatico} de estáticos.` });
+  }
+  if (semanaEstatico < cuotaEstatico) {
+    nec.push({ id: 'cuota-estatico', prioridad: 2, puerta: 'adaptar', titulo: `Faltan ${cuotaEstatico - semanaEstatico} lote(s) de estáticos esta semana`, porque: `Van ${semanaEstatico} de ${cuotaEstatico}. Adapta una referencia o itera un estático ganador.` });
   }
   const roles = ('roles' in hoy ? hoy.roles : {}) as Record<string, number>;
   if ((roles.arriba ?? 0) < 0.45 && Object.keys(roles).length) {
@@ -135,7 +155,9 @@ export async function contextoCreativo(sb: SupabaseClient, brandId: string, user
     produccion: lotes.filter((l) => l.status === 'producing').length,
     prueba: lotes.filter((l) => l.status === 'live' || l.status === 'evaluating').length,
     semana,
-    cuota: CUOTA_SEMANAL,
+    cuota: capacidad,
+    semanaVideo, cuotaVideo, semanaEstatico, cuotaEstatico,
+    gastoDia: Math.round(gastoDia),
   };
 
   return {
@@ -159,7 +181,7 @@ export function contextoEnTexto(c: ContextoCreativo, o: { personaId?: string | n
   L.push('\nGANADORES ACTUALES (lo que ya vende; iterar = cambiar UNA capa y conservar el resto):');
   if (!c.ganadores.length) L.push('- Ninguno con juicio todavía.');
   for (const g of c.ganadores) {
-    L.push(`- ${g.nombre ?? g.ad_id} [${g.luz}${g.cayendo ? ', CAYENDO' : ''}] ROAS14 ${g.roas14?.toFixed(2) ?? '—'}${g.roasIncr14 != null ? ` incr ${g.roasIncr14.toFixed(2)}` : ''}${g.hook14 != null ? ` hook ${(g.hook14 * 100).toFixed(0)}%` : ''} · ad_id ${g.ad_id}`);
+    L.push(`- ${g.nombre ?? g.ad_id} [${g.luz}${g.cayendo ? ', CAYENDO' : ''}] ROAS14 ${g.roas14?.toFixed(2) ?? '—'}${g.roasIncr14 != null ? ` incr ${g.roasIncr14.toFixed(2)}` : ''}${g.hook14 != null ? ` hook ${g.hook14.toFixed(0)}%` : ''} · ad_id ${g.ad_id}`);
     if (g.transcript) L.push(`  Transcripción: ${g.transcript}`);
     if (g.veredicto) L.push(`  Veredicto: ${g.veredicto}`);
     if (g.receta) L.push(`  Receta ganadora: ${g.receta}`);

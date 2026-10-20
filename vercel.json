@@ -47,12 +47,22 @@
     },
     "src/app/api/experiments/route.ts": {
       "maxDuration": 60
+    },
+    "src/app/api/brain/digest/cron/route.ts": {
+      "maxDuration": 300
+    },
+    "src/app/api/brain/digest/route.ts": {
+      "maxDuration": 300
     }
   },
   "crons": [
     {
       "path": "/api/meta/sync?phase=creatives&limit=200",
       "schedule": "0 13 * * *"
+    },
+    {
+      "path": "/api/brain/digest/cron",
+      "schedule": "0 14 * * 2"
     }
   ]
 }
